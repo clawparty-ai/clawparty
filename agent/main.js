@@ -765,6 +765,9 @@ function main(listen) {
             req => {
               $reqHead = req.head
               $reqBody = req.body?.toString?.() || ''
+              try {
+                println(`${formatLocalTime()} [INF] [api] ${$clientIp} ${$reqHead.path}`)
+              } catch {}
               var path = req.head.path
               var params = null
               var route = routes.find(r => Boolean(params = r.match(path)))
@@ -854,6 +857,18 @@ function responseError(e) {
   } else {
     return response(500, { status: 500, message: e })
   }
+}
+
+function formatLocalTime() {
+  var d = new Date()
+  var yyyy = d.getFullYear()
+  var mm = String(d.getMonth() + 1).padStart(2, '0')
+  var dd = String(d.getDate()).padStart(2, '0')
+  var hh = String(d.getHours()).padStart(2, '0')
+  var mi = String(d.getMinutes()).padStart(2, '0')
+  var ss = String(d.getSeconds()).padStart(2, '0')
+  var ms = String(d.getMilliseconds()).padStart(3, '0')
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}.${ms}`
 }
 
 function validateName(name, msg) {
