@@ -169,11 +169,13 @@ That's it.
 
 Once started, agents and endpoints appear as **chat participants**.
 
+> ⚠️ **Important**
+> Default password is 'enjoy-party'.
 ---
 
 # 🎬 30-Second Demo
 
-Getting started with ClawParty takes less than a minute.
+Getting started with ClawParty takes less than a second.
 
 ### 1 Install
 
