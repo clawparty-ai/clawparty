@@ -1,0 +1,15 @@
+.DS_Store
+.vscode/
+
+bin/
+cli/version.json
+hub/version.json
+agent/version.json
+agent/gui
+agent/apps/*/*/gui
+version.env
+usr/
+data
+config.json
+AGENT.md
+.claude/

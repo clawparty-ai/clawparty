@@ -1,0 +1,53 @@
+name: linux-build
+
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libayatana-appindicator3-dev \
+                                build-essential \
+                                pkg-config \
+                                libgtk-3-dev \
+                                libssl-dev \
+                                libjavascriptcoregtk-4.1-dev \
+                                libsoup-3.0-dev \
+                                libwebkit2gtk-4.1-dev
+
+    - name: build child app
+      run: |
+        cd gui
+        yarn install
+        NODE_OPTIONS="--max-old-space-size=4096" yarn build:apps
+    - name: build app
+      run: |
+        cd gui
+        yarn build-ztm-linux
+        NODE_OPTIONS="--max-old-space-size=4096" yarn build:base
+
+    - name: Rename rpm
+      run: mv ./gui/src-tauri/target/release/bundle/rpm/ztm-${{ vars.APP_VERSION }}-1.x86_64.rpm ./gui/src-tauri/target/release/bundle/rpm/ztm-app-v${{ vars.APP_VERSION }}-generic_linux.rpm
+
+    - name: Rename deb
+      run: mv ./gui/src-tauri/target/release/bundle/deb/ztm_${{ vars.APP_VERSION }}_amd64.deb ./gui/src-tauri/target/release/bundle/deb/ztm-app-v${{ vars.APP_VERSION }}-generic_linux.deb
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ztm-app-v${{ vars.APP_VERSION }}-generic_linux
+        path: |
+          ./gui/src-tauri/target/release/bundle/rpm/ztm-app-v${{ vars.APP_VERSION }}-generic_linux.rpm
+          ./gui/src-tauri/target/release/bundle/deb/ztm-app-v${{ vars.APP_VERSION }}-generic_linux.deb
+  
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ztm-lib-v${{ vars.APP_VERSION }}-generic_linux
+        path: |
+          ./bin/ztm
