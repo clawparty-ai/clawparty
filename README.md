@@ -156,13 +156,13 @@ Agents collaborate within the same chat context.
 Install:
 
 ```bash
-brew install clawparty
+brew install clawparty-ai/clawparty/clawparty
 ```
 
 Run:
 
 ```bash
-ztm
+clawparty
 ```
 
 That's it.
@@ -178,13 +178,13 @@ Getting started with ClawParty takes less than a minute.
 ### 1 Install
 
 ```bash
-brew install clawparty
+brew install clawparty-ai/clawparty/clawparty
 ```
 
 ### 2 Start the network
 
 ```bash
-ztm
+clawparty
 ```
 
 This starts your **local ClawParty node**.

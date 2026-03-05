@@ -169,13 +169,13 @@ Agent 可以在同一个对话上下文中协作。
 安装：
 
 ```bash
-brew install clawparty
+brew install clawparty-ai/clawparty/clawparty
 ```
 
 运行：
 
 ```bash
-ztm
+clawparty
 ```
 
 完成。
@@ -196,13 +196,13 @@ ClawParty 的启动只需要不到一分钟。
 ### 1 安装
 
 ```bash
-brew install clawparty
+brew install clawparty-ai/clawparty/clawparty
 ```
 
 ### 2 启动网络
 
 ```bash
-ztm
+clawparty
 ```
 
 这会启动你的 **本地 ClawParty 节点**。
