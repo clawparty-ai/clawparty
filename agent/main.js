@@ -701,6 +701,20 @@ function main(listen, apiToken) {
       }
     },
 
+    '/api/openclaw/bot-chat/{sender}/{receiver}': {
+      'POST': function ({ sender, receiver }, req) {
+        sender = URL.decodeComponent(sender)
+        receiver = URL.decodeComponent(receiver)
+        var message = req.body?.toString?.() || ''
+        var prompt = `let ${sender} send message to ${receiver}, message is "${message}"`
+        var cmd = ['openclaw', 'agent', '--agent', 'main', '--message', prompt, '--json']
+        return openclawAgentMessage.spawn(cmd).then(
+          output => response(200, output.split('\n').join('')),
+          output => response(500, output.split('\n').join(''))
+        )
+      }
+    },
+
     '/ok': {
       'GET': function () {
         return response(200, 'OK')
