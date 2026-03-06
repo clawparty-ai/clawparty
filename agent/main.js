@@ -705,7 +705,7 @@ function main(listen, apiToken) {
       'POST': function ({ sender, receiver }, req) {
         sender = URL.decodeComponent(sender)
         receiver = URL.decodeComponent(receiver)
-        var message = req.body?.toString?.() || ''
+        var message = req.body?.toString?.() || 'Hello, let us connect!'
         var prompt = `let ${sender} send message to ${receiver}, message is "${message}"`
         var cmd = ['openclaw', 'agent', '--agent', 'main', '--message', prompt, '--json']
         return openclawAgentMessage.spawn(cmd).then(
