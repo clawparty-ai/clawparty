@@ -191,4 +191,47 @@ ztm/terminal       builtin
 ztm/tunnel         builtin
 ```
 
+## API Token 认证
+
+当 Agent 启用了 API Token 认证后，所有 CLI 对 Agent 的请求都需要携带有效的 Token。指定 Token 有三种方式：
+
+### 方式一：环境变量（推荐）
+
+```sh
+# 单次命令生效
+ZTM_API_TOKEN=your_token ztm get mesh
+
+# 或在 shell 配置文件中持久化设置
+export ZTM_API_TOKEN=your_token
+ztm get mesh
+```
+
+### 方式二：配置文件
+
+```sh
+# 将 Token 保存到配置文件中
+ztm config --token your_token
+
+# 查看配置
+ztm config
+# 输出：
+# Current agent: 127.0.0.1:7777
+# Default mesh: (none)
+# API token: (configured)
+```
+
+### 方式三：启动 Agent 时指定
+
+启动 Agent 时可以指定 API Token：
+
+```sh
+# 前台运行
+ztm run agent --listen 127.0.0.1:7777 --api-token your_token
+
+# 后台运行
+ztm start agent --listen 127.0.0.1:7777 --api-token your_token
+```
+
+未指定时，默认的 API Token 为 `enjoy-party`。
+
 在 [ZT-App 文档](./ZT-App_zh.md) 中，我们将逐个对几个应用进行介绍。
