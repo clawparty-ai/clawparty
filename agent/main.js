@@ -9,8 +9,8 @@ try {
     commands: [{
       title: 'ZTM Agent',
       options: `
-        -d, --data              <dir>         Specify the location of ZTM storage (default: ~/.ztm)
-        -l, --listen            <[ip:]port>   Specify the agent's listening port (default: 127.0.0.1:7777)
+        -d, --data              <dir>         Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
+        -l, --listen            <[ip:]port>   Specify the agent's listening port (default: 127.0.0.1:6789)
             --api-token         <token>       Require this token for all /api requests (default: enjoy-party)
             --join              <mesh>        If specified, join a mesh with the given name
             --join-as           <endpoint>    When joining a mesh, give the current endpoint a name
@@ -23,13 +23,13 @@ try {
             --pqc-signature     <algorithm>   Specify the PQC signature algorithm such as 'ML-DSA-44'
       `,
       action: (args) => {
-        var listen = args['--listen'] || '127.0.0.1:7777'
+        var listen = args['--listen'] || '127.0.0.1:6789'
         if (listen.indexOf(':') <= 0) {
           if (!listen.startsWith(':')) listen = ':' + listen
           listen = '127.0.0.1' + listen
         }
 
-        var dbPath = args['--data'] || '~/.ztm'
+        var dbPath = args['--data'] || '~/.openclaw/workspace/clawparty'
         if (dbPath.startsWith('~/')) {
           dbPath = os.home() + dbPath.substring(1)
         }

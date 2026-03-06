@@ -6,7 +6,7 @@ if (!config || typeof config !== 'object') config = {}
 
 function getConfig() {
   return {
-    agent: config.agent || 'localhost:7777',
+    agent: config.agent || 'localhost:6789',
     mesh: config.mesh,
     token: config.token,
   }

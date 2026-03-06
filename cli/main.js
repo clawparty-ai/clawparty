@@ -123,7 +123,7 @@ function doCommand(meshName, epName, argv, program) {
         title: `Export or import the CA certificate`,
         usage: 'ca <import|export>',
         options: `
-          -d, --data  <dir>       Specify the location of ZTM storage (default: ~/.ztm)
+          -d, --data  <dir>       Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
               --cert  <filename>  Specify the certificate file to import or export
               --key   <filename>  Specify the private key file to import or export
         `,
@@ -146,7 +146,7 @@ function doCommand(meshName, epName, argv, program) {
         title: `Generate a permit for the root user`,
         usage: 'root',
         options: `
-          -d, --data          <dir>           Specify the location of ZTM storage (default: ~/.ztm)
+          -d, --data          <dir>           Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
           -n, --names         <host:port ...> Specify one or more hub addresses (host:port) that are accessible to agents
               --ca            <url>           Specify the location of an external CA service if any
               --pqc-signature <algorithm>     Specify the PQC signature algorithm such as 'ML-DSA-44'
@@ -184,9 +184,9 @@ function doCommand(meshName, epName, argv, program) {
         title: `Start running a hub, agent or app as background service`,
         usage: 'start <object type> [app name]',
         options: `
-          -d, --data              <dir>           Specify the location of ZTM storage (default: ~/.ztm)
+          -d, --data              <dir>           Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
                                                   Only applicable to hubs and agents
-          -l, --listen            <[ip:]port>     Specify the service listening port (default: 0.0.0.0:8888 for hubs, 127.0.0.1:7777 for agents)
+          -l, --listen            <[ip:]port>     Specify the service listening port (default: 0.0.0.0:8888 for hubs, 127.0.0.1:6789 for agents)
                                                   Only applicable to hubs and agents
           -n, --names             <host:port ...> Specify one or more hub addresses (host:port) that are accessible to agents
                                                   Only applicable to hubs
@@ -253,8 +253,8 @@ function doCommand(meshName, epName, argv, program) {
         title: `Start running a hub or agent in foreground mode`,
         usage: 'run <object type>',
         options: `
-          -d, --data          <dir>             Specify the location of ZTM storage (default: ~/.ztm)
-          -l, --listen        <[ip:]port>       Specify the service listening port (default: 0.0.0.0:8888 for hubs, 127.0.0.1:7777 for agents)
+          -d, --data          <dir>             Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
+          -l, --listen        <[ip:]port>       Specify the service listening port (default: 0.0.0.0:8888 for hubs, 127.0.0.1:6789 for agents)
           -n, --names         <host:port ...>   Specify one or more hub addresses (host:port) that are accessible to agents
                                                 Only applicable to hubs
               --ca            <url>             Specify the location of an external CA service if any
@@ -879,7 +879,7 @@ function label(mesh, ep, add, del) {
 
 function startHub(args) {
   var opts = {
-    '--data': args['--data'] || '~/.ztm',
+    '--data': args['--data'] || '~/.openclaw/workspace/clawparty',
     '--listen': args['--listen'] || '0.0.0.0:8888',
   };
   var COPY = [
@@ -912,8 +912,8 @@ function startHub(args) {
 
 function startAgent(args) {
   var opts = {
-    '--data': args['--data'] || '~/.ztm',
-    '--listen': args['--listen'] || '127.0.0.1:7777',
+    '--data': args['--data'] || '~/.openclaw/workspace/clawparty',
+    '--listen': args['--listen'] || '127.0.0.1:6789',
   }
   var COPY = [
     '--proxy',
@@ -949,7 +949,7 @@ function startApp(name, mesh, ep) {
 }
 
 function initHubDB(path) {
-  var dbPath = path || '~/.ztm'
+  var dbPath = path || '~/.openclaw/workspace/clawparty'
   if (dbPath.startsWith('~/')) {
     dbPath = os.home() + dbPath.substring(1)
   }
@@ -1214,7 +1214,7 @@ function runHub(args, program) {
       var cmd = [program,
         '--pipy', 'repo://ztm/hub',
         '--args',
-        '--data', args['--data'] || '~/.ztm',
+        '--data', args['--data'] || '~/.openclaw/workspace/clawparty',
         '--listen', args['--listen'] || '0.0.0.0:8888',
       ]
       if ('--names' in args) {
@@ -1241,8 +1241,8 @@ function runAgent(args, program) {
     program,
     '--pipy', 'repo://ztm/agent',
     '--args',
-    '--data', args['--data'] || '~/.ztm',
-    '--listen', args['--listen'] || '127.0.0.1:7777',
+    '--data', args['--data'] || '~/.openclaw/workspace/clawparty',
+    '--listen', args['--listen'] || '127.0.0.1:6789',
   ]
   if ('--join' in args) cmd.push('--join', args['--join'])
   if ('--join-as' in args) cmd.push('--join-as', args['--join-as'])
