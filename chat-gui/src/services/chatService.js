@@ -1,8 +1,37 @@
 import axios from 'axios'
 
+const API_TOKEN_KEY = 'ztm_api_token'
+
+let apiToken = (typeof localStorage !== 'undefined' && localStorage.getItem(API_TOKEN_KEY)) || ''
+
+export function setApiToken(token) {
+  apiToken = token || ''
+  if (apiToken) {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(API_TOKEN_KEY, apiToken)
+    }
+  } else {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(API_TOKEN_KEY)
+    }
+  }
+}
+
+export function getApiToken() {
+  return apiToken
+}
+
 const api = axios.create({
   baseURL: '/api',
   timeout: 120000
+})
+
+api.interceptors.request.use(config => {
+  if (apiToken) {
+    config.headers = config.headers || {}
+    config.headers.Authorization = `Bearer ${apiToken}`
+  }
+  return config
 })
 
 export const meshService = {

@@ -11,6 +11,7 @@ try {
       options: `
         -d, --data              <dir>         Specify the location of ZTM storage (default: ~/.ztm)
         -l, --listen            <[ip:]port>   Specify the agent's listening port (default: 127.0.0.1:7777)
+            --api-token         <token>       Require this token for all /api requests (default: enjoy-party)
             --join              <mesh>        If specified, join a mesh with the given name
             --join-as           <endpoint>    When joining a mesh, give the current endpoint a name
         -p, --permit            <filename>    When joining a mesh, use the provided permit file
@@ -75,6 +76,8 @@ try {
           os.mkdir(dbPath, { recursive: true })
         }
 
+        var apiToken = args['--api-token'] || os.env.ZTM_API_TOKEN || 'enjoy-party'
+
         db.open(os.path.join(dbPath, 'ztm.db'))
         api.init(dbPath, listen, args['--proxy'], pqc, p2pConfig)
 
@@ -90,7 +93,7 @@ try {
           })
         }
 
-        main(listen)
+        main(listen, apiToken)
       }
     }]
   })
@@ -100,7 +103,7 @@ try {
   pipy.exit(-1)
 }
 
-function main(listen) {
+function main(listen, apiToken) {
   var gui = new http.Directory('gui')
 
   function makeOpenclawPipeline(cmd) {
@@ -735,6 +738,28 @@ function main(listen) {
   var $reqBody
   var $clientIp
 
+  var authSchemePrefix = 'Bearer '
+
+  function getHeader(head, name) {
+    var headers = head?.headers
+    if (!headers) return null
+    if (name in headers) return headers[name]
+    var low = name.toLowerCase()
+    if (low in headers) return headers[low]
+    var up = name.toUpperCase()
+    if (up in headers) return headers[up]
+    return null
+  }
+
+  function isAuthorized(head) {
+    var directToken = getHeader(head, 'x-ztm-token')
+    if (directToken && directToken === apiToken) return true
+    var authorization = getHeader(head, 'authorization')
+    if (typeof authorization !== 'string') return false
+    if (!authorization.startsWith(authSchemePrefix)) return false
+    return authorization.substring(authSchemePrefix.length) === apiToken
+  }
+
   var appSessionPools = new algo.Cache(
     k => new algo.LoadBalancer([{}])
   )
@@ -747,6 +772,9 @@ function main(listen) {
           if (evt instanceof MessageStart) {
             var path = evt.head.path
             if (path.startsWith('/api/')) {
+              if (!isAuthorized(evt.head)) {
+                return 'unauthorized'
+              }
               if ($params = appApiMatch(path) || appPreMatch(path)) {
                 var url = new URL(path)
                 evt.head.path = '/' + ($params['*'] || '') + url.search
@@ -826,6 +854,9 @@ function main(listen) {
           ),
           'gui': $=>$.replaceMessage(
             req => gui.serve(req) || new Message({ status: 404 })
+          ),
+          'unauthorized': $=>$.replaceData().replaceMessage(
+            response(401, { status: 401, message: 'unauthorized' })
           ),
         }
       )

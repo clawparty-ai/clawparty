@@ -1,5 +1,22 @@
 <template>
-  <div class="chat-container">
+  <div v-if="showTokenDialog" class="token-dialog-wrap">
+    <div class="token-dialog">
+      <h2>Enter Access Token</h2>
+      <p>请输入 ztm agent 的 API token</p>
+      <input
+        v-model="tokenInput"
+        type="password"
+        autocomplete="off"
+        placeholder="API token"
+        @keyup.enter="submitToken"
+      />
+      <button :disabled="tokenChecking || !tokenInput.trim()" @click="submitToken">
+        {{ tokenChecking ? 'Verifying...' : 'Continue' }}
+      </button>
+      <div v-if="tokenError" class="token-error">{{ tokenError }}</div>
+    </div>
+  </div>
+  <div v-else class="chat-container">
     <ChatSidebar
       :chats="chats"
       :activeChat="activeChat"
@@ -33,7 +50,7 @@
 import { ref, onMounted, onUnmounted, provide } from 'vue'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
-import { meshService, chatService, openclawService } from './services/chatService'
+import { meshService, chatService, openclawService, setApiToken, getApiToken } from './services/chatService'
 
 const meshes = ref([])
 const openclawAgents = ref([])
@@ -44,6 +61,11 @@ const chats = ref([])
 const activeChat = ref(null)
 const newMessage = ref('')
 const sending = ref(false)
+const showTokenDialog = ref(false)
+const tokenInput = ref('')
+const tokenChecking = ref(false)
+const tokenError = ref('')
+let appStarted = false
 let chatsPollTimer = null
 
 provide('currentMesh', currentMesh)
@@ -450,15 +472,79 @@ const stopChatsPolling = () => {
 }
 
 onMounted(() => {
-  fetchMeshes().then(() => {
-    startChatsPolling()
-  })
-  fetchOpenclawAgents()
+  initAuth()
 })
 
 onUnmounted(() => {
   stopChatsPolling()
 })
+
+const startApp = () => {
+  if (appStarted) return
+  appStarted = true
+  fetchMeshes().then(() => {
+    startChatsPolling()
+  })
+  fetchOpenclawAgents()
+}
+
+const verifyToken = async (token) => {
+  setApiToken(token)
+  try {
+    await meshService.getMeshes()
+    return true
+  } catch (error) {
+    if (error?.response?.status === 401) return false
+    throw error
+  }
+}
+
+const initAuth = async () => {
+  const saved = getApiToken()
+  if (!saved) {
+    showTokenDialog.value = true
+    return
+  }
+
+  try {
+    const ok = await verifyToken(saved)
+    if (ok) {
+      showTokenDialog.value = false
+      startApp()
+      return
+    }
+  } catch (error) {
+    console.error('验证 token 失败:', error)
+  }
+
+  setApiToken('')
+  tokenInput.value = ''
+  tokenError.value = 'token 无效，请重新输入'
+  showTokenDialog.value = true
+}
+
+const submitToken = async () => {
+  const token = tokenInput.value.trim()
+  if (!token || tokenChecking.value) return
+
+  tokenChecking.value = true
+  tokenError.value = ''
+
+  try {
+    const ok = await verifyToken(token)
+    if (!ok) {
+      tokenError.value = 'token 无效'
+      return
+    }
+    showTokenDialog.value = false
+    startApp()
+  } catch (error) {
+    console.error('验证 token 失败:', error)
+    tokenError.value = '无法连接 agent，请检查服务状态'
+  } finally {
+    tokenChecking.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -468,6 +554,71 @@ onUnmounted(() => {
   display: flex;
   overflow: hidden;
   background: var(--bg-primary);
+}
+
+.token-dialog-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(140deg, #f4f7fb 0%, #e8eef8 100%);
+}
+
+.token-dialog {
+  width: min(420px, calc(100% - 32px));
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 24px;
+  box-shadow: 0 10px 30px rgba(26, 43, 71, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.token-dialog h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #1f2937;
+}
+
+.token-dialog p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.token-dialog input {
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+}
+
+.token-dialog input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.token-dialog button {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: #ffffff;
+  background: #2563eb;
+  cursor: pointer;
+}
+
+.token-dialog button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.token-error {
+  color: #dc2626;
+  font-size: 13px;
 }
 
 .empty-state {

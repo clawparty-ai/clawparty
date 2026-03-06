@@ -1,0 +1,51 @@
+name: linux-arm64-binary
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-linux-arm64-binary:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build toolchain
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y clang cmake make
+
+      - name: Verify architecture
+        run: |
+          set -e
+          echo "Runner architecture: $(uname -m)"
+          if [ "$(uname -m)" != "aarch64" ]; then
+            echo "Expected arm64 runner for linux arm64 binary build"
+            exit 1
+          fi
+
+      - name: Build ztm binary
+        run: |
+          set -e
+          ./build/deps.sh
+          ./build/pipy.sh
+          ls -lh bin/ztm
+
+      - name: Package binary artifact
+        run: |
+          set -e
+          mkdir -p dist
+          cp bin/ztm dist/ztm
+          tar -czf dist/ztm-generic_linux-arm64.tar.gz -C dist ztm
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ztm-generic_linux-arm64
+          path: |
+            dist/ztm
+            dist/ztm-generic_linux-arm64.tar.gz
