@@ -31,6 +31,7 @@
       :sending="sending"
       :openclawSessions="openclawSessions"
       v-model="newMessage"
+      v-model:selectedAgent="selectedAgent"
       @send="sendMessage"
       @switchSession="(sessionId) => switchOpenclawSession(chats[activeChat], sessionId)"
     />
@@ -60,6 +61,7 @@ const currentMeshAgentUsername = ref('')
 const chats = ref([])
 const activeChat = ref(null)
 const newMessage = ref('')
+const selectedAgent = ref('')
 const sending = ref(false)
 const showTokenDialog = ref(false)
 const tokenInput = ref('')
@@ -228,57 +230,65 @@ const sendMessage = async () => {
       sending.value = false
       const now = new Date()
       const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
-      setTimeout(()=>{
-				chat.messages.push({
-				  text: '',
-				  time: time,
-				  sender: chat.name,
-				  timestamp: now.getTime(),
-				  isTyping: true
-				})
-			},300)
       
-      const agentId = chat.agentId
-      openclawService.sendMessage(agentId, text).then((response)=>{
-				let replyText = response.data?.payloads?.[0]?.text || response.data?.result?.payloads?.[0]?.text;
-				
-				const typingIndex = chat.messages.findIndex(m => m.isTyping)
-				if (typingIndex !== -1) {
-					chat.messages.splice(typingIndex, 1)
-				}
-				if (replyText) {
-					const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
-					chat.messages.push({
-						text: replyText,
-						time: replyTime,
-						sender: chat.name,
-						timestamp: new Date().getTime(),
-						isTemp: false
-					})
-					chat.lastMessage = replyText
-					chat.time = replyTime
-				}
-			
-			}).catch((e)=>{
-				
-				const typingIndex = chat.messages.findIndex(m => m.isTyping)
-				if (typingIndex !== -1) {
-					chat.messages.splice(typingIndex, 1)
-				}
-				let replyText = '响应超时，请稍后刷新。'
-				if (replyText) {
-					const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
-					chat.messages.push({
-						text: replyText,
-						time: replyTime,
-						sender: chat.name,
-						timestamp: new Date().getTime(),
-						isTemp: false
-					})
-					chat.lastMessage = replyText
-					chat.time = replyTime
-				}
-			})
+      const isBotChat = !!selectedAgent.value
+      const typingSender = isBotChat ? 'A to ' + selectedAgent.value : chat.name
+      const responseSender = isBotChat ? selectedAgent.value : chat.name
+      
+      setTimeout(()=>{
+        chat.messages.push({
+          text: '',
+          time: time,
+          sender: typingSender,
+          timestamp: now.getTime(),
+          isTyping: true
+        })
+      },300)
+      
+      const sendPromise = isBotChat 
+        ? openclawService.botChat(chat.agentId, selectedAgent.value, text)
+        : openclawService.sendMessage(chat.agentId, text)
+      
+      sendPromise.then((response)=>{
+        let replyText = response.data?.payloads?.[0]?.text || response.data?.result?.payloads?.[0]?.text;
+        
+        const typingIndex = chat.messages.findIndex(m => m.isTyping)
+        if (typingIndex !== -1) {
+          chat.messages.splice(typingIndex, 1)
+        }
+        if (replyText) {
+          const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
+          chat.messages.push({
+            text: replyText,
+            time: replyTime,
+            sender: responseSender,
+            timestamp: new Date().getTime(),
+            isTemp: false
+          })
+          chat.lastMessage = replyText
+          chat.time = replyTime
+        }
+      
+      }).catch((e)=>{
+        
+        const typingIndex = chat.messages.findIndex(m => m.isTyping)
+        if (typingIndex !== -1) {
+          chat.messages.splice(typingIndex, 1)
+        }
+        let replyText = '响应超时，请稍后刷新。'
+        if (replyText) {
+          const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
+          chat.messages.push({
+            text: replyText,
+            time: replyTime,
+            sender: responseSender,
+            timestamp: new Date().getTime(),
+            isTemp: false
+          })
+          chat.lastMessage = replyText
+          chat.time = replyTime
+        }
+      })
     } else if (chat.isGroup) {
       await chatService.sendGroupMessage(currentMesh.value, chat.creator, chat.groupId, text)
     } else {
@@ -310,6 +320,7 @@ const sendMessage = async () => {
   chat.time = time
   
   newMessage.value = ''
+  selectedAgent.value = ''
 }
 
 const switchMesh = async (meshName) => {

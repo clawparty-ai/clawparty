@@ -40,12 +40,22 @@
         </div>
       </div>
     </div>
-    <MessageInput :chatName="chat.name" :loading="sending" :modelValue="modelValue" @update:modelValue="$emit('update:modelValue', $event)" @send="$emit('send')" />
+    <MessageInput 
+      :chatName="chat.name" 
+      :loading="sending" 
+      :modelValue="modelValue" 
+      :agents="availableAgents"
+      :selectedAgent="selectedAgent"
+      :isOpenclaw="chat.isOpenclaw"
+      @update:modelValue="$emit('update:modelValue', $event)" 
+      @update:selectedAgent="$emit('update:selectedAgent', $event)"
+      @send="$emit('send')" 
+    />
   </main>
 </template>
 
 <script setup>
-import { ref, watch, nextTick, computed, onUnmounted } from 'vue'
+import { ref, watch, nextTick, computed, onUnmounted, inject } from 'vue'
 import { marked } from 'marked'
 import ChatHeader from './ChatHeader.vue'
 import MessageInput from './MessageInput.vue'
@@ -79,16 +89,26 @@ const props = defineProps({
     default: () => []
   },
   	
-  modelValue: String
+  modelValue: String,
+  selectedAgent: {
+    type: String,
+    default: ''
+  }
 })
 
-defineEmits(['send', 'update:modelValue', 'switchSession'])
+defineEmits(['send', 'update:modelValue', 'update:selectedAgent', 'switchSession'])
 
 const messagesContainer = ref(null)
 let pollTimer = null
 const searchQuery = ref('')
+const openclawAgents = inject('openclawAgents', ref([]))
 
 defineExpose({})
+
+const availableAgents = computed(() => {
+  const currentAgentId = props.chat.agentId
+  return (openclawAgents.value || []).filter(agent => agent.id !== currentAgentId)
+})
 
 const currentDate = computed(() => {
   const now = new Date()

@@ -20,12 +20,16 @@ When making changes, preserve existing patterns by area (Pipy-side style differs
 
 ### Install dependencies
 ```bash
+# For GUI development (Vue 3 + Vite)
 cd chat-gui && npm install
+
+# For full build (includes Pipy runtime)
+./build/deps.sh
 ```
 
 ### Build
 
-GUI only:
+GUI only (outputs to `agent/gui/`):
 ```bash
 cd chat-gui && npm run build
 ```
@@ -42,8 +46,8 @@ Build Pipy binary (`bin/ztm`):
 
 Convenience scripts at repo root:
 ```bash
-./build-cli-only.sh
-./build.sh
+./build-cli-only.sh  # CLI + Agent only
+./build.sh           # Full build (GUI + Pipy)
 ```
 
 Note: `build.sh` references a `gui/` directory in this checkout; for day-to-day local work, use `chat-gui` commands above.
@@ -70,6 +74,13 @@ If a test framework is introduced later, add explicit commands here, including s
 ```bash
 # Example future pattern (Vitest)
 cd chat-gui && npm run test -- src/components/ChatMain.test.js
+```
+
+### Verification
+
+After making changes, verify the build succeeds:
+```bash
+cd chat-gui && npm run build && echo "Build successful"
 ```
 
 ## Repository Map
@@ -144,6 +155,6 @@ Checked for additional agent rules in:
 - `.cursorrules`
 - `.github/copilot-instructions.md`
 
-Result in this repository snapshot: none of the above files/directories exist.
+Result: No Cursor or Copilot rules files exist in this repository.
 
 If these files are added later, merge their guidance into this document and treat them as higher-priority agent instructions.

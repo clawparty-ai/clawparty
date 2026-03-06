@@ -54,6 +54,21 @@
         </button>
         <span class="toolbar-divider"></span>
         <span class="toolbar-spacer"></span>
+        <select 
+          v-if="isOpenclaw"
+          class="agent-select" 
+          :value="selectedAgent"
+          @change="$emit('update:selectedAgent', $event.target.value)"
+        >
+          <option value="">Agent to Agent</option>
+          <option 
+            v-for="agent in agents" 
+            :key="agent.id" 
+            :value="agent.id"
+          >
+            To {{ agent.name }}
+          </option>
+        </select>
         <button 
           class="toolbar-btn send-btn" 
           @click="$emit('send')" 
@@ -98,10 +113,22 @@ const props = defineProps({
   loading: {
     type: Boolean,
     default: false
+  },
+  agents: {
+    type: Array,
+    default: () => []
+  },
+  selectedAgent: {
+    type: String,
+    default: ''
+  },
+  isOpenclaw: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['send', 'update:modelValue'])
+const emit = defineEmits(['send', 'update:modelValue', 'update:selectedAgent'])
 
 const textareaRef = ref(null)
 const editorHeight = ref(160)
@@ -271,6 +298,27 @@ const handleKeydown = (e) => {
 
 .toolbar-spacer {
   flex: 1;
+}
+
+.agent-select {
+  padding: 4px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+  margin-right: 8px;
+}
+
+.agent-select:hover {
+  border-color: var(--slack-blue);
+}
+
+.agent-select:focus {
+  border-color: var(--slack-blue);
+  box-shadow: 0 0 0 1px var(--slack-blue);
 }
 
 .editor-content {

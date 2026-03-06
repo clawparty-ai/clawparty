@@ -83,6 +83,12 @@ export const openclawService = {
     return api.get(`/openclaw/session-history/${agentId}/${sessionId}`, {
       responseType: 'text'
     })
+  },
+
+  botChat(currentAgentId, targetAgentId, text) {
+    return api.post(`/openclaw/bot-chat/${currentAgentId}/${targetAgentId}`, text, {
+      headers: { 'Content-Type': 'text/plain' }
+    })
   }
 }
 
