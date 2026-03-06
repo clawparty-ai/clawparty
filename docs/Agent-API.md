@@ -308,7 +308,15 @@ GET  /api/openclaw/agents
 GET  /api/openclaw/session/{agent}
 GET  /api/openclaw/session-history/{agent}/{session}
 POST /api/openclaw/chat/{agent}
+POST /api/openclaw/bot-chat/{sender-agent}/{receiver-agent}
+GET  /api/openclaws
+POST /api/openclaws
 ```
+
+> All `/api/...` endpoints require a token header:
+>
+> - `Authorization: Bearer <token>`
+> - or `X-ZTM-Token: <token>`
 
 ### `GET /api/openclaw/status`
 
@@ -359,5 +367,72 @@ Executes `openclaw agent --agent {agent} --message {body} --json` and returns th
 Example:
 
 ```
-curl -d 'hello, buddy' localhost:7777/api/openclaw/chat/main
+curl -H 'Authorization: Bearer enjoy-party' -d 'hello, buddy' localhost:7777/api/openclaw/chat/main
+```
+
+### `POST /api/openclaw/bot-chat/{sender-agent}/{receiver-agent}`
+
+Sends a delegated bot-to-bot message through the `main` OpenClaw agent.
+
+- `{sender-agent}`: sender agent name
+- `{receiver-agent}`: receiver agent name
+- Request body: plain text message content
+
+Executes:
+
+`openclaw agent --agent main --message 'let {sender-agent} send message to {receiver-agent}, message is "{body}"' --json`
+
+Example:
+
+```bash
+curl -X POST \
+  -H 'Authorization: Bearer enjoy-party' \
+  -d 'hello from sender to receiver' \
+  localhost:7777/api/openclaw/bot-chat/sender-agent/receiver-agent
+```
+
+### `GET /api/openclaws`
+
+Returns all registered OpenClaw records from sqlite table `openclaws`.
+
+Each item contains:
+
+- `name`
+- `type`
+- `api_url`
+- `token`
+
+Example:
+
+```bash
+curl -H 'Authorization: Bearer enjoy-party' localhost:7777/api/openclaws
+```
+
+### `POST /api/openclaws`
+
+Registers (or replaces by `name`) an OpenClaw record in sqlite table `openclaws`.
+
+Request body:
+
+```json
+{
+  "name": "oc-main",
+  "type": "openclaw",
+  "api_url": "http://127.0.0.1:3456",
+  "token": "join-party"
+}
+```
+
+- Required: `name`, `api_url`
+- Optional: `type`, `token`
+- Defaults: `type = "openclaw"`, `token = "join-party"`
+
+Example:
+
+```bash
+curl -X POST \
+  -H 'Authorization: Bearer enjoy-party' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"oc-main","api_url":"http://127.0.0.1:3456"}' \
+  localhost:7777/api/openclaws
 ```

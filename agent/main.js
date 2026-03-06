@@ -689,6 +689,44 @@ function main(listen, apiToken) {
       }
     },
 
+    '/api/openclaws': {
+      'GET': function () {
+        return response(200, db.allOpenclaws())
+      },
+
+      'POST': function (_, req) {
+        var body
+        try {
+          body = JSON.decode(req.body)
+        } catch {
+          return response(400, { status: 400, message: 'invalid request body' })
+        }
+
+        var name = body?.name
+        var apiURL = body?.api_url
+
+        if (!name || typeof name !== 'string') {
+          return response(400, { status: 400, message: 'name is required' })
+        }
+        if (!apiURL || typeof apiURL !== 'string') {
+          return response(400, { status: 400, message: 'api_url is required' })
+        }
+
+        db.setOpenclaw(name, {
+          type: body?.type || 'openclaw',
+          api_url: apiURL,
+          token: body?.token || 'join-party',
+        })
+
+        return response(201, {
+          name,
+          type: body?.type || 'openclaw',
+          api_url: apiURL,
+          token: body?.token || 'join-party',
+        })
+      }
+    },
+
     '/api/openclaw/chat/{agent}': {
       'POST': function ({ agent }, req) {
         agent = URL.decodeComponent(agent)

@@ -68,6 +68,15 @@ function open(pathname) {
       res_body    TEXT NOT NULL
     )
   `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS openclaws (
+      name    TEXT PRIMARY KEY,
+      type    TEXT NOT NULL DEFAULT 'openclaw',
+      api_url TEXT NOT NULL,
+      token   TEXT NOT NULL DEFAULT 'join-party'
+    )
+  `)
 }
 
 function allZones() {
@@ -379,6 +388,23 @@ function logApi(clientIp, api, reqHeaders, reqBody, resHeaders, resBody) {
     .exec()
 }
 
+function allOpenclaws() {
+  return db.sql('SELECT name, type, api_url, token FROM openclaws').exec()
+}
+
+function setOpenclaw(name, openclaw) {
+  var type = openclaw?.type || 'openclaw'
+  var apiURL = openclaw?.api_url || ''
+  var token = openclaw?.token || 'join-party'
+
+  db.sql('INSERT OR REPLACE INTO openclaws(name, type, api_url, token) VALUES(?, ?, ?, ?)')
+    .bind(1, name)
+    .bind(2, type)
+    .bind(3, apiURL)
+    .bind(4, token)
+    .exec()
+}
+
 function getKey(name) {
   return db.sql(`SELECT data FROM keys WHERE name = ?`)
     .bind(1, name)
@@ -425,6 +451,8 @@ export default {
   getFile,
   setFile,
   delFile,
+  allOpenclaws,
+  setOpenclaw,
   getKey,
   setKey,
   delKey,
