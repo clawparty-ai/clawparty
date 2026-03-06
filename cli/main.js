@@ -356,7 +356,10 @@ function doCommand(meshName, epName, argv, program) {
           --as          <ep name>    Specify an endpoint name seen by others within the mesh
           --permit, -p  <pathname>   Point to a permit file
         `,
-        action: (args) => join(args['<mesh name>'], args['--as'], args['--permit']),
+        action: (args) => {
+          if (args['<mesh name>'] === 'party') return joinParty()
+          return join(args['<mesh name>'], args['--as'], args['--permit'])
+        },
       },
 
       {
@@ -433,6 +436,7 @@ function doCommand(meshName, epName, argv, program) {
             mesh     meshes
             hub      hubs
             endpoint endpoints ep
+            claw     claws
             file     files
             app      apps
         `,
@@ -449,6 +453,8 @@ function doCommand(meshName, epName, argv, program) {
             case 'endpoint':
             case 'endpoints':
             case 'ep':
+            case 'claw':
+            case 'claws':
               return selectMesh(meshName).then(mesh => getEndpoint(name, mesh))
             case 'file':
             case 'files':
@@ -823,12 +829,96 @@ function tryOpenclaw(meshName, userName, passKey, epName, permitPathname, target
                   )
                 )
               }
+
+              return { meshName, userName, epName }
             }
           )
         }
       )
     }
   )
+}
+
+//
+// Command: joinParty
+//
+
+function joinParty() {
+  return client.get('/api/meshes').then(ret => {
+    var meshes = JSON.decode(ret)
+    if (meshes.length > 0) {
+      println('You have already joined clawparty, have fun!')
+      return
+    }
+
+    var namesPath = `${os.home()}/.openclaw/workspace/clawparty/names.txt`
+    var namesContent
+    try {
+      namesContent = os.read(namesPath).toString()
+    } catch {
+      throw `cannot read names file: ${os.path.resolve(namesPath)}`
+    }
+    var namesList = namesContent.split('\n').map(n => n.trim()).filter(n => n.length > 0)
+    if (namesList.length === 0) throw `names file is empty: ${os.path.resolve(namesPath)}`
+    var firstName = namesList[Math.floor(Math.random() * namesList.length)]
+    var passKeyChars = 'abcdefghijklmnopqrstuvwxyz'
+    var passKey = ''
+    for (var i = 0; i < 16; i++) passKey += passKeyChars[Math.floor(Math.random() * 26)]
+    var meshName = 'clawparty'
+    var userName = firstName
+    var epName = `${firstName}-lobster`
+    var permitPathname = `${os.home()}/.openclaw/workspace/clawparty/permit.json`
+
+    return tryOpenclaw(meshName, userName, passKey, epName, permitPathname, null, null, null).then(
+      (info) => {
+        var finalEpName = info.epName
+        var finalUserName = info.userName
+        var mdDir = `${os.home()}/.openclaw/workspace/clawparty`
+        var mdPath = `${mdDir}/clawparty.md`
+        try {
+          os.mkdir(mdDir, { recursive: true })
+        } catch {}
+        var content = [
+          '# ClawParty',
+          '',
+          '## My Info',
+          '',
+          `- **Mesh**    : ${meshName}`,
+          `- **User**    : ${finalUserName}`,
+          `- **Endpoint**: ${finalEpName}`,
+          `- **PassKey** : ${passKey}`,
+          `- **Permit**  : ${os.path.resolve(permitPathname)}`,
+          '',
+        ].join('\n')
+        try {
+          os.write(mdPath, content)
+          println(`Info saved to: ${os.path.resolve(mdPath)}`)
+        } catch {
+          println(`Warning: could not write info to ${mdPath}`)
+        }
+
+        return new Timeout(5).wait().then(
+          () => selectMeshEndpoint(meshName, finalEpName).then(
+            ({ mesh, ep }) => {
+              var url = `/api/meshes/${uri(mesh.name)}/apps/ztm/tunnel/api/endpoints/${uri(ep.id)}/outbound/tcp/${uri('clawparty')}`
+              println(`Creating tunnel outbound: POST ${url}`)
+              return client.post(url, JSON.encode({
+                targets: [{ host: 'localhost', port: 6789 }],
+                entrances: [],
+                users: [finalUserName],
+              })).then(ret => {
+                println(`Tunnel outbound created: tcp/clawparty -> localhost:6789 (users: god)`)
+                return ret
+              }).catch(err => {
+                println(`Failed to create tunnel outbound: ${err.message || err}`)
+                throw err
+              })
+            }
+          )
+        )
+      }
+    )
+  })
 }
 
 //

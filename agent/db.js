@@ -260,6 +260,10 @@ function delMesh(name) {
   db.sql('DELETE FROM meshes WHERE name = ?')
     .bind(1, name)
     .exec()
+  var remaining = db.sql('SELECT COUNT(*) AS n FROM meshes').exec()[0]?.n || 0
+  if (remaining === 0) {
+    db.sql('DELETE FROM hubs').exec()
+  }
 }
 
 function recordToApp(rec) {
