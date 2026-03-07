@@ -191,4 +191,47 @@ ztm/terminal       builtin
 ztm/tunnel         builtin
 ```
 
+## API Token Authentication
+
+When the Agent is started with API token authentication enabled, all CLI requests to the Agent must include a valid token. There are three ways to specify the token:
+
+### Method 1: Environment Variable (Recommended)
+
+```sh
+# Set token for a single command
+ZTM_API_TOKEN=your_token ztm get mesh
+
+# Or set persistently in shell profile
+export ZTM_API_TOKEN=your_token
+ztm get mesh
+```
+
+### Method 2: Configuration File
+
+```sh
+# Save token to config file
+ztm config --token your_token
+
+# Verify configuration
+ztm config
+# Output:
+# Current agent: 127.0.0.1:7777
+# Default mesh: (none)
+# API token: (configured)
+```
+
+### Method 3: Start Agent with Token
+
+When starting the Agent, you can specify the API token:
+
+```sh
+# Run in foreground
+ztm run agent --listen 127.0.0.1:7777 --api-token your_token
+
+# Run as background service
+ztm start agent --listen 127.0.0.1:7777 --api-token your_token
+```
+
+The default API token is `enjoy-party` if not specified.
+
 In the [ZT-App Documentation](./ZT-App_zh.md), we will introduce each of these applications.

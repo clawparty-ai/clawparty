@@ -112,6 +112,8 @@ function doCommand(meshName, epName, argv, program) {
                                 Can be overridden by environment variable 'ZTM_AGENT'
           --mesh  <name>        Set the default mesh to operate when not specified
                                 Can be overridden by environment variable 'ZTM_MESH'
+          --token <token>       Set the default API token for agent requests
+                                Can be overridden by environment variable 'ZTM_API_TOKEN'
         `,
         notes: `Print the current configuration when no options are specified`,
         action: config,
@@ -121,7 +123,7 @@ function doCommand(meshName, epName, argv, program) {
         title: `Export or import the CA certificate`,
         usage: 'ca <import|export>',
         options: `
-          -d, --data  <dir>       Specify the location of ZTM storage (default: ~/.ztm)
+          -d, --data  <dir>       Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
               --cert  <filename>  Specify the certificate file to import or export
               --key   <filename>  Specify the private key file to import or export
         `,
@@ -144,7 +146,7 @@ function doCommand(meshName, epName, argv, program) {
         title: `Generate a permit for the root user`,
         usage: 'root',
         options: `
-          -d, --data          <dir>           Specify the location of ZTM storage (default: ~/.ztm)
+          -d, --data          <dir>           Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
           -n, --names         <host:port ...> Specify one or more hub addresses (host:port) that are accessible to agents
               --ca            <url>           Specify the location of an external CA service if any
               --pqc-signature <algorithm>     Specify the PQC signature algorithm such as 'ML-DSA-44'
@@ -182,9 +184,9 @@ function doCommand(meshName, epName, argv, program) {
         title: `Start running a hub, agent or app as background service`,
         usage: 'start <object type> [app name]',
         options: `
-          -d, --data              <dir>           Specify the location of ZTM storage (default: ~/.ztm)
+          -d, --data              <dir>           Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
                                                   Only applicable to hubs and agents
-          -l, --listen            <[ip:]port>     Specify the service listening port (default: 0.0.0.0:8888 for hubs, 127.0.0.1:7777 for agents)
+          -l, --listen            <[ip:]port>     Specify the service listening port (default: 0.0.0.0:8888 for hubs, 127.0.0.1:6789 for agents)
                                                   Only applicable to hubs and agents
           -n, --names             <host:port ...> Specify one or more hub addresses (host:port) that are accessible to agents
                                                   Only applicable to hubs
@@ -198,6 +200,8 @@ function doCommand(meshName, epName, argv, program) {
           -p, --permit            <pathname>      Specify an optional output filename for the root user's permit
                                                   Only applicable to hubs
               --proxy             <url>           Specify the forward proxy in form of [http|socks]://<host>:<port>
+                                                  Only applicable to agents
+              --api-token         <token>         Require this token for all /api requests (default: enjoy-party)
                                                   Only applicable to agents
 
               --pqc-key-exchange  <algorithm>     Specify the PQC key exchange algorithm such as 'ML-KEM-512'
@@ -249,8 +253,8 @@ function doCommand(meshName, epName, argv, program) {
         title: `Start running a hub or agent in foreground mode`,
         usage: 'run <object type>',
         options: `
-          -d, --data          <dir>             Specify the location of ZTM storage (default: ~/.ztm)
-          -l, --listen        <[ip:]port>       Specify the service listening port (default: 0.0.0.0:8888 for hubs, 127.0.0.1:7777 for agents)
+          -d, --data          <dir>             Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
+          -l, --listen        <[ip:]port>       Specify the service listening port (default: 0.0.0.0:8888 for hubs, 127.0.0.1:6789 for agents)
           -n, --names         <host:port ...>   Specify one or more hub addresses (host:port) that are accessible to agents
                                                 Only applicable to hubs
               --ca            <url>             Specify the location of an external CA service if any
@@ -266,6 +270,8 @@ function doCommand(meshName, epName, argv, program) {
               --join-as       <endpoint>        When joining a mesh, give the current endpoint a name
                                                 Only applicable to agents
               --proxy         <url>             Specify the forward proxy in form of [http|socks]://<host>:<port>
+                                                Only applicable to agents
+              --api-token     <token>           Require this token for all /api requests (default: enjoy-party)
                                                 Only applicable to agents
               --stun-server   <host[:port] ...> Specify one or more STUN servers for P2P NAT traversal (default: stun.l.google.com, stun1.l.google.com, stun2.l.google.com)
                                                 Only applicable to agents
@@ -350,7 +356,10 @@ function doCommand(meshName, epName, argv, program) {
           --as          <ep name>    Specify an endpoint name seen by others within the mesh
           --permit, -p  <pathname>   Point to a permit file
         `,
-        action: (args) => join(args['<mesh name>'], args['--as'], args['--permit']),
+        action: (args) => {
+          if (args['<mesh name>'] === 'party') return joinParty()
+          return join(args['<mesh name>'], args['--as'], args['--permit'])
+        },
       },
 
       {
@@ -427,6 +436,7 @@ function doCommand(meshName, epName, argv, program) {
             mesh     meshes
             hub      hubs
             endpoint endpoints ep
+            claw     claws
             file     files
             app      apps
         `,
@@ -443,6 +453,8 @@ function doCommand(meshName, epName, argv, program) {
             case 'endpoint':
             case 'endpoints':
             case 'ep':
+            case 'claw':
+            case 'claws':
               return selectMesh(meshName).then(mesh => getEndpoint(name, mesh))
             case 'file':
             case 'files':
@@ -678,11 +690,13 @@ function config(args) {
   var conf = {
     agent: args['--agent'],
     mesh: args['--mesh'],
+    token: args['--token'],
   }
   if (Object.values(conf).filter(i=>i).length === 0) {
     var c = client.config()
     println('Current agent:', c.agent)
     println('Default mesh:', c.mesh || '(none)')
+    println('API token:', c.token ? '(configured)' : '(none)')
   } else {
     client.config(conf)
   }
@@ -815,12 +829,96 @@ function tryOpenclaw(meshName, userName, passKey, epName, permitPathname, target
                   )
                 )
               }
+
+              return { meshName, userName, epName }
             }
           )
         }
       )
     }
   )
+}
+
+//
+// Command: joinParty
+//
+
+function joinParty() {
+  return client.get('/api/meshes').then(ret => {
+    var meshes = JSON.decode(ret)
+    if (meshes.length > 0) {
+      println('You have already joined clawparty, have fun!')
+      return
+    }
+
+    var namesPath = `${os.home()}/.openclaw/workspace/clawparty/names.txt`
+    var namesContent
+    try {
+      namesContent = os.read(namesPath).toString()
+    } catch {
+      throw `cannot read names file: ${os.path.resolve(namesPath)}`
+    }
+    var namesList = namesContent.split('\n').map(n => n.trim()).filter(n => n.length > 0)
+    if (namesList.length === 0) throw `names file is empty: ${os.path.resolve(namesPath)}`
+    var firstName = namesList[Math.floor(Math.random() * namesList.length)]
+    var passKeyChars = 'abcdefghijklmnopqrstuvwxyz'
+    var passKey = ''
+    for (var i = 0; i < 16; i++) passKey += passKeyChars[Math.floor(Math.random() * 26)]
+    var meshName = 'clawparty'
+    var userName = firstName
+    var epName = `${firstName}-lobster`
+    var permitPathname = `${os.home()}/.openclaw/workspace/clawparty/permit.json`
+
+    return tryOpenclaw(meshName, userName, passKey, epName, permitPathname, null, null, null).then(
+      (info) => {
+        var finalEpName = info.epName
+        var finalUserName = info.userName
+        var mdDir = `${os.home()}/.openclaw/workspace/clawparty`
+        var mdPath = `${mdDir}/clawparty.md`
+        try {
+          os.mkdir(mdDir, { recursive: true })
+        } catch {}
+        var content = [
+          '# ClawParty',
+          '',
+          '## My Info',
+          '',
+          `- **Mesh**    : ${meshName}`,
+          `- **User**    : ${finalUserName}`,
+          `- **Endpoint**: ${finalEpName}`,
+          `- **PassKey** : ${passKey}`,
+          `- **Permit**  : ${os.path.resolve(permitPathname)}`,
+          '',
+        ].join('\n')
+        try {
+          os.write(mdPath, content)
+          println(`Info saved to: ${os.path.resolve(mdPath)}`)
+        } catch {
+          println(`Warning: could not write info to ${mdPath}`)
+        }
+
+        return new Timeout(5).wait().then(
+          () => selectMeshEndpoint(meshName, finalEpName).then(
+            ({ mesh, ep }) => {
+              var url = `/api/meshes/${uri(mesh.name)}/apps/ztm/tunnel/api/endpoints/${uri(ep.id)}/outbound/tcp/${uri('clawparty')}`
+              println(`Creating tunnel outbound: POST ${url}`)
+              return client.post(url, JSON.encode({
+                targets: [{ host: 'localhost', port: 6789 }],
+                entrances: [],
+                users: [finalUserName],
+              })).then(ret => {
+                println(`Tunnel outbound created: tcp/clawparty -> localhost:6789 (users: god)`)
+                return ret
+              }).catch(err => {
+                println(`Failed to create tunnel outbound: ${err.message || err}`)
+                throw err
+              })
+            }
+          )
+        )
+      }
+    )
+  })
 }
 
 //
@@ -871,7 +969,7 @@ function label(mesh, ep, add, del) {
 
 function startHub(args) {
   var opts = {
-    '--data': args['--data'] || '~/.ztm',
+    '--data': args['--data'] || '~/.openclaw/workspace/clawparty',
     '--listen': args['--listen'] || '0.0.0.0:8888',
   };
   var COPY = [
@@ -904,11 +1002,12 @@ function startHub(args) {
 
 function startAgent(args) {
   var opts = {
-    '--data': args['--data'] || '~/.ztm',
-    '--listen': args['--listen'] || '127.0.0.1:7777',
+    '--data': args['--data'] || '~/.openclaw/workspace/clawparty',
+    '--listen': args['--listen'] || '127.0.0.1:6789',
   }
   var COPY = [
     '--proxy',
+    '--api-token',
     '--pqc-key-exchange',
     '--pqc-signature',
     '--stun-server',
@@ -940,7 +1039,7 @@ function startApp(name, mesh, ep) {
 }
 
 function initHubDB(path) {
-  var dbPath = path || '~/.ztm'
+  var dbPath = path || '~/.openclaw/workspace/clawparty'
   if (dbPath.startsWith('~/')) {
     dbPath = os.home() + dbPath.substring(1)
   }
@@ -1205,7 +1304,7 @@ function runHub(args, program) {
       var cmd = [program,
         '--pipy', 'repo://ztm/hub',
         '--args',
-        '--data', args['--data'] || '~/.ztm',
+        '--data', args['--data'] || '~/.openclaw/workspace/clawparty',
         '--listen', args['--listen'] || '0.0.0.0:8888',
       ]
       if ('--names' in args) {
@@ -1232,13 +1331,14 @@ function runAgent(args, program) {
     program,
     '--pipy', 'repo://ztm/agent',
     '--args',
-    '--data', args['--data'] || '~/.ztm',
-    '--listen', args['--listen'] || '127.0.0.1:7777',
+    '--data', args['--data'] || '~/.openclaw/workspace/clawparty',
+    '--listen', args['--listen'] || '127.0.0.1:6789',
   ]
   if ('--join' in args) cmd.push('--join', args['--join'])
   if ('--join-as' in args) cmd.push('--join-as', args['--join-as'])
   if ('--permit' in args) cmd.push('--permit', args['--permit'])
   if ('--proxy' in args) cmd.push('--proxy', args['--proxy'])
+  if ('--api-token' in args) cmd.push('--api-token', args['--api-token'])
   if ('--pqc-key-exchange' in args) cmd.push('--pqc-key-exchange', args['--pqc-key-exchange'])
   if ('--pqc-signature' in args) cmd.push('--pqc-signature', args['--pqc-signature'])
   if ('--stun-server' in args) cmd.push('--stun-server', args['--stun-server'])

@@ -6,8 +6,9 @@ if (!config || typeof config !== 'object') config = {}
 
 function getConfig() {
   return {
-    agent: config.agent || 'localhost:7777',
+    agent: config.agent || 'localhost:6789',
     mesh: config.mesh,
+    token: config.token,
   }
 }
 
@@ -22,6 +23,21 @@ function getHost() {
 
 function getMesh() {
   return os.env.ZTM_MESH || getConfig().mesh
+}
+
+function getToken() {
+  return os.env.ZTM_API_TOKEN || config.token || ''
+}
+
+function getHeaders() {
+  var token = getToken()
+  if (!token) return null
+  token = String(token).trim()
+  if (!token) return null
+  return {
+    authorization: `Bearer ${token}`,
+    'x-ztm-token': token,
+  }
 }
 
 function getAgent() {
@@ -53,6 +69,7 @@ export default {
     if (c) {
       if (c.agent) config.agent = c.agent
       if (c.mesh) config.mesh = c.mesh
+      if (c.token) config.token = c.token
       os.write(CONFIG_PATHNAME, JSON.encode(config, null, 2))
     } else {
       return getConfig()
@@ -62,7 +79,7 @@ export default {
   host: getHost,
   mesh: getMesh,
 
-  get: (path) => getAgent().request('GET', path).then(check),
-  post: (path, body) => getAgent().request('POST', path, null, body).then(check),
-  delete: (path) => getAgent().request('DELETE', path).then(check),
+  get: (path) => getAgent().request('GET', path, getHeaders()).then(check),
+  post: (path, body) => getAgent().request('POST', path, getHeaders(), body).then(check),
+  delete: (path) => getAgent().request('DELETE', path, getHeaders()).then(check),
 }
