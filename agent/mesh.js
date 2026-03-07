@@ -553,13 +553,17 @@ export default function (rootDir, listen, proxy, pqc, p2pCfg, config, onConfigUp
       if (offset) params.push(`offset=${offset}`)
       if (limit) params.push(`limit=${limit}`)
       var q = params.length > 0 ? '?' + params.join('&') : ''
+      console.log(`[discoverUsers] querying hub ${address} GET /api/users${q}`)
       return requestHub.spawn(
         new Message({ method: 'GET', path: `/api/users${q}` })
       ).then(
         function (res) {
           if (res && res.head.status === 200) {
-            return JSON.decode(res.body)
+            var users = JSON.decode(res.body)
+            console.log(`[discoverUsers] hub ${address} returned ${users.length} user(s):`, users.map(u => u.name).join(', ') || '(none)')
+            return users
           } else {
+            console.log(`[discoverUsers] hub ${address} returned status ${res?.head?.status}`)
             return []
           }
         }

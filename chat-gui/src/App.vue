@@ -123,6 +123,7 @@ const fetchMeshes = async () => {
       currentMesh.value = meshes.value[0].name
       currentMeshAgentUsername.value = meshes.value[0].agent?.username || ''
       await fetchChats()
+      await fetchUsers()
     }
   } catch (error) {
     console.error('获取 meshes 失败:', error)
@@ -328,17 +329,21 @@ const switchMesh = async (meshName) => {
   currentMeshAgentUsername.value = mesh?.agent?.username || ''
   chats.value = chats.value.filter(c => !c.isTemp)
   await fetchChats()
+  await fetchUsers()
 }
 
 const users = ref([])
 
 const fetchUsers = async () => {
+  console.log('[fetchUsers] currentMesh:', currentMesh.value)
   if (!currentMesh.value) return
   try {
+    console.log('[fetchUsers] calling getUsers for mesh:', currentMesh.value)
     const response = await chatService.getUsers(currentMesh.value)
+    console.log('[fetchUsers] response:', response.data)
     users.value = response.data
   } catch (error) {
-    console.error('获取用户列表失败:', error)
+    console.error('[fetchUsers] error:', error)
   }
 }
 

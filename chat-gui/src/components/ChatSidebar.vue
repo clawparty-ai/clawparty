@@ -54,42 +54,28 @@
       <div class="sidebar-section">
         <div class="section-header">
           <span class="section-arrow" :class="{ expanded: privateChatExpanded }" @click.stop="privateChatExpanded = !privateChatExpanded">▶</span>
-          <span class="section-title" @click="privateChatExpanded = !privateChatExpanded">Claw Party</span>
-          <button class="section-add" @click.stop="toggleUserPopup">+</button>
+          <span class="section-title" @click="privateChatExpanded = !privateChatExpanded">{{ currentMesh }}</span>
         </div>
         
-        <div v-if="showUserPopup" class="user-popup" :style="userPopupStyle">
-          <div class="user-popup-header">
-            <span>选择用户 (已选{{ selectedUsers.length }}人)</span>
-            <button class="close-btn" @click="showUserPopup = false">×</button>
-          </div>
-          <div class="user-list">
-            <div 
-              v-for="user in users" 
-              :key="user.name"
-              class="user-item"
-              :class="{ selected: isUserSelected(user) }"
-              @click="handleSelectUser(user)"
-            >
-              <input 
-                type="checkbox" 
-                :checked="isUserSelected(user)"
-                @click.stop
-                @change="handleSelectUser(user)"
-              >
-              <div class="user-avatar">{{ user.name[0] }}</div>
-              <span class="user-name">{{ user.name }}</span>
-              <span class="user-online-status" :class="{ online: user.endpoints?.instances?.[0]?.online }"></span>
-            </div>
-          </div>
-          <div v-if="selectedUsers.length >= 1" class="user-popup-footer">
-            <button class="create-group-btn" @click="handleCreateChat">
-              {{ selectedUsers.length === 1 ? '创建单聊' : `创建群组 (${selectedUsers.length}人)` }}
-            </button>
-          </div>
-        </div>
         
         <div v-show="privateChatExpanded" class="chat-list">
+          <div
+            v-for="user in users"
+            :key="'user-' + user.name"
+            class="chat-item"
+            :class="{ active: getChatIndex(user.name) === activeChat }"
+            @click="selectUser(user)"
+          >
+            <div class="chat-avatar-wrapper">
+              <div class="avatar-placeholder" :style="{ background: getAvatarColor(user.name) }">
+                {{ user.name[0].toUpperCase() }}
+              </div>
+              <span class="user-online-status" :class="{ online: user.endpoints?.instances?.[0]?.online }"></span>
+            </div>
+            <div class="chat-info">
+              <span class="chat-name">{{ user.name }}</span>
+            </div>
+          </div>
           <div 
             v-for="(chat, index) in filteredChats" 
             :key="chat.id"
@@ -136,62 +122,17 @@ const currentMesh = inject('currentMesh')
 const meshes = inject('meshes')
 const openclawAgents = inject('openclawAgents')
 const switchMesh = inject('switchMesh')
-const fetchUsers = inject('fetchUsers')
 const users = inject('users')
 const selectUser = inject('selectUser')
-const createGroupChat = inject('createGroupChat')
 
 const showDropdown = ref(false)
 const openclawExpanded = ref(true)
 const privateChatExpanded = ref(true)
-const showUserPopup = ref(false)
-const selectedUsers = ref([])
 const dropdownStyle = ref({})
-const userPopupStyle = ref({})
 const headerRef = ref(null)
 
 const toggleDropdown = () => {
   showDropdown.value = !showDropdown.value
-}
-
-const toggleUserPopup = async () => {
-  if (!showUserPopup.value) {
-    await fetchUsers()
-    selectedUsers.value = []
-  }
-  showUserPopup.value = !showUserPopup.value
-}
-
-const handleSelectUser = (user) => {
-  const index = selectedUsers.value.findIndex(u => u.name === user.name)
-  if (index === -1) {
-    selectedUsers.value.push(user)
-  } else {
-    selectedUsers.value.splice(index, 1)
-  }
-}
-
-const isUserSelected = (user) => {
-  return selectedUsers.value.some(u => u.name === user.name)
-}
-
-const handleCreateChat = async () => {
-  if (selectedUsers.value.length === 0) return
-  
-  if (selectedUsers.value.length === 1) {
-    await selectUser(selectedUsers.value[0])
-  } else {
-    await handleCreateGroup()
-  }
-  selectedUsers.value = []
-  showUserPopup.value = false
-}
-
-const handleCreateGroup = async () => {
-  if (selectedUsers.value.length < 2) return
-  
-  const groupName = selectedUsers.value.map(u => u.name).join(',')
-  await createGroupChat(selectedUsers.value, groupName)
 }
 
 const selectMesh = async (meshName) => {
@@ -202,9 +143,6 @@ const selectMesh = async (meshName) => {
 const handleClickOutside = (event) => {
   if (headerRef.value && !headerRef.value.contains(event.target) && !event.target.closest('.mesh-dropdown')) {
     showDropdown.value = false
-  }
-  if (!event.target.closest('.user-popup') && !event.target.closest('.section-add')) {
-    showUserPopup.value = false
   }
 }
 
@@ -379,119 +317,6 @@ const getChatIndex = (chatId, isOpenclaw = false) => {
   font-size: 11px;
 }
 
-.section-add {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 16px;
-  font-weight: 400;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.section-add:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
-.user-popup {
-  position: absolute;
-  top: 90px;
-  left: 8px;
-  right: 8px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 100;
-  max-height: 300px;
-  display: flex;
-  flex-direction: column;
-}
-
-.user-popup-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.user-popup-header span {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.close-btn {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 16px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.close-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.user-list {
-  overflow-y: auto;
-  max-height: 250px;
-}
-
-.user-item {
-  display: flex;
-  align-items: center;
-  padding: 10px 14px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.user-item:hover {
-  background: var(--bg-hover);
-}
-
-.user-item.selected {
-  background: #f0f0ff;
-}
-
-.user-item input[type="checkbox"] {
-  margin-right: 10px;
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-}
-
-.user-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  background: linear-gradient(135deg, #1d9bd1, #2eb67d);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 12px;
-  margin-right: 10px;
-}
-
-.user-name {
-  flex: 1;
-  font-size: 14px;
-  color: var(--text-primary);
-}
 
 .user-online-status {
   width: 8px;
@@ -504,27 +329,6 @@ const getChatIndex = (chatId, isOpenclaw = false) => {
   background: var(--slack-green);
 }
 
-.user-popup-footer {
-  padding: 12px 14px;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.create-group-btn {
-  width: 100%;
-  padding: 10px;
-  background: var(--slack-purple);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.create-group-btn:hover {
-  background: var(--slack-aubergine);
-}
 
 .chat-list {
   margin-top: 2px;
