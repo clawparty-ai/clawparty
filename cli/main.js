@@ -900,6 +900,7 @@ function joinParty() {
         return new Timeout(5).wait().then(
           () => selectMeshEndpoint(meshName, finalEpName).then(
             ({ mesh, ep }) => {
+              println(`Resolved mesh: ${mesh.name}, ep: ${ep.name} (${ep.id})`)
               var url = `/api/meshes/${uri(mesh.name)}/apps/ztm/tunnel/api/endpoints/${uri(ep.id)}/outbound/tcp/${uri('clawparty')}`
               println(`Creating tunnel outbound: POST ${url}`)
               return client.post(url, JSON.encode({
