@@ -320,7 +320,6 @@ const sendMessage = async () => {
   chat.time = time
   
   newMessage.value = ''
-  selectedAgent.value = ''
 }
 
 const switchMesh = async (meshName) => {

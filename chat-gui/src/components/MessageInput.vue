@@ -60,7 +60,7 @@
           :value="selectedAgent"
           @change="$emit('update:selectedAgent', $event.target.value)"
         >
-          <option value="">Agent to Agent</option>
+          <option value="">#{{chatName}} to Agent</option>
           <option 
             v-for="agent in agents" 
             :key="agent.id" 
