@@ -58,6 +58,56 @@ function open(pathname) {
       expires_at REAL NOT NULL
     )
   `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      username   TEXT PRIMARY KEY,
+      ep_name    TEXT NOT NULL,
+      pass_key   TEXT,
+      status     TEXT NOT NULL DEFAULT '注册中',
+      created_at REAL NOT NULL,
+      updated_at REAL NOT NULL
+    )
+  `)
+
+  // Migration: add pass_key column for existing databases
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN pass_key TEXT`)
+  } catch {}
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      time REAL NOT NULL,
+      username TEXT NOT NULL,
+      action TEXT NOT NULL,
+      operator TEXT,
+      detail TEXT
+    )
+  `)
+
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS user_log_username ON user_log(username)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS user_log_time ON user_log(time)`)
+  } catch {}
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS api_log (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      time      REAL NOT NULL,
+      method    TEXT NOT NULL,
+      path      TEXT NOT NULL,
+      client_ip TEXT,
+      status    INTEGER NOT NULL,
+      username  TEXT,
+      detail    TEXT
+    )
+  `)
+
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS api_log_time ON api_log(time)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS api_log_username ON api_log(username)`)
+  } catch {}
 }
 
 function allHubs() {
@@ -360,6 +410,145 @@ function delEviction(username) {
     .exec()
 }
 
+function recordToUser(rec) {
+  var epNames
+  try { epNames = JSON.parse(rec.ep_name) } catch {}
+  if (!(epNames instanceof Array)) epNames = rec.ep_name ? [rec.ep_name] : []
+  return {
+    username: rec.username,
+    epNames,
+    passKey: rec.pass_key || null,
+    status: rec.status,
+    createdAt: rec.created_at,
+    updatedAt: rec.updated_at,
+  }
+}
+
+function getUser(username) {
+  return db.sql('SELECT * FROM users WHERE username = ?')
+    .bind(1, username)
+    .exec()
+    .map(recordToUser)[0]
+}
+
+function allUsers() {
+  return db.sql('SELECT * FROM users ORDER BY created_at DESC')
+    .exec()
+    .map(recordToUser)
+}
+
+// Insert a new user; returns false if username already exists
+function createUser(username, epName, passKey) {
+  if (getUser(username)) return false
+  var t = Date.now() / 1000
+  db.sql('INSERT INTO users(username, ep_name, pass_key, status, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)')
+    .bind(1, username)
+    .bind(2, JSON.stringify([epName]))
+    .bind(3, passKey || null)
+    .bind(4, '注册中')
+    .bind(5, t)
+    .bind(6, t)
+    .exec()
+  return true
+}
+
+// Append a new ep_name to an existing user's ep_name list
+function addUserEpName(username, epName) {
+  var user = getUser(username)
+  if (!user) return false
+  var epNames = user.epNames
+  if (epNames.indexOf(epName) < 0) epNames.push(epName)
+  var t = Date.now() / 1000
+  db.sql('UPDATE users SET ep_name = ?, updated_at = ? WHERE username = ?')
+    .bind(1, JSON.stringify(epNames))
+    .bind(2, t)
+    .bind(3, username)
+    .exec()
+  return true
+}
+
+function setUserStatus(username, status) {
+  var t = Date.now() / 1000
+  db.sql('UPDATE users SET status = ?, updated_at = ? WHERE username = ?')
+    .bind(1, status)
+    .bind(2, t)
+    .bind(3, username)
+    .exec()
+}
+
+function addApiLog(method, path, clientIp, status, username, detail) {
+  var t = Date.now() / 1000
+  db.sql('INSERT INTO api_log(time, method, path, client_ip, status, username, detail) VALUES(?, ?, ?, ?, ?, ?, ?)')
+    .bind(1, t)
+    .bind(2, method)
+    .bind(3, path)
+    .bind(4, clientIp || null)
+    .bind(5, status)
+    .bind(6, username || null)
+    .bind(7, detail ? JSON.stringify(detail) : null)
+    .exec()
+}
+
+function getApiLog(username, limit) {
+  var rows
+  if (username) {
+    rows = db.sql('SELECT * FROM api_log WHERE username = ? ORDER BY time DESC LIMIT ?')
+      .bind(1, username)
+      .bind(2, limit || 100)
+      .exec()
+  } else {
+    rows = db.sql('SELECT * FROM api_log ORDER BY time DESC LIMIT ?')
+      .bind(1, limit || 100)
+      .exec()
+  }
+  return rows.map(r => ({
+    id: r.id,
+    time: r.time,
+    method: r.method,
+    path: r.path,
+    clientIp: r.client_ip || null,
+    status: r.status,
+    username: r.username || null,
+    detail: r.detail ? JSON.parse(r.detail) : null,
+  }))
+}
+
+// action: 'cert_issued' | 'connect' | 'disconnect' | 'evict' | 'evict_removed'
+// operator: who triggered the action (null means the user themselves)
+// detail: optional JSON string with extra context
+function addUserLog(username, action, operator, detail) {
+  var t = Date.now() / 1000
+  db.sql('INSERT INTO user_log(time, username, action, operator, detail) VALUES(?, ?, ?, ?, ?)')
+    .bind(1, t)
+    .bind(2, username)
+    .bind(3, action)
+    .bind(4, operator || null)
+    .bind(5, detail ? JSON.stringify(detail) : null)
+    .exec()
+}
+
+function getUserLog(username, limit) {
+  var rows
+  if (username) {
+    rows = db.sql('SELECT * FROM user_log WHERE username = ? ORDER BY time DESC LIMIT ?')
+      .bind(1, username)
+      .bind(2, limit || 100)
+      .exec()
+  } else {
+    rows = db.sql('SELECT * FROM user_log ORDER BY time DESC LIMIT ?')
+      .bind(1, limit || 100)
+      .exec()
+  }
+  return rows.map(r => ({
+    id: r.id,
+    time: r.time,
+    username: r.username,
+    action: r.action,
+    operator: r.operator || null,
+    detail: r.detail ? JSON.parse(r.detail) : null,
+  }))
+}
+
 export default {
   open,
   allHubs,
@@ -383,4 +572,13 @@ export default {
   getEviction,
   setEviction,
   delEviction,
+  addUserLog,
+  getUserLog,
+  addApiLog,
+  getApiLog,
+  getUser,
+  allUsers,
+  createUser,
+  addUserEpName,
+  setUserStatus,
 }

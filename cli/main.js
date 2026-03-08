@@ -193,9 +193,11 @@ function doCommand(meshName, epName, argv, program) {
               --ca                <url>           Specify the location of an external CA service if any
                                                   Only applicable to hubs
 
-              --max-agents        <number>        Specify the maximum number of agents the hub can handle
+              --max-agents          <number>        Specify the maximum number of agents the hub can handle
                                                   Only applicable to hubs
-              --max-sessions      <number>        Specify the maximum number of forwarding sessions the hub can handle
+              --max-sessions        <number>        Specify the maximum number of forwarding sessions the hub can handle
+                                                  Only applicable to hubs
+              --enable-registration [ip:port]       Enable the open registration API (default: 0.0.0.0:5678)
                                                   Only applicable to hubs
           -p, --permit            <pathname>      Specify an optional output filename for the root user's permit
                                                   Only applicable to hubs
@@ -259,10 +261,12 @@ function doCommand(meshName, epName, argv, program) {
                                                 Only applicable to hubs
               --ca            <url>             Specify the location of an external CA service if any
                                                 Only applicable to hubs
-              --max-agents    <number>          Specify the maximum number of agents the hub can handle
-                                                Only applicable to hubs
-              --max-sessions  <number>          Specify the maximum number of forwarding sessions the hub can handle
-                                                Only applicable to hubs
+              --max-agents          <number>          Specify the maximum number of agents the hub can handle
+                                                    Only applicable to hubs
+              --max-sessions        <number>          Specify the maximum number of forwarding sessions the hub can handle
+                                                    Only applicable to hubs
+              --enable-registration [ip:port]         Enable the open registration API (default: 0.0.0.0:5678)
+                                                    Only applicable to hubs
           -p, --permit        <pathname>        An optional output filename for generating the root user's permit when starting a hub
                                                 Or an input filename to load the user permit when joining a mesh while starting an agent
               --join          <mesh>            If specified, join a mesh with the given name
@@ -326,6 +330,8 @@ function doCommand(meshName, epName, argv, program) {
           --pass-key        <pass key>        Specify a pass key
           --permit          <pathname>        Specify an output file to write the user permit to
                                               Print the user permit to stdout if not specified
+          --reg-url         <url>             Specify a custom registration server URL
+                                              (default: https://clawparty.flomesh.io:7779)
           For inbound end:
 
           --master          <master>          Specify master endpoint name
@@ -343,7 +349,7 @@ function doCommand(meshName, epName, argv, program) {
           var type = args['<service type>']
           switch (type) {
             case 'openclaw':
-              return tryOpenclaw(args['--mesh-name'], args['--user-name'], args['--pass-key'], args['--ep-name'], args['--permit'], args['--targets'], args['--master'], args['--listen'])
+              return tryOpenclaw(args['--mesh-name'], args['--user-name'], args['--pass-key'], args['--ep-name'], args['--permit'], args['--targets'], args['--master'], args['--listen'], args['--reg-url'])
             default: return invalidServiceType(type, 'try')
           }
         }
@@ -355,9 +361,11 @@ function doCommand(meshName, epName, argv, program) {
         options: `
           --as          <ep name>    Specify an endpoint name seen by others within the mesh
           --permit, -p  <pathname>   Point to a permit file
+          --reg-url     <url>        Specify a custom registration server URL for 'join party'
+                                     (default: https://clawparty.flomesh.io:7779)
         `,
         action: (args) => {
-          if (args['<mesh name>'] === 'party') return joinParty()
+          if (args['<mesh name>'] === 'party') return joinParty(args['--reg-url'])
           return join(args['<mesh name>'], args['--as'], args['--permit'])
         },
       },
@@ -765,7 +773,7 @@ function root(dataDir, pqcSigAlg, caURL, names) {
 // Command: tryOpenclaw
 //
 
-function tryOpenclaw(meshName, userName, passKey, epName, permitPathname, targets, master, listen) {
+function tryOpenclaw(meshName, userName, passKey, epName, permitPathname, targets, master, listen, regUrl) {
   if (!meshName) throw 'mesh name not specified (with option --mesh-name)'
   if (!userName) throw 'user name not specified (with option --user-name)'
   if (!epName) throw 'endpoint name not specified (with option --ep-name)'
@@ -776,19 +784,23 @@ function tryOpenclaw(meshName, userName, passKey, epName, permitPathname, target
   return client.get('/api/identity').then(
     ret => {
       var publicKey = ret.toString()
+      println(`Sending invite request for user '${userName}' (ep: ${epName})...`)
       return tricli.post('/invite', 
         JSON.encode({ 
           PublicKey: publicKey, 
           UserName: userName,
           EpName: epName,
           PassKey: passKey
-        })
+        }),
+        regUrl || null
       ).then(
         ret => {
           var res = JSON.decode(ret)
 
           userName = res.UserName
           epName = res.EpName
+
+          println(`Permit received for user '${userName}' (ep: ${epName})`)
 
           if (!permitPathname) {
             permitPathname = `${os.home()}/.ztm.permit.json`
@@ -804,6 +816,7 @@ function tryOpenclaw(meshName, userName, passKey, epName, permitPathname, target
           println(`Ep Name: ${epName}`)
           println(`Permit file saved to: ${os.path.resolve(permitPathname)}`)
 
+          println(`Joining mesh '${meshName}'...`)
           return join(meshName, epName, permitPathname).then(
             () => {
               if(targets){
@@ -843,10 +856,14 @@ function tryOpenclaw(meshName, userName, passKey, epName, permitPathname, target
 // Command: joinParty
 //
 
-function joinParty() {
+function joinParty(regUrl) {
+  println(`Joining clawparty...`)
+  if (regUrl) {
+    println(`Registration server: ${regUrl}`)
+  }
   return client.get('/api/meshes').then(ret => {
     var meshes = JSON.decode(ret)
-    if (meshes.length > 0) {
+    if (meshes.length > 0 && !regUrl) {
       println('You have already joined clawparty, have fun!')
       return
     }
@@ -869,7 +886,10 @@ function joinParty() {
     var epName = `${firstName}-lobster`
     var permitPathname = `${os.home()}/.openclaw/workspace/clawparty/permit.json`
 
-    return tryOpenclaw(meshName, userName, passKey, epName, permitPathname, null, null, null).then(
+    println(`Picked user name: ${userName}, endpoint: ${epName}`)
+    println(`Requesting permit from registration server...`)
+
+    return tryOpenclaw(meshName, userName, passKey, epName, permitPathname, null, null, null, regUrl).then(
       (info) => {
         var finalEpName = info.epName
         var finalUserName = info.userName
@@ -896,27 +916,7 @@ function joinParty() {
         } catch {
           println(`Warning: could not write info to ${mdPath}`)
         }
-
-        return new Timeout(5).wait().then(
-          () => selectMeshEndpoint(meshName, finalEpName).then(
-            ({ mesh, ep }) => {
-              println(`Resolved mesh: ${mesh.name}, ep: ${ep.name} (${ep.id})`)
-              var url = `/api/meshes/${uri(mesh.name)}/apps/ztm/tunnel/api/endpoints/${uri(ep.id)}/outbound/tcp/${uri('clawparty')}`
-              println(`Creating tunnel outbound: POST ${url}`)
-              return client.post(url, JSON.encode({
-                targets: [{ host: 'localhost', port: 6789 }],
-                entrances: [],
-                users: [finalUserName],
-              })).then(ret => {
-                println(`Tunnel outbound created: tcp/clawparty -> localhost:6789 (users: god)`)
-                return ret
-              }).catch(err => {
-                println(`Failed to create tunnel outbound: ${err.message || err}`)
-                throw err
-              })
-            }
-          )
-        )
+        println(`Successfully joined clawparty as '${finalUserName}' (endpoint: ${finalEpName})`)
       }
     )
   })
@@ -982,6 +982,7 @@ function startHub(args) {
     '--max-sessions',
     '--pqc-key-exchange',
     '--pqc-signature',
+    '--enable-registration',
   ]
   var SAVE = ['--data', '--listen', ...COPY]
   COPY.forEach(opt => {
@@ -1322,6 +1323,10 @@ function runHub(args, program) {
       if ('--max-sessions' in args) cmd.push('--max-sessions', args['--max-sessions'])
       if ('--pqc-key-exchange' in args) cmd.push('--pqc-key-exchange', args['--pqc-key-exchange'])
       if ('--pqc-signature' in args) cmd.push('--pqc-signature', args['--pqc-signature'])
+      if ('--enable-registration' in args) {
+        cmd.push('--enable-registration')
+        if (args['--enable-registration']) cmd.push(args['--enable-registration'])
+      }
       return exec(cmd)
     }
   )

@@ -1,22 +1,27 @@
 var CONFIG_PATHNAME = `${os.home()}/.ztm.conf`
 
+var DEFAULT_REG_URL = 'https://clawparty.flomesh.io:7779'
+
 var config = null
 try { config = JSON.decode(os.read(CONFIG_PATHNAME)) } catch {}
 if (!config || typeof config !== 'object') config = {}
 
 function getConfig() {
   return {
-    trial: config.trial || 'https://ztm-portal.flomesh.io:7779',
+    trial: config.trial || DEFAULT_REG_URL,
   }
 }
 
 var trial = null
 
-function getHost() {
-  var host = os.env.ZTM_TRIAL || getConfig().trial
-  if (host.startsWith(':')) return 'https://ztm-portal.flomesh.io' + host
-  if (!Number.isNaN(Number.parseInt(host))) return 'https://ztm-portal.flomesh.io:' + host
-  if (!host.includes('://')) return 'https://' + host
+function getHost(regUrl) {
+  var host = regUrl || os.env.ZTM_TRIAL || getConfig().trial
+  if (host.startsWith(':')) return 'https://clawparty.flomesh.io' + host
+  if (!Number.isNaN(Number.parseInt(host))) return 'https://clawparty.flomesh.io:' + host
+  // bare host:port (no scheme) — use http for custom reg URLs, https for default
+  if (!host.includes('://')) {
+    return (regUrl ? 'http://' : 'https://') + host
+  }
   return host
 }
 
@@ -31,16 +36,19 @@ function getTlsOptions(host) {
   return null
 }
 
-function getTrial() {
-  if (!trial) {
-    var host = getHost()
-    var options = getTlsOptions(host)
-    
-    var url = new URL(host)
-    var target = url.hostname + (url.port ? ':' + url.port : '')
-    
-    trial = new http.Agent(target, options)
-  }
+function makeAgent(regUrl) {
+  var host = getHost(regUrl)
+  var options = getTlsOptions(host)
+  var url = new URL(host)
+  var target = url.hostname + (url.port ? ':' + url.port : '')
+  return { agent: new http.Agent(target, options), host, url }
+}
+
+function getTrial(regUrl) {
+  // When a custom regUrl is given, always create a fresh agent for that URL.
+  // Otherwise, reuse the cached default agent.
+  if (regUrl) return makeAgent(regUrl)
+  if (!trial) trial = makeAgent(null)
   return trial
 }
 
@@ -62,6 +70,12 @@ function check(res) {
 }
 
 export default {
-  host: getHost,
-  post: (path, body) => getTrial().request('POST', path, { 'Content-Type': 'application/json' }, body).then(check),
+  host: (regUrl) => getHost(regUrl),
+  post: (path, body, regUrl) => {
+    var t = getTrial(regUrl)
+    var base = t.url ? t.url.pathname : ''
+    if (base.endsWith('/')) base = base.slice(0, -1)
+    var urlPath = base + path
+    return t.agent.request('POST', urlPath, { 'Content-Type': 'application/json' }, body).then(check)
+  },
 }

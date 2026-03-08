@@ -62,6 +62,14 @@ var routes = Object.entries({
     'GET': () => getUsers,
   },
 
+  '/api/user-log': {
+    'GET': () => getUserLog,
+  },
+
+  '/api/user-log/{username}': {
+    'GET': () => getUserLogByUser,
+  },
+
   '/api/endpoints/{ep}': {
     'GET': () => getEndpoint,
     'CONNECT': () => connectEndpoint,
@@ -268,6 +276,7 @@ function main() {
             --max-sessions        <number>          Specify the maximum number of forwarding sessions the hub can handle
             --pqc-key-exchange    <algorithm>       Specify the PQC key exchange algorithm such as 'ML-KEM-512'
             --pqc-signature       <algorithm>       Specify the PQC signature algorithm such as 'ML-DSA-44'
+            --enable-registration [ip:port]         Enable the open registration API (default listen: 0.0.0.0:5678)
       ` + (cluster ? `
             --bootstrap           <host:port ...>   Specify the bootstrap addresses of the hub cluster
             --zone                <zone>            Specify the zone that the hub is deployed in
@@ -336,7 +345,9 @@ function main() {
             ca.signCertificate(name, pkey).then(crt => myCert = crt),
           ])
         }).then(() => {
-          start(args['--listen'] || '0.0.0.0:8888', args['--bootstrap'])
+          var regArg = args['--enable-registration']
+          var regListen = (regArg && regArg !== '') ? regArg : (regArg === '' ? '0.0.0.0:5678' : null)
+          start(args['--listen'] || '0.0.0.0:8888', args['--bootstrap'], regListen)
         })
       }
     }],
@@ -373,6 +384,7 @@ function isEndpointOutdated(ep) {
 }
 
 var $ctx = null
+var $regCtx = null
 var $params = null
 var $endpoint = null
 var $hub = null
@@ -400,7 +412,7 @@ var $trafficLinkRecv
 // Start hub service
 //
 
-function start(listen, bootstrap) {
+function start(listen, bootstrap, registrationListen) {
   db.allFiles().forEach(f => {
     files[f.pathname] = makeFileInfo(f.hash, f.size, f.time, f.since)
   })
@@ -527,6 +539,30 @@ function start(listen, bootstrap) {
     )
   )
 
+  if (registrationListen) {
+    pipy.listen(registrationListen, { idleTimeout: 60 }, $=>$
+      .onStart(
+        function (conn) {
+          $regCtx = { ip: conn.remoteAddress }
+        }
+      )
+      .demuxHTTP().to($=>$
+        .pipe(
+          function (evt) {
+            if (evt instanceof MessageStart) {
+              var head = evt.head
+              if (head.method === 'POST' && head.path === '/invite') return postInvite
+              db.addApiLog(head.method, head.path, $regCtx?.ip, 404, null, null)
+              return regNotFound
+            }
+          },
+          () => $regCtx
+        )
+      )
+    )
+    logInfo(`Hub registration API listening at ${registrationListen}`)
+  }
+
   if (cluster) {
     cluster.bootstrap(bootstrap).then(() => {
       logInfo(`Hub ${myID} started in zone '${myZone}' listening at ${listen}`)
@@ -604,6 +640,150 @@ var getHubLog = pipeline($=>$
   )
 )
 
+var regNotFound = pipeline($=>$
+  .replaceMessage(new Message({ status: 404 }, 'Not found'))
+)
+
+// Registration API (open, no TLS) — POST /invite
+// Body: { PublicKey, UserName, EpName, PassKey }
+// Response: { UserName, EpName, Permit }
+var postInvite = pipeline($=>$
+  .replaceMessage(
+    function (req) {
+      var clientIp = $regCtx?.ip || null
+
+      var body
+      try {
+        body = JSON.decode(req.body)
+      } catch {
+        db.addApiLog('POST', '/invite', clientIp, 400, null, { error: 'invalid JSON body' })
+        return regResponse(400, 'invalid JSON body')
+      }
+
+      var publicKeyPEM = body?.PublicKey
+      var userName = body?.UserName
+      var epName = body?.EpName
+
+      if (!publicKeyPEM || typeof publicKeyPEM !== 'string') {
+        db.addApiLog('POST', '/invite', clientIp, 400, null, { error: 'missing PublicKey' })
+        return regResponse(400, 'missing PublicKey')
+      }
+      if (!userName || typeof userName !== 'string') {
+        db.addApiLog('POST', '/invite', clientIp, 400, null, { error: 'missing UserName' })
+        return regResponse(400, 'missing UserName')
+      }
+      if (!epName || typeof epName !== 'string') {
+        db.addApiLog('POST', '/invite', clientIp, 400, userName, { error: 'missing EpName' })
+        return regResponse(400, 'missing EpName')
+      }
+
+      var passKey = typeof body?.PassKey === 'string' ? body.PassKey : ''
+
+      // Resolve userName and epName, handling conflicts
+      var existingUser = db.getUser(userName)
+      if (existingUser) {
+        if (existingUser.passKey !== passKey) {
+          // Different passKey — assign a new unique username with 4-digit suffix
+          userName = uniqueUserName(userName)
+          epName = userName + '-lobster'
+        } else {
+          // Same passKey — same user, adding a new endpoint under this username
+          if (existingUser.epNames.indexOf(epName) >= 0) {
+            // ep already registered — assign a new unique epName with 4-digit suffix
+            epName = uniqueEpName(epName, existingUser.epNames)
+          }
+        }
+      }
+
+      // Reject evicted users (check after possible userName reassignment)
+      var evictTime = evictions[userName]
+      if (evictTime) {
+        db.addApiLog('POST', '/invite', clientIp, 403, userName, { error: 'user is evicted' })
+        return regResponse(403, 'user is evicted')
+      }
+
+      // Create user record or append epName for existing user
+      if (!existingUser || existingUser.passKey !== passKey) {
+        db.createUser(userName, epName, passKey)
+      } else {
+        db.addUserEpName(userName, epName)
+        db.setUserStatus(userName, '注册中')
+      }
+
+      var pkey
+      try {
+        pkey = new crypto.PublicKey(publicKeyPEM)
+      } catch {
+        db.setUserStatus(userName, '注册失败')
+        db.addApiLog('POST', '/invite', clientIp, 400, userName, { error: 'invalid PublicKey' })
+        return regResponse(400, 'invalid PublicKey')
+      }
+
+      return Promise.all([
+        ca.signCertificate(userName, pkey),
+        ca.getCertificate('ca'),
+      ]).then(([userCert, caCertObj]) => {
+        if (!userCert || !caCertObj) {
+          db.setUserStatus(userName, '注册失败')
+          db.addApiLog('POST', '/invite', clientIp, 500, userName, { error: 'certificate signing failed' })
+          return regResponse(500, 'certificate signing failed')
+        }
+
+        var hubAddresses = getMyNames(null)
+        if (!hubAddresses || hubAddresses.length === 0) {
+          hubAddresses = ['127.0.0.1:8888']
+        }
+
+        var permit = {
+          ca: caCertObj.toPEM().toString(),
+          agent: {
+            name: epName,
+            certificate: userCert.toPEM().toString(),
+          },
+          bootstraps: hubAddresses,
+        }
+
+        db.setUserStatus(userName, 'permit-issued')
+        db.addApiLog('POST', '/invite', clientIp, 201, userName, { epName, bootstraps: hubAddresses })
+        db.addUserLog(userName, 'cert_issued', null, { via: 'registration', epName })
+        logInfo(`Registration: issued certificate for user '${userName}' (ep: ${epName})`)
+
+        return new Message(
+          { status: 201, headers: { 'Content-Type': 'application/json' } },
+          JSON.encode({
+            UserName: userName,
+            EpName: epName,
+            Permit: JSON.encode(permit).toString(),
+          })
+        )
+      })
+    }
+  )
+)
+
+function regResponse(status, message) {
+  return new Message(
+    { status, headers: { 'Content-Type': 'application/json' } },
+    JSON.encode({ message })
+  )
+}
+
+function randSuffix() {
+  return (Math.floor(Math.random() * 9000) + 1000).toString()
+}
+
+function uniqueUserName(base) {
+  var candidate = base + '-' + randSuffix()
+  if (!db.getUser(candidate)) return candidate
+  return uniqueUserName(base)
+}
+
+function uniqueEpName(base, existingEpNames) {
+  var candidate = base + '-' + randSuffix()
+  if (existingEpNames.indexOf(candidate) < 0) return candidate
+  return uniqueEpName(base, existingEpNames)
+}
+
 var signCertificate = pipeline($=>$
   .replaceMessage(
     function (req) {
@@ -612,7 +792,11 @@ var signCertificate = pipeline($=>$
       if (name !== user && user !== 'root') return response(403)
       var pkey = new crypto.PublicKey(req.body)
       return ca.signCertificate(name, pkey).then(
-        cert => response(201, cert.toPEM().toString())
+        cert => {
+          var operator = (user !== name) ? user : null
+          db.addUserLog(name, 'cert_issued', operator, null)
+          return response(201, cert.toPEM().toString())
+        }
       )
     }
   )
@@ -651,7 +835,7 @@ var postEviction = pipeline($=>$
       if (cluster) {
         return response(cluster.updateEviction(myID, name, time) ? 201 : 200)
       } else {
-        return response(updateEviction(name, time, expr) ? 201 : 200)
+        return response(updateEviction(name, time, expr, $ctx.username) ? 201 : 200)
       }
     }
   )
@@ -666,7 +850,7 @@ var deleteEviction = pipeline($=>$
       if (cluster) {
         cluster.updateEviction(myID, name, null)
       } else {
-        updateEviction(name, null)
+        updateEviction(name, null, null, $ctx.username)
       }
       return response(204)
     }
@@ -824,6 +1008,32 @@ var getUsers = pipeline($=>$
       ).filter(
         (_, i) => offset <= i && i < offset + limit
       ))
+    }
+  )
+)
+
+var getUserLog = pipeline($=>$
+  .replaceData()
+  .replaceMessage(
+    function (req) {
+      if ($ctx.username !== 'root') return response(403)
+      var url = new URL(req.head.path)
+      var limit = Number.parseInt(url.searchParams.get('limit')) || 100
+      return response(200, db.getUserLog(null, limit))
+    }
+  )
+)
+
+var getUserLogByUser = pipeline($=>$
+  .replaceData()
+  .replaceMessage(
+    function (req) {
+      var caller = $ctx.username
+      var name = URL.decodeComponent($params.username)
+      if (caller !== 'root' && caller !== name) return response(403)
+      var url = new URL(req.head.path)
+      var limit = Number.parseInt(url.searchParams.get('limit')) || 100
+      return response(200, db.getUserLog(name, limit))
     }
   )
 )
@@ -1180,11 +1390,19 @@ var connectEndpoint = pipeline($=>$
         makeEndpoint(id).passiveSessions.add(sid)
         logInfo(`Endpoint ${endpointName(id)} established session ${sid}`)
       } else {
+        var isNew = !(id in sessions) || sessions[id].size === 0
         makeEndpoint(id).name = name
         sessions[id] ??= new Set
         sessions[id].add($hub)
         collectMyNames($ctx.via)
         logInfo(`Endpoint ${endpointName(id)} joined, connections = ${sessions[id].size}`)
+        if (isNew) {
+          db.addUserLog($ctx.username, 'connect', null, { endpoint: id, name })
+          var userRec = db.getUser($ctx.username)
+          if (userRec && userRec.status !== 'activated') {
+            db.setUserStatus($ctx.username, 'activated')
+          }
+        }
       }
       return response(200)
     }
@@ -1200,7 +1418,12 @@ var connectEndpoint = pipeline($=>$
         logInfo(`Endpoint ${endpointName(id)} dropped session ${sid}`)
       } else {
         sessions[id]?.delete?.($hub)
-        logInfo(`Endpoint ${endpointName(id)} left, connections = ${sessions[id]?.size || 0}`)
+        var remaining = sessions[id]?.size || 0
+        logInfo(`Endpoint ${endpointName(id)} left, connections = ${remaining}`)
+        if (remaining === 0) {
+          var ep = endpoints[id]
+          db.addUserLog($ctx.username, 'disconnect', null, { endpoint: id, name: ep?.name })
+        }
       }
     })
   )
@@ -1661,7 +1884,7 @@ function listEndpoints(id, name, user, keyword, limit, offset) {
   return list
 }
 
-function updateEviction(username, time, expiration) {
+function updateEviction(username, time, expiration, operator) {
   if (username === 'root') return false
   var old = db.getEviction(username)
   if (old && old.time >= time) return false
@@ -1676,9 +1899,14 @@ function updateEviction(username, time, expiration) {
         conn.evict()
       }
     })
+    db.addUserLog(username, 'evict', operator || null, { evicted_at: time, expires_at: expiration })
+    if (db.getUser(username)) db.setUserStatus(username, 'evicted')
   } else {
     db.delEviction(username)
     delete evictions[username]
+    db.addUserLog(username, 'evict_removed', operator || null, null)
+    var userRec = db.getUser(username)
+    if (userRec && userRec.status === 'evicted') db.setUserStatus(username, 'activated')
   }
   return true
 }

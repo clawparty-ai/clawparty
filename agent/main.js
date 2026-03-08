@@ -908,7 +908,22 @@ function main(listen, apiToken) {
             req => gui.serve(req) || new Message({ status: 404 })
           ),
           'unauthorized': $=>$.replaceData().replaceMessage(
-            response(401, { status: 401, message: 'unauthorized' })
+            req => {
+              println(`${formatLocalTime()} [WRN] [api] ${$clientIp} ${req.head.path} - unauthorized`)
+              try {
+                db.logApi(
+                  $clientIp,
+                  req.head.method + ' ' + req.head.path,
+                  req.head.headers,
+                  '',
+                  null,
+                  JSON.stringify({ status: 401, message: 'unauthorized' })
+                )
+              } catch (e) {
+                console.error('[api_log] unauthorized log failed:', e)
+              }
+              return response(401, { status: 401, message: 'unauthorized' })
+            }
           ),
         }
       )
