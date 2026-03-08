@@ -1,6 +1,14 @@
 <template>
   <main class="chat-main">
-    <ChatHeader :chat="chat" :openclawSessions="openclawSessions" @search="handleSearch" @switchSession="$emit('switchSession', $event)" />
+    <ChatHeader
+      :chat="chat"
+      :openclawSessions="openclawSessions"
+      :currentUserName="currentUserName"
+      @search="handleSearch"
+      @switchSession="$emit('switchSession', $event)"
+      @deleteGroup="$emit('deleteGroup', $event)"
+      @leaveGroup="$emit('leaveGroup', $event)"
+    />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
         <span>{{ currentDate }}</span>
@@ -96,7 +104,7 @@ const props = defineProps({
   }
 })
 
-defineEmits(['send', 'update:modelValue', 'update:selectedAgent', 'switchSession'])
+defineEmits(['send', 'update:modelValue', 'update:selectedAgent', 'switchSession', 'deleteGroup', 'leaveGroup'])
 
 const messagesContainer = ref(null)
 let pollTimer = null

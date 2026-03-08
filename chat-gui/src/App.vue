@@ -2,7 +2,7 @@
   <div v-if="showTokenDialog" class="token-dialog-wrap">
     <div class="token-dialog">
       <h2>Enter Access Token</h2>
-      <p>请输入 ztm agent 的 API token</p>
+      <p>Enter the API token for your ztm agent</p>
       <input
         v-model="tokenInput"
         type="password"
@@ -34,6 +34,8 @@
       v-model:selectedAgent="selectedAgent"
       @send="sendMessage"
       @switchSession="(sessionId) => switchOpenclawSession(chats[activeChat], sessionId)"
+      @deleteGroup="handleDeleteGroup"
+      @leaveGroup="handleLeaveGroup"
     />
     <div v-else class="empty-state">
       <div class="empty-icon">
@@ -82,15 +84,15 @@ const formatTime = (timestamp) => {
     return date.getHours().toString().padStart(2, '0') + ':' + 
            date.getMinutes().toString().padStart(2, '0')
   } else if (diff < 172800000) {
-    return '昨天'
+    return 'Yesterday'
   } else {
-    return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
 }
 
 const parseChatData = (data) => {
   return data.map(item => {
-    const name = item.peer || item.name || '未知'
+    const name = item.peer || item.name || 'Unknown'
     const latestMsg = item.latest?.message?.text || ''
     const firstLine = latestMsg.split('\n')[0].substring(0, 30)
     const isGroup = !!item.group
@@ -126,7 +128,7 @@ const fetchMeshes = async () => {
       await fetchUsers()
     }
   } catch (error) {
-    console.error('获取 meshes 失败:', error)
+    console.error('Failed to fetch meshes:', error)
   }
 }
 
@@ -162,7 +164,7 @@ const fetchOpenclawAgents = async () => {
       }
     })
   } catch (error) {
-    console.error('获取 OpenClaw agents 失败:', error)
+    console.error('Failed to fetch OpenClaw agents:', error)
   }
 }
 
@@ -207,7 +209,7 @@ const fetchChats = async () => {
       }
     }
   } catch (error) {
-    console.error('获取聊天列表失败:', error)
+    console.error('Failed to fetch chats:', error)
   }
 }
 
@@ -276,7 +278,7 @@ const sendMessage = async () => {
         if (typingIndex !== -1) {
           chat.messages.splice(typingIndex, 1)
         }
-        let replyText = '响应超时，请稍后刷新。'
+        let replyText = 'Response timed out, please refresh.'
         if (replyText) {
           const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
           chat.messages.push({
@@ -296,7 +298,7 @@ const sendMessage = async () => {
       await chatService.sendMessage(currentMesh.value, chat.name, text)
     }
   } catch (error) {
-    console.error('发送消息失败:', error)
+    console.error('Failed to send message:', error)
   } finally {
     sending.value = false
   }
@@ -383,7 +385,7 @@ const selectOpenclawAgent = async (agent) => {
           const parsed = typeof rawData === 'string' ? JSON.parse(rawData) : rawData
           sessions = parsed?.sessions || []
         } catch (e) {
-          console.error('解析 sessions 失败:', e)
+          console.error('Failed to parse sessions:', e)
         }
         openclawSessions.value = sessions
         chat.sessions = sessions
@@ -394,7 +396,7 @@ const selectOpenclawAgent = async (agent) => {
           try {
             historyData = JSON.parse(`[${historyResponse.data.replaceAll('\n',',')}{}]`)
           } catch (e) {
-            console.error('解析 history 失败:', e)
+            console.error('Failed to parse history:', e)
           }
 					chat.messages = [];
           historyData.filter((n)=>n.type=='message').forEach((n,i)=>{
@@ -413,7 +415,7 @@ const selectOpenclawAgent = async (agent) => {
         }
         chat.isTemp = false
       } catch (error) {
-        console.error('获取 sessions 失败:', error)
+        console.error('Failed to fetch sessions:', error)
       }
     }
   }
@@ -426,17 +428,17 @@ const switchOpenclawSession = async (chat, sessionId) => {
     try {
       data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
     } catch (e) {
-      console.error('解析 history 失败:', e)
+      console.error('Failed to parse history:', e)
     }
     chat.messages = data?.messages || []
     chat.sessionId = sessionId
   } catch (error) {
-    console.error('获取历史消息失败:', error)
+    console.error('Failed to fetch message history:', error)
   }
 }
 
 const createGroupChat = async (selectedUsers, groupName) => {
-  if (!currentMesh.value || !currentMeshAgentUsername.value || selectedUsers.length < 2) return
+  if (!currentMesh.value || !currentMeshAgentUsername.value || selectedUsers.length < 1) return
   
   const creator = currentMeshAgentUsername.value
   const groupId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -453,7 +455,7 @@ const createGroupChat = async (selectedUsers, groupName) => {
       members: members
     })
     
-    await chatService.sendGroupMessage(currentMesh.value, creator, groupId, `${groupName} 已创建`)
+    await chatService.sendGroupMessage(currentMesh.value, creator, groupId, `Group "${groupName}" created`)
     
     await fetchChats()
     
@@ -462,7 +464,29 @@ const createGroupChat = async (selectedUsers, groupName) => {
       activeChat.value = chats.value.indexOf(newChat)
     }
   } catch (error) {
-    console.error('创建群组失败:', error)
+    console.error('Failed to create group:', error)
+  }
+}
+
+const handleDeleteGroup = async (chat) => {
+  if (!confirm(`Delete group "${chat.name}"? This cannot be undone.`)) return
+  try {
+    await chatService.deleteGroup(currentMesh.value, chat.creator, chat.groupId)
+    await fetchChats()
+    activeChat.value = null
+  } catch (error) {
+    console.error('Failed to delete group:', error)
+  }
+}
+
+const handleLeaveGroup = async (chat) => {
+  if (!confirm(`Leave group "${chat.name}"?`)) return
+  try {
+    await chatService.leaveGroup(currentMesh.value, chat.creator, chat.groupId)
+    await fetchChats()
+    activeChat.value = null
+  } catch (error) {
+    console.error('Failed to leave group:', error)
   }
 }
 
@@ -534,7 +558,7 @@ const initAuth = async () => {
 
   setApiToken('')
   tokenInput.value = ''
-  tokenError.value = 'token 无效，请重新输入'
+    tokenError.value = 'Invalid token, please try again'
   showTokenDialog.value = true
 }
 
@@ -548,7 +572,7 @@ const submitToken = async () => {
   try {
     const ok = await verifyToken(token)
     if (!ok) {
-      tokenError.value = 'token 无效'
+      tokenError.value = 'Invalid token'
       return
     }
     showTokenDialog.value = false

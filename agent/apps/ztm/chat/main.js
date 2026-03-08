@@ -1,8 +1,9 @@
 import initAPI from './api.js'
 import initCLI from './cli.js'
+import db from '../../../db.js'
 
 export default function ({ app, mesh, utils }) {
-  var api = initAPI({ app, mesh })
+  var api = initAPI({ app, mesh, db })
   var cli = initCLI({ app, mesh, utils, api })
 
   var $ctx
@@ -79,6 +80,24 @@ export default function ({ app, mesh, utils }) {
         return api.setGroup(creator, group, JSON.decode(req.body)).then(
           ret => response(ret ? 201 : 403)
         )
+      }),
+
+      // Creator: DELETE destroys the group for everyone
+      // Member:  DELETE ?leave=1 exits the group locally
+      'DELETE': responder((params, req) => {
+        var creator = URL.decodeComponent(params.creator)
+        var group = URL.decodeComponent(params.group)
+        var url = new URL(req.head.path)
+        var leave = url.searchParams.get('leave') === '1'
+        if (leave) {
+          return api.leaveGroup(creator, group).then(
+            ret => response(ret ? 204 : 404)
+          )
+        } else {
+          return api.delGroup(creator, group).then(
+            ret => response(ret ? 204 : 403)
+          )
+        }
       }),
     },
 

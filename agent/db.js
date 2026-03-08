@@ -77,6 +77,28 @@ function open(pathname) {
       token   TEXT NOT NULL DEFAULT 'join-party'
     )
   `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_log (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      time       REAL    NOT NULL,
+      mesh       TEXT    NOT NULL,
+      chat_type  TEXT    NOT NULL,
+      chat_id    TEXT    NOT NULL,
+      chat_name  TEXT,
+      creator    TEXT,
+      sender     TEXT    NOT NULL,
+      event      TEXT    NOT NULL,
+      content    TEXT,
+      members    TEXT
+    )
+  `)
+
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS chat_log_mesh_chat ON chat_log(mesh, chat_type, chat_id)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS chat_log_time ON chat_log(time)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS chat_log_sender ON chat_log(sender)`)
+  } catch {}
 }
 
 function allZones() {
@@ -435,6 +457,65 @@ function delKey(name) {
     .exec()
 }
 
+// event: 'message' | 'group_create' | 'group_delete' | 'group_leave'
+// chat_type: 'peer' | 'group'
+function logChat(mesh, chatType, chatId, chatName, creator, sender, event, content, members) {
+  var t = Date.now() / 1000
+  db.sql(`
+    INSERT INTO chat_log(time, mesh, chat_type, chat_id, chat_name, creator, sender, event, content, members)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(1, t)
+    .bind(2, mesh || '')
+    .bind(3, chatType)
+    .bind(4, chatId)
+    .bind(5, chatName || null)
+    .bind(6, creator || null)
+    .bind(7, sender)
+    .bind(8, event)
+    .bind(9, content || null)
+    .bind(10, members ? JSON.stringify(members) : null)
+    .exec()
+}
+
+function getChatLog(mesh, chatType, chatId, limit) {
+  var rows
+  if (chatId) {
+    rows = db.sql(`
+      SELECT * FROM chat_log
+      WHERE mesh = ? AND chat_type = ? AND chat_id = ?
+      ORDER BY time DESC LIMIT ?
+    `)
+      .bind(1, mesh || '')
+      .bind(2, chatType)
+      .bind(3, chatId)
+      .bind(4, limit || 200)
+      .exec()
+  } else {
+    rows = db.sql(`
+      SELECT * FROM chat_log
+      WHERE mesh = ?
+      ORDER BY time DESC LIMIT ?
+    `)
+      .bind(1, mesh || '')
+      .bind(2, limit || 200)
+      .exec()
+  }
+  return rows.map(r => ({
+    id: r.id,
+    time: r.time,
+    mesh: r.mesh,
+    chatType: r.chat_type,
+    chatId: r.chat_id,
+    chatName: r.chat_name || null,
+    creator: r.creator || null,
+    sender: r.sender,
+    event: r.event,
+    content: r.content || null,
+    members: r.members ? JSON.parse(r.members) : null,
+  }))
+}
+
 export default {
   open,
   allZones,
@@ -461,4 +542,6 @@ export default {
   setKey,
   delKey,
   logApi,
+  logChat,
+  getChatLog,
 }

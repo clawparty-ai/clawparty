@@ -1,4 +1,4 @@
-export default function ({ app, mesh }) {
+export default function ({ app, mesh, db }) {
   var chats = []
 
   function findPeerChat(peer) {
@@ -44,6 +44,20 @@ export default function ({ app, mesh }) {
         chat.messages.push(msg)
         if (sender !== app.username) chat.newCount++
         if (time > chat.updateTime) chat.updateTime = time
+        // Write to chat_log — only for messages from others (own messages are logged in add*Message)
+        if (sender !== app.username) {
+          try {
+            if (chat.peer) {
+              db.logChat(app.mesh, 'peer', chat.peer, null, null, sender, 'message',
+                typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
+                null)
+            } else if (chat.group) {
+              db.logChat(app.mesh, 'group', chat.group, chat.name, chat.creator, sender, 'message',
+                typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
+                null)
+            }
+          } catch {}
+        }
       }
     })
   }
@@ -292,9 +306,13 @@ export default function ({ app, mesh }) {
     var dirname = `/shared/${app.username}/publish/peers/${peer}/messages`
     return mesh.acl(dirname, { users: { [peer]: 'readonly' }}).then(
       () => publishMessage(dirname, message)
-    ).then(
-      () => true
-    )
+    ).then(() => {
+      try {
+        db.logChat(app.mesh, 'peer', peer, null, null, app.username, 'message',
+          typeof message === 'string' ? message : JSON.stringify(message), null)
+      } catch {}
+      return true
+    })
   }
 
   function getGroup(creator, group) {
@@ -314,15 +332,62 @@ export default function ({ app, mesh }) {
   function setGroup(creator, group, info) {
     if (creator !== app.username) return Promise.resolve(false)
     var chat = findGroupChat(creator, group)
+    var isNew = !chat
     if (!chat) chat = newGroupChat(creator, group)
     if (info.name) chat.name = info.name
     if (info.members instanceof Array) chat.members = info.members
     var dirname = `/shared/${creator}/publish/groups/${creator}/${group}`
     return mesh.acl(dirname, { users: Object.fromEntries(chat.members.map(name => [name, 'readonly'])) }).then(
       () => mesh.write(os.path.join(dirname, 'info.json'), JSON.encode(chat))
-    ).then(
-      () => true
-    )
+    ).then(() => {
+      try {
+        db.logChat(app.mesh, 'group', group, chat.name, creator, app.username,
+          isNew ? 'group_create' : 'group_update', null, chat.members)
+      } catch {}
+      return true
+    })
+  }
+
+  function delGroup(creator, group) {
+    if (creator !== app.username) return Promise.resolve(false)
+    var chat = findGroupChat(creator, group)
+    if (!chat) return Promise.resolve(false)
+    var dirname = `/shared/${creator}/publish/groups/${creator}/${group}`
+    // Remove from mesh filesystem
+    return mesh.dir(dirname).then(files => {
+      return Promise.all(files.map(f => mesh.unlink(os.path.join(dirname, f))))
+    }).then(() => mesh.unlink(os.path.join(dirname, 'info.json'))).then(() => {
+      // Remove from in-memory list
+      var idx = chats.indexOf(chat)
+      if (idx >= 0) chats.splice(idx, 1)
+      try {
+        db.logChat(app.mesh, 'group', group, chat.name, creator, app.username,
+          'group_delete', null, chat.members)
+      } catch {}
+      return true
+    }).catch(() => {
+      // Even if unlink fails, remove from memory and log
+      var idx = chats.indexOf(chat)
+      if (idx >= 0) chats.splice(idx, 1)
+      try {
+        db.logChat(app.mesh, 'group', group, chat.name, creator, app.username,
+          'group_delete', null, chat.members)
+      } catch {}
+      return true
+    })
+  }
+
+  function leaveGroup(creator, group) {
+    var chat = findGroupChat(creator, group)
+    if (!chat) return Promise.resolve(false)
+    // Non-creator: just remove from local in-memory list
+    var idx = chats.indexOf(chat)
+    if (idx >= 0) chats.splice(idx, 1)
+    try {
+      db.logChat(app.mesh, 'group', group, chat.name, creator, app.username,
+        'group_leave', null, chat.members)
+    } catch {}
+    return Promise.resolve(true)
   }
 
   function addGroupMessage(creator, group, message) {
@@ -332,9 +397,13 @@ export default function ({ app, mesh }) {
     var dirname = `/shared/${app.username}/publish/groups/${creator}/${group}`
     return mesh.acl(dirname, { users: Object.fromEntries(chat.members.map(name => [name, 'readonly'])) }).then(
       () => publishMessage(os.path.join(dirname, 'messages'), message)
-    ).then(
-      () => true
-    )
+    ).then(() => {
+      try {
+        db.logChat(app.mesh, 'group', group, chat.name, creator, app.username, 'message',
+          typeof message === 'string' ? message : JSON.stringify(message), null)
+      } catch {}
+      return true
+    })
   }
 
   function addFile(data) {
@@ -365,6 +434,8 @@ export default function ({ app, mesh }) {
     allGroupMessages,
     getGroup,
     setGroup,
+    delGroup,
+    leaveGroup,
     addGroupMessage,
     addFile,
     getFile,

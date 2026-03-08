@@ -127,6 +127,14 @@ export const chatService = {
   
   createGroup(meshName, creator, groupId, data) {
     return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}`, data)
+  },
+
+  deleteGroup(meshName, creator, groupId) {
+    return api.delete(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}`)
+  },
+
+  leaveGroup(meshName, creator, groupId) {
+    return api.delete(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}?leave=1`)
   }
 }
 
