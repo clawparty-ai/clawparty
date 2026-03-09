@@ -15,7 +15,7 @@ function getConfig() {
 var agent = null
 
 function getHost() {
-  var host = os.env.ZTM_AGENT || getConfig().agent
+  var host = os.env.ZTM_CONFIG || os.env.ZTM_AGENT || getConfig().agent
   if (host.startsWith(':')) return 'localhost' + host
   if (!Number.isNaN(Number.parseInt(host))) return 'localhost:' + host
   return host
@@ -78,6 +78,7 @@ export default {
 
   host: getHost,
   mesh: getMesh,
+  headers: getHeaders,
 
   get: (path) => getAgent().request('GET', path, getHeaders()).then(check),
   post: (path, body) => getAgent().request('POST', path, getHeaders(), body).then(check),

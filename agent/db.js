@@ -79,6 +79,16 @@ function open(pathname) {
   `)
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_peer (
+      mesh             TEXT NOT NULL,
+      peer             TEXT NOT NULL,
+      auto_reply       INTEGER NOT NULL DEFAULT 0,
+      auto_reply_agent TEXT NOT NULL DEFAULT 'main',
+      PRIMARY KEY (mesh, peer)
+    )
+  `)
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS chat_log (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       time       REAL    NOT NULL,
@@ -457,6 +467,55 @@ function delKey(name) {
     .exec()
 }
 
+function getChatPeer(mesh, peer) {
+  var row = db.sql('SELECT * FROM chat_peer WHERE mesh = ? AND peer = ?')
+    .bind(1, mesh)
+    .bind(2, peer)
+    .exec()[0]
+  if (!row) return null
+  return {
+    mesh: row.mesh,
+    peer: row.peer,
+    autoReply: row.auto_reply === 1,
+    autoReplyAgent: row.auto_reply_agent,
+  }
+}
+
+function setChatPeer(mesh, peer, config) {
+  var old = getChatPeer(mesh, peer)
+  if (old) {
+    var autoReply = 'autoReply' in config ? (config.autoReply ? 1 : 0) : (old.autoReply ? 1 : 0)
+    var autoReplyAgent = config.autoReplyAgent || old.autoReplyAgent
+    db.sql('UPDATE chat_peer SET auto_reply = ?, auto_reply_agent = ? WHERE mesh = ? AND peer = ?')
+      .bind(1, autoReply)
+      .bind(2, autoReplyAgent)
+      .bind(3, mesh)
+      .bind(4, peer)
+      .exec()
+  } else {
+    var autoReply = config.autoReply ? 1 : 0
+    var autoReplyAgent = config.autoReplyAgent || 'main'
+    db.sql('INSERT INTO chat_peer(mesh, peer, auto_reply, auto_reply_agent) VALUES(?, ?, ?, ?)')
+      .bind(1, mesh)
+      .bind(2, peer)
+      .bind(3, autoReply)
+      .bind(4, autoReplyAgent)
+      .exec()
+  }
+}
+
+function allChatPeers(mesh) {
+  return db.sql('SELECT * FROM chat_peer WHERE mesh = ?')
+    .bind(1, mesh)
+    .exec()
+    .map(row => ({
+      mesh: row.mesh,
+      peer: row.peer,
+      autoReply: row.auto_reply === 1,
+      autoReplyAgent: row.auto_reply_agent,
+    }))
+}
+
 // event: 'message' | 'group_create' | 'group_delete' | 'group_leave'
 // chat_type: 'peer' | 'group'
 function logChat(mesh, chatType, chatId, chatName, creator, sender, event, content, members) {
@@ -544,4 +603,7 @@ export default {
   logApi,
   logChat,
   getChatLog,
+  getChatPeer,
+  setChatPeer,
+  allChatPeers,
 }

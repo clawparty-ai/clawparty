@@ -308,7 +308,7 @@ function getAppLog(mesh, ep, provider, app) {
 
 function connectApp(mesh, provider, app) {
   var m = meshes[mesh]
-  if (!m) return null
+  if (!m) return Promise.resolve(null)
   return m.connectApp(provider, app, m.username)
 }
 

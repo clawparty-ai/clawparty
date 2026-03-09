@@ -182,8 +182,9 @@ const fetchChats = async () => {
       const newChatNames = new Set(newChats.map(c => c.name))
       
       newChats.forEach(newChat => {
-        const existingIndex = chats.value.findIndex(c => c.name === newChat.name && !c.isOpenclaw)
+        const existingIndex = chats.value.findIndex(c => c.name === newChat.name && !c.isOpenclaw && !c.isGroup)
         if (existingIndex !== -1) {
+          chats.value[existingIndex].id = newChat.id
           chats.value[existingIndex].time = newChat.time
           chats.value[existingIndex].lastMessage = newChat.lastMessage
           chats.value[existingIndex].updated = newChat.updated
@@ -497,6 +498,7 @@ provide('fetchUsers', fetchUsers)
 provide('users', users)
 provide('selectUser', selectUser)
 provide('createGroupChat', createGroupChat)
+provide('currentMeshAgentUsername', currentMeshAgentUsername)
 
 const startChatsPolling = () => {
   stopChatsPolling()

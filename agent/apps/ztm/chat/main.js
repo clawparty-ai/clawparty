@@ -2,8 +2,31 @@ import initAPI from './api.js'
 import initCLI from './cli.js'
 import db from '../../../db.js'
 
+var $openclawCmd
+var $openclawOutput
+var openclawPipeline = pipeline($=>$
+  .onStart(cmd => { $openclawCmd = cmd; return new Data })
+  .exec(() => $openclawCmd, {
+    onExit: (code, err) => {
+      if (err) err.toString().split('\n').filter(Boolean).forEach(
+        line => console.error('[openclaw]', line)
+      )
+      return new StreamEnd
+    }
+  })
+  .replaceStreamStart(evt => [new MessageStart, evt])
+  .replaceStreamEnd(() => new MessageEnd)
+  .replaceMessage(msg => {
+    $openclawOutput = msg?.body?.toString?.() || ''
+    return new StreamEnd
+  })
+  .onEnd(() => $openclawOutput)
+)
+
 export default function ({ app, mesh, utils }) {
-  var api = initAPI({ app, mesh, db })
+  var spawnOpenclaw = (cmd) => openclawPipeline.spawn(cmd)
+
+  var api = initAPI({ app, mesh, db, spawnOpenclaw })
   var cli = initCLI({ app, mesh, utils, api })
 
   var $ctx
@@ -122,6 +145,25 @@ export default function ({ app, mesh, utils }) {
           ret => response(ret ? 201 : 404)
         )
       }),
+    },
+
+    '/api/peers/{peer}/auto-reply': {
+      'GET': responder((params) => {
+        var peer = URL.decodeComponent(params.peer)
+        return Promise.resolve(response(200, api.getPeerConfig(peer)))
+      }),
+
+      'POST': responder((params, req) => {
+        var peer = URL.decodeComponent(params.peer)
+        var body
+        try { body = JSON.decode(req.body) } catch { body = {} }
+        api.setPeerConfig(peer, body)
+        return Promise.resolve(response(200, api.getPeerConfig(peer)))
+      }),
+    },
+
+    '/api/auto-reply': {
+      'GET': responder(() => Promise.resolve(response(200, api.allPeerConfigs()))),
     },
 
     '/api/files': {

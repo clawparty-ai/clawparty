@@ -52,6 +52,19 @@
         <span class="org-online-dot" :class="{ online: mesh.agent?.connected }"></span>
         <span class="org-active-bar" v-if="activeOrg === mesh.name"></span>
       </div>
+
+      <div class="org-rail-spacer"></div>
+
+      <div class="org-rail-bottom-spacer"></div>
+
+      <!-- Profile icon -->
+      <div
+        class="org-icon profile-icon"
+        :title="currentMeshAgentUsername || 'My Profile'"
+      >
+        <span class="profile-letter">{{ (currentMeshAgentUsername || '?')[0].toUpperCase() }}</span>
+        <div class="profile-tooltip">{{ currentMeshAgentUsername || 'My Profile' }}</div>
+      </div>
     </nav>
 
     <!-- Right: member list panel -->
@@ -191,12 +204,14 @@
               {{ user.name[0].toUpperCase() }}
             </div>
             <span class="item-name">{{ user.name }}</span>
+            <span v-if="getChatUpdated(user.name) > 0" class="unread-badge">{{ getChatUpdated(user.name) > 99 ? '99+' : getChatUpdated(user.name) }}</span>
             <span class="item-status" :class="{ online: user.endpoints?.instances?.[0]?.online }"></span>
           </div>
 
-          <!-- Non-group chats (fallback for any non-openclaw, non-group chats) -->
+          <!-- Non-group chats: only show peers not already in the users list -->
           <div
             v-for="chat in dmChats"
+            v-show="!users.find(u => u.name === chat.name)"
             :key="chat.id"
             class="panel-item"
             :class="{ active: getChatIndex(chat.id) === activeChat }"
@@ -233,6 +248,7 @@ const switchMesh = inject('switchMesh')
 const users = inject('users')
 const selectUser = inject('selectUser')
 const createGroupChat = inject('createGroupChat')
+const currentMeshAgentUsername = inject('currentMeshAgentUsername')
 
 // Active org
 const activeOrg = ref('agents')
@@ -255,6 +271,11 @@ const groupChats = computed(() =>
 const dmChats = computed(() =>
   props.chats.filter(c => !c.isGroup && !c.isOpenclaw)
 )
+
+const getChatUpdated = (userName) => {
+  const chat = props.chats.find(c => c.name === userName && !c.isGroup && !c.isOpenclaw)
+  return chat?.updated || 0
+}
 
 const getChatIndex = (chatId, isOpenclaw = false) => {
   return props.chats.findIndex(c => c.id === chatId && Boolean(c.isOpenclaw) === isOpenclaw)
@@ -785,6 +806,63 @@ const handleCreateGroup = async () => {
   justify-content: center;
   padding: 0 5px;
   flex-shrink: 0;
+}
+
+.org-rail-spacer {
+  flex: 1;
+}
+
+.org-rail-bottom-spacer {
+  width: 32px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 4px 0;
+}
+
+.profile-icon {
+  position: relative;
+  background: rgba(255, 255, 255, 0.2);
+  cursor: default;
+}
+
+.profile-icon:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.profile-letter {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.profile-tooltip {
+  display: none;
+  position: absolute;
+  left: calc(100% + 10px);
+  bottom: 0;
+  background: #1a1d21;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 6px 10px;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  z-index: 100;
+}
+
+.profile-tooltip::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  bottom: 10px;
+  border: 5px solid transparent;
+  border-right-color: #1a1d21;
+}
+
+.profile-icon:hover .profile-tooltip {
+  display: block;
 }
 
 @media (max-width: 768px) {

@@ -12,6 +12,7 @@ try {
         -d, --data              <dir>         Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
         -l, --listen            <[ip:]port>   Specify the agent's listening port (default: 127.0.0.1:6789)
             --api-token         <token>       Require this token for all /api requests (default: enjoy-party)
+            --no-auth                         Skip API authentication (not recommended for production)
             --join              <mesh>        If specified, join a mesh with the given name
             --join-as           <endpoint>    When joining a mesh, give the current endpoint a name
         -p, --permit            <filename>    When joining a mesh, use the provided permit file
@@ -77,6 +78,7 @@ try {
         }
 
         var apiToken = args['--api-token'] || os.env.ZTM_API_TOKEN || 'enjoy-party'
+        var noAuth = args['--no-auth'] || false
 
         db.open(os.path.join(dbPath, 'ztm.db'))
         api.init(dbPath, listen, args['--proxy'], pqc, p2pConfig)
@@ -93,7 +95,7 @@ try {
           })
         }
 
-        main(listen, apiToken)
+        main(listen, apiToken, noAuth)
       }
     }]
   })
@@ -103,7 +105,7 @@ try {
   pipy.exit(-1)
 }
 
-function main(listen, apiToken) {
+function main(listen, apiToken, noAuth) {
   var gui = new http.Directory('gui')
 
   function makeOpenclawPipeline(cmd) {
@@ -804,6 +806,7 @@ function main(listen, apiToken) {
   }
 
   function isAuthorized(head) {
+    if (noAuth) return true
     var directToken = getHeader(head, 'x-ztm-token')
     if (directToken && directToken === apiToken) return true
     var authorization = getHeader(head, 'authorization')

@@ -276,7 +276,9 @@ function doCommand(meshName, epName, argv, program) {
               --proxy         <url>             Specify the forward proxy in form of [http|socks]://<host>:<port>
                                                 Only applicable to agents
               --api-token     <token>           Require this token for all /api requests (default: enjoy-party)
-                                                Only applicable to agents
+                                                  Only applicable to agents
+              --no-auth                       Skip API authentication (not recommended for production)
+                                                  Only applicable to agents
               --stun-server   <host[:port] ...> Specify one or more STUN servers for P2P NAT traversal (default: stun.l.google.com, stun1.l.google.com, stun2.l.google.com)
                                                 Only applicable to agents
               --p2p-port      <port>            Specify the P2P listening port (default: 17778)
@@ -1345,6 +1347,7 @@ function runAgent(args, program) {
   if ('--permit' in args) cmd.push('--permit', args['--permit'])
   if ('--proxy' in args) cmd.push('--proxy', args['--proxy'])
   if ('--api-token' in args) cmd.push('--api-token', args['--api-token'])
+  if ('--no-auth' in args) cmd.push('--no-auth')
   if ('--pqc-key-exchange' in args) cmd.push('--pqc-key-exchange', args['--pqc-key-exchange'])
   if ('--pqc-signature' in args) cmd.push('--pqc-signature', args['--pqc-signature'])
   if ('--stun-server' in args) cmd.push('--stun-server', args['--stun-server'])
@@ -2067,6 +2070,7 @@ function callApp(argv, mesh, ep) {
         new Message({
           method: 'CONNECT',
           path: url,
+          headers: client.headers() || {},
         })
       ).to($=>$
         .muxHTTP().to($=>$

@@ -1,5 +1,55 @@
-export default function ({ app, mesh, db }) {
+export default function ({ app, mesh, db, spawnOpenclaw }) {
   var chats = []
+
+  function getPeerConfig(peer) {
+    return db.getChatPeer(mesh.name, peer) || { peer, autoReply: false, autoReplyAgent: 'main' }
+  }
+
+  function setPeerConfig(peer, config) {
+    db.setChatPeer(mesh.name, peer, config)
+  }
+
+  function allPeerConfigs() {
+    return db.allChatPeers(mesh.name)
+  }
+
+  function notifyAutoReplySetup(chat) {
+    var hint = `Auto-reply is currently disabled for this conversation. ` +
+      `You can enable it with: clawparty chat auto-reply ${chat.peer} --enable [--agent <name>]`
+    var time = Date.now()
+    chat.messages.push({ time, message: { text: hint }, sender: app.username, isSystemHint: true })
+    if (time > chat.updateTime) chat.updateTime = time
+  }
+
+  function triggerAutoReply(chat, msg) {
+    if (!spawnOpenclaw) return
+    if (!chat.peer) return
+    var peerConfig = getPeerConfig(chat.peer)
+    if (!peerConfig.autoReply) return
+    var agentName = peerConfig.autoReplyAgent || 'main'
+    var text = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
+    var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--json']
+    console.info('[chat auto-reply] calling openclaw:', cmd.join(' '))
+    spawnOpenclaw(cmd).then(
+      output => {
+        console.info('[chat auto-reply] openclaw output:', output)
+        var replyText
+        try {
+          var parsed = JSON.parse(output.split('\n').join(''))
+          replyText = parsed?.payloads?.[0]?.text ||
+                      parsed?.result?.payloads?.[0]?.text ||
+                      parsed?.message || parsed?.content || parsed?.text
+        } catch {}
+        if (!replyText) replyText = output.split('\n').join('').trim()
+        if (!replyText) return
+        console.info('[chat auto-reply] reply to', chat.peer, ':', replyText)
+        addPeerMessage(chat.peer, { text: replyText })
+      },
+      err => {
+        console.error('[chat auto-reply] openclaw error:', err?.toString?.() || err)
+      }
+    )
+  }
 
   function findPeerChat(peer) {
     return chats.find(c => c.peer === peer)
@@ -46,13 +96,16 @@ export default function ({ app, mesh, db }) {
         if (time > chat.updateTime) chat.updateTime = time
         // Write to chat_log — only for messages from others (own messages are logged in add*Message)
         if (sender !== app.username) {
+          var msgText = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
+          console.info('[chat recv]', app.username, '<-', sender, ':', msgText)
+          triggerAutoReply(chat, msg)
           try {
             if (chat.peer) {
-              db.logChat(app.mesh, 'peer', chat.peer, null, null, sender, 'message',
+              db.logChat(mesh.name, 'peer', chat.peer, null, null, sender, 'message',
                 typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
                 null)
             } else if (chat.group) {
-              db.logChat(app.mesh, 'group', chat.group, chat.name, chat.creator, sender, 'message',
+              db.logChat(mesh.name, 'group', chat.group, chat.name, chat.creator, sender, 'message',
                 typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
                 null)
             }
@@ -122,7 +175,20 @@ export default function ({ app, mesh, db }) {
           try {
             var messages = JSON.decode(data)
             messages.forEach(msg => msg.sender = sender)
+            var hasIncoming = messages.some(m => m.sender !== app.username)
+            if (hasIncoming && !initial) {
+              var existingConfig = db.getChatPeer(mesh.name, chat.peer)
+              if (!existingConfig) {
+                db.setChatPeer(mesh.name, chat.peer, { autoReply: false, autoReplyAgent: 'main' })
+              }
+            }
             mergeMessages(chat, messages)
+            if (hasIncoming && !initial) {
+              var cfg = db.getChatPeer(mesh.name, chat.peer)
+              if (cfg && !cfg.autoReply && !chat.messages.some(m => m.isSystemHint)) {
+                notifyAutoReplySetup(chat)
+              }
+            }
           } catch {}
           if (initial) chat.newCount = 0
         }
@@ -303,12 +369,14 @@ export default function ({ app, mesh, db }) {
 
   function addPeerMessage(peer, message) {
     if (!peer) return Promise.resolve(false)
+    var msgText = typeof message === 'string' ? message : (message?.text || JSON.stringify(message))
+    console.info('[chat send]', app.username, '->', peer, ':', msgText)
     var dirname = `/shared/${app.username}/publish/peers/${peer}/messages`
     return mesh.acl(dirname, { users: { [peer]: 'readonly' }}).then(
       () => publishMessage(dirname, message)
     ).then(() => {
       try {
-        db.logChat(app.mesh, 'peer', peer, null, null, app.username, 'message',
+        db.logChat(mesh.name, 'peer', peer, null, null, app.username, 'message',
           typeof message === 'string' ? message : JSON.stringify(message), null)
       } catch {}
       return true
@@ -341,7 +409,7 @@ export default function ({ app, mesh, db }) {
       () => mesh.write(os.path.join(dirname, 'info.json'), JSON.encode(chat))
     ).then(() => {
       try {
-        db.logChat(app.mesh, 'group', group, chat.name, creator, app.username,
+        db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
           isNew ? 'group_create' : 'group_update', null, chat.members)
       } catch {}
       return true
@@ -361,7 +429,7 @@ export default function ({ app, mesh, db }) {
       var idx = chats.indexOf(chat)
       if (idx >= 0) chats.splice(idx, 1)
       try {
-        db.logChat(app.mesh, 'group', group, chat.name, creator, app.username,
+        db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
           'group_delete', null, chat.members)
       } catch {}
       return true
@@ -370,7 +438,7 @@ export default function ({ app, mesh, db }) {
       var idx = chats.indexOf(chat)
       if (idx >= 0) chats.splice(idx, 1)
       try {
-        db.logChat(app.mesh, 'group', group, chat.name, creator, app.username,
+        db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
           'group_delete', null, chat.members)
       } catch {}
       return true
@@ -384,7 +452,7 @@ export default function ({ app, mesh, db }) {
     var idx = chats.indexOf(chat)
     if (idx >= 0) chats.splice(idx, 1)
     try {
-      db.logChat(app.mesh, 'group', group, chat.name, creator, app.username,
+      db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
         'group_leave', null, chat.members)
     } catch {}
     return Promise.resolve(true)
@@ -399,7 +467,7 @@ export default function ({ app, mesh, db }) {
       () => publishMessage(os.path.join(dirname, 'messages'), message)
     ).then(() => {
       try {
-        db.logChat(app.mesh, 'group', group, chat.name, creator, app.username, 'message',
+        db.logChat(mesh.name, 'group', group, chat.name, creator, app.username, 'message',
           typeof message === 'string' ? message : JSON.stringify(message), null)
       } catch {}
       return true
@@ -440,5 +508,8 @@ export default function ({ app, mesh, db }) {
     addFile,
     getFile,
     delFile,
+    getPeerConfig,
+    setPeerConfig,
+    allPeerConfigs,
   }
 }
