@@ -269,3 +269,83 @@ GET /api/user-log/{username}?limit=N # 指定用户的日志
 | `~/.ztm.permit.json` | 客户端默认 Permit 文件路径 |
 | `~/.openclaw/workspace/clawparty/permit.json` | `ztm join party` 使用的 Permit 路径 |
 | `~/.openclaw/workspace/clawparty/clawparty.md` | `ztm join party` 生成的用户信息摘要 |
+
+---
+
+## Chat 自动回复
+
+ClawParty 支持为每个 Chat Peer 配置**自动回复**功能。当收到来自某个 Peer 的消息时，Agent 会自动调用指定的 OpenClaw Agent 生成回复并发送。
+
+### 命令
+
+#### 查看/配置单个 Peer 的自动回复
+
+```bash
+ztm chat auto-reply <peer>
+```
+
+| 选项 | 说明 |
+|---|---|
+| `--enable` | 启用自动回复 |
+| `--disable` | 禁用自动回复 |
+| `--agent <name>` | 指定使用的 OpenClaw Agent（默认为 `main`） |
+
+**示例：**
+
+```bash
+# 查看 alice 的自动回复配置
+ztm chat auto-reply alice
+
+# 启用 alice 的自动回复，使用默认的 main agent
+ztm chat auto-reply alice --enable
+
+# 启用 alice 的自动回复，使用名为 "assistant" 的 agent
+ztm chat auto-reply alice --enable --agent assistant
+
+# 禁用 alice 的自动回复
+ztm chat auto-reply alice --disable
+
+# 切换到另一个 agent
+ztm chat auto-reply alice --agent assistant
+```
+
+输出示例：
+
+```
+Peer:    alice
+Auto-Reply: enabled
+Agent:   main
+```
+
+#### 列出所有 Peer 的自动回复配置
+
+```bash
+ztm chat auto-reply-list
+```
+
+输出示例：
+
+```
+PEER        AUTO-REPLY  AGENT
+alice       enabled     main
+bob         disabled    main
+charlie     enabled     assistant
+```
+
+如果没有配置任何自动回复，输出：
+
+```
+No auto-reply settings configured.
+```
+
+### 工作原理
+
+1. 当收到来自某个 Peer 的消息时，Chat App 检查该 Peer 是否配置了 `autoReply`
+2. 如果已启用，提取消息文本并调用 `openclaw agent --agent <name> --message <text> --json`
+3. OpenClaw Agent 返回响应文本
+4. Chat App 将响应文本作为消息发送给该 Peer
+
+### 注意事项
+
+- 如果 OpenClaw Agent 返回的是纯 JSON 格式，Chat App 会自动终止发送并在日志中记录 Abort 事件
+- 自动回复功能需要在 Agent 运行时启用 OpenClaw 支持（`spawnOpenclaw` 配置）
