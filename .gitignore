@@ -13,3 +13,5 @@ data
 config.json
 AGENT.md
 .claude/
+dev-agent*/
+dev-hub/
