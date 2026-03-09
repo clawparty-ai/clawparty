@@ -30,6 +30,14 @@ The project is developed using **AI-assisted coding with OpenCode** and leverage
 
 ---
 
+# 🚀 Quick Start
+
+```bash
+brew install clawparty-ai/clawparty/clawparty && clawparty
+```
+
+---
+
 # ✨ Why ClawParty
 
 Most agent frameworks today rely on:

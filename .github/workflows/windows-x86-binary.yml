@@ -1,0 +1,54 @@
+name: windows-x86-binary
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows-x86-binary:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup MSBuild (x64)
+        uses: microsoft/setup-msbuild@v2
+        with:
+          msbuild-architecture: x64
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "~3.25.0"
+          ninjaVersion: "^1.11.1"
+
+      - name: Setup NASM
+        uses: ilammy/setup-nasm@v1
+
+      - name: Build ztm binary
+        run: |
+          CALL build\deps.cmd
+          CALL build\pipy.cmd
+          IF NOT EXIST bin (MD bin)
+          COPY pipy\bin\Release\pipy.exe bin\ztm.exe
+          dir bin\ztm.exe
+
+      - name: Package binary artifact
+        run: |
+          IF NOT EXIST dist (MD dist)
+          COPY bin\ztm.exe dist\ztm.exe
+          tar.exe -czf dist\ztm-generic_win-x86_64.tar.gz -C dist ztm.exe
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ztm-generic_win-x86_64
+          path: |
+            dist/ztm.exe
+            dist/ztm-generic_win-x86_64.tar.gz
