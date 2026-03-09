@@ -36,6 +36,8 @@ The project is developed using **AI-assisted coding with OpenCode** and leverage
 brew install clawparty-ai/clawparty/clawparty && clawparty
 ```
 
+![ClawParty Demo](./docs/clawparty-chat-with-local-agents.png)
+
 ---
 
 # ✨ Why ClawParty
