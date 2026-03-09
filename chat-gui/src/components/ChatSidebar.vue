@@ -3,6 +3,16 @@
 
     <!-- Left: org switcher rail -->
     <nav class="org-rail">
+      <!-- 0. Join Party button -->
+      <button
+        class="new-group-rail-btn"
+        :class="{ active: showJoinParty }"
+        @click="toggleJoinParty"
+        title="Join Party"
+      >
+        <span class="join-party-icon">🥂</span>
+      </button>
+
       <!-- 1. Create group chat button -->
       <button
         class="new-group-rail-btn"
@@ -76,6 +86,39 @@
           activeOrg
         }}</span>
       </div>
+
+    <!-- Join Party modal -->
+    <Teleport to="body">
+      <div v-if="showJoinParty" class="modal-backdrop" @click.self="closeJoinParty">
+        <div class="modal-dialog">
+          <div class="modal-header">
+            <span class="modal-title">Join Party</span>
+            <button class="modal-close" @click="closeJoinParty">✕</button>
+          </div>
+
+          <div class="join-party-body">
+            <label class="join-party-label">Registration URL</label>
+            <input
+              v-model="joinPartyUrl"
+              class="search-input"
+              placeholder="https://clawparty.flomesh.io:7779"
+              :disabled="joinPartyLoading"
+            />
+            <div v-if="joinPartyError" class="join-party-error">{{ joinPartyError }}</div>
+            <div v-if="joinPartySuccess" class="join-party-success">{{ joinPartySuccess }}</div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="modal-cancel-btn" @click="closeJoinParty" :disabled="joinPartyLoading">Cancel</button>
+            <button
+              class="modal-create-btn"
+              :disabled="joinPartyLoading"
+              @click="handleJoinParty"
+            >{{ joinPartyLoading ? 'Joining...' : 'Join Party' }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- Group picker modal (teleported to body to avoid overflow clipping) -->
     <Teleport to="body">
@@ -249,6 +292,7 @@ const users = inject('users')
 const selectUser = inject('selectUser')
 const createGroupChat = inject('createGroupChat')
 const currentMeshAgentUsername = inject('currentMeshAgentUsername')
+const joinParty = inject('joinParty')
 
 // Active org
 const activeOrg = ref('agents')
@@ -316,6 +360,47 @@ const togglePickerUser = (name) => {
   const idx = pickerSelected.value.indexOf(name)
   if (idx === -1) pickerSelected.value.push(name)
   else pickerSelected.value.splice(idx, 1)
+}
+
+// Join Party state
+const showJoinParty = ref(false)
+const joinPartyUrl = ref('https://clawparty.flomesh.io:7779')
+const joinPartyLoading = ref(false)
+const joinPartyError = ref('')
+const joinPartySuccess = ref('')
+
+const toggleJoinParty = () => {
+  showJoinParty.value = !showJoinParty.value
+  if (!showJoinParty.value) {
+    joinPartyError.value = ''
+    joinPartySuccess.value = ''
+  }
+}
+
+const closeJoinParty = () => {
+  if (joinPartyLoading.value) return
+  showJoinParty.value = false
+  joinPartyError.value = ''
+  joinPartySuccess.value = ''
+}
+
+const handleJoinParty = async () => {
+  if (joinPartyLoading.value) return
+  joinPartyLoading.value = true
+  joinPartyError.value = ''
+  joinPartySuccess.value = ''
+  try {
+    await joinParty(joinPartyUrl.value)
+    joinPartySuccess.value = 'Successfully joined the party!'
+    setTimeout(() => {
+      closeJoinParty()
+    }, 1500)
+  } catch (err) {
+    const msg = err?.response?.data?.message || err?.message || 'Failed to join party'
+    joinPartyError.value = msg
+  } finally {
+    joinPartyLoading.value = false
+  }
 }
 
 const handleCreateGroup = async () => {
@@ -863,6 +948,36 @@ const handleCreateGroup = async () => {
 
 .profile-icon:hover .profile-tooltip {
   display: block;
+}
+
+.join-party-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.join-party-body {
+  padding: 16px 20px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.join-party-label {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.join-party-error {
+  color: #e01e5a;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.join-party-success {
+  color: var(--slack-green);
+  font-size: 13px;
+  padding: 4px 0;
 }
 
 @media (max-width: 768px) {

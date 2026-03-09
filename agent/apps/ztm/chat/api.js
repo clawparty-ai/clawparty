@@ -42,6 +42,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         } catch {}
         if (!replyText) replyText = output.split('\n').join('').trim()
         if (!replyText) return
+        try {
+          JSON.parse(replyText)
+          console.info('[chat auto-reply] Abort: reply to', chat.peer, 'is JSON, suppressing send:', replyText)
+          return
+        } catch {}
         console.info('[chat auto-reply] reply to', chat.peer, ':', replyText)
         addPeerMessage(chat.peer, { text: replyText })
       },

@@ -37,6 +37,10 @@ api.interceptors.request.use(config => {
 export const meshService = {
   getMeshes() {
     return api.get('/meshes')
+  },
+
+  joinParty(regUrl) {
+    return api.post('/join-party', { regUrl })
   }
 }
 

@@ -870,15 +870,26 @@ function joinParty(regUrl) {
       return
     }
 
+    var DEFAULT_NAMES = [
+      'jose-arcadio-buendia', 'ursula-iguran', 'aureliano-buendia', 'rebeco',
+      'amaranta', 'jose-arcadio', 'aureliano-babilonia', 'remedios-the-beauty',
+      'melqulades', 'remedios-buendia', 'william-wallace', 'edward-i',
+      'princess-isabella', 'robert-the-bruce', 'hamwall', 'stephen',
+      'lord-argyll', 'sitting-bull', 'geronimo', 'crazy-horse',
+      'sacagawea', 'pocahontas', 'tecumseh', 'crazy-moon',
+      'red-cloud', 'chief-joseph', 'black-kettle', 'cochise',
+      'mangas-coloradas', 'sitting-tiger', 'lone-wolf', 'white-buffalo',
+      'red-hawk', 'thunder-cloud', 'morning-star', 'running-deer', 'little-wolf',
+    ]
     var namesPath = `${os.home()}/.openclaw/workspace/clawparty/names.txt`
-    var namesContent
+    var namesList
     try {
-      namesContent = os.read(namesPath).toString()
+      var namesContent = os.read(namesPath).toString()
+      namesList = namesContent.split('\n').map(n => n.trim()).filter(n => n.length > 0)
+      if (namesList.length === 0) namesList = DEFAULT_NAMES
     } catch {
-      throw `cannot read names file: ${os.path.resolve(namesPath)}`
+      namesList = DEFAULT_NAMES
     }
-    var namesList = namesContent.split('\n').map(n => n.trim()).filter(n => n.length > 0)
-    if (namesList.length === 0) throw `names file is empty: ${os.path.resolve(namesPath)}`
     var firstName = namesList[Math.floor(Math.random() * namesList.length)]
     var passKeyChars = 'abcdefghijklmnopqrstuvwxyz'
     var passKey = ''

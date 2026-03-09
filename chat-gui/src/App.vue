@@ -491,6 +491,11 @@ const handleLeaveGroup = async (chat) => {
   }
 }
 
+const joinParty = async (regUrl) => {
+  await meshService.joinParty(regUrl)
+  await fetchMeshes()
+}
+
 provide('switchMesh', switchMesh)
 provide('meshes', meshes)
 provide('openclawAgents', openclawAgents)
@@ -499,6 +504,7 @@ provide('users', users)
 provide('selectUser', selectUser)
 provide('createGroupChat', createGroupChat)
 provide('currentMeshAgentUsername', currentMeshAgentUsername)
+provide('joinParty', joinParty)
 
 const startChatsPolling = () => {
   stopChatsPolling()

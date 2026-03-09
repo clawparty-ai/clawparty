@@ -755,6 +755,123 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
+    '/api/join-party': {
+      'POST': function (_, req) {
+        var body
+        try {
+          body = JSON.decode(req.body)
+        } catch {
+          return response(400, { status: 400, message: 'invalid request body' })
+        }
+
+        var regUrl = (body && body.regUrl) ? body.regUrl : 'https://clawparty.flomesh.io:7779'
+
+        var DEFAULT_NAMES = [
+          'jose-arcadio-buendia', 'ursula-iguran', 'aureliano-buendia', 'rebeco',
+          'amaranta', 'jose-arcadio', 'aureliano-babilonia', 'remedios-the-beauty',
+          'melqulades', 'remedios-buendia', 'william-wallace', 'edward-i',
+          'princess-isabella', 'robert-the-bruce', 'hamwall', 'stephen',
+          'lord-argyll', 'sitting-bull', 'geronimo', 'crazy-horse',
+          'sacagawea', 'pocahontas', 'tecumseh', 'crazy-moon',
+          'red-cloud', 'chief-joseph', 'black-kettle', 'cochise',
+          'mangas-coloradas', 'sitting-tiger', 'lone-wolf', 'white-buffalo',
+          'red-hawk', 'thunder-cloud', 'morning-star', 'running-deer', 'little-wolf',
+        ]
+        var namesList = DEFAULT_NAMES
+        var namesPath = os.home() + '/.openclaw/workspace/clawparty/names.txt'
+        try {
+          var namesContent = os.read(namesPath).toString()
+          var parsed = namesContent.split('\n').map(n => n.trim()).filter(n => n.length > 0)
+          if (parsed.length > 0) namesList = parsed
+        } catch {}
+
+        var firstName = namesList[Math.floor(Math.random() * namesList.length)]
+        var passKeyChars = 'abcdefghijklmnopqrstuvwxyz'
+        var passKey = ''
+        for (var i = 0; i < 16; i++) passKey += passKeyChars[Math.floor(Math.random() * 26)]
+        var meshName = 'clawparty'
+        var userName = firstName
+        var epName = firstName + '-lobster'
+
+        var publicKey = api.getIdentity()
+
+        // Resolve the registration server URL
+        function resolveRegUrl(url) {
+          if (!url) return 'https://clawparty.flomesh.io:7779'
+          if (url.startsWith(':')) return 'https://clawparty.flomesh.io' + url
+          if (!Number.isNaN(Number.parseInt(url))) return 'https://clawparty.flomesh.io:' + url
+          if (!url.includes('://')) return 'http://' + url
+          return url
+        }
+
+        var resolvedUrl = resolveRegUrl(regUrl)
+        var parsedUrl = new URL(resolvedUrl)
+        var target = parsedUrl.hostname + (parsedUrl.port ? ':' + parsedUrl.port : '')
+        var tlsOptions = resolvedUrl.startsWith('https://') ? { tls: { verify: () => true } } : null
+        var regAgent = new http.Agent(target, tlsOptions || {})
+
+        var inviteBody = JSON.encode({
+          PublicKey: publicKey,
+          UserName: userName,
+          EpName: epName,
+          PassKey: passKey,
+        })
+
+        var urlBase = parsedUrl.pathname
+        if (urlBase.endsWith('/')) urlBase = urlBase.slice(0, -1)
+
+        return regAgent.request('POST', urlBase + '/invite', { 'Content-Type': 'application/json' }, inviteBody).then(
+          function (res) {
+            if (res.head.status >= 400) {
+              var msg
+              try { msg = JSON.decode(res.body).message } catch {}
+              return response(res.head.status, { status: res.head.status, message: msg || res.body.toString() })
+            }
+            var permit
+            try {
+              permit = JSON.decode(res.body)
+            } catch {
+              return response(500, { status: 500, message: 'invalid permit response from registration server' })
+            }
+
+            var finalUserName = permit.UserName || userName
+            var finalEpName = permit.EpName || epName
+            var permitData = permit.Permit
+
+            if (!permitData) {
+              return response(500, { status: 500, message: 'no permit in registration server response' })
+            }
+
+            var parsedPermit
+            try {
+              parsedPermit = typeof permitData === 'string' ? JSON.decode(permitData) : permitData
+            } catch {
+              return response(500, { status: 500, message: 'invalid permit format' })
+            }
+
+            parsedPermit.agent = parsedPermit.agent || {}
+            parsedPermit.agent.name = finalEpName
+
+            api.setMesh(meshName, {
+              ca: parsedPermit.ca,
+              agent: {
+                name: finalEpName,
+                certificate: parsedPermit.agent.certificate,
+                privateKey: parsedPermit.agent.privateKey,
+              },
+              bootstraps: parsedPermit.bootstraps,
+            })
+
+            return response(200, {
+              meshName: meshName,
+              userName: finalUserName,
+              epName: finalEpName,
+            })
+          }
+        )
+      }
+    },
+
     '/ok': {
       'GET': function () {
         return response(200, 'OK')
