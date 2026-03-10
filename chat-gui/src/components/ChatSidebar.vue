@@ -282,8 +282,6 @@ const props = defineProps({
   activeChat: { type: Number, default: null }
 })
 
-defineEmits(['select', 'selectOpenclaw'])
-
 const currentMesh = inject('currentMesh')
 const meshes = inject('meshes')
 const openclawAgents = inject('openclawAgents')
@@ -297,9 +295,15 @@ const joinParty = inject('joinParty')
 // Active org
 const activeOrg = ref('agents')
 
+const emit = defineEmits(['select', 'selectOpenclaw', 'changeOrg'])
+
 watch(currentMesh, (val) => {
   if (val && activeOrg.value !== 'agents') activeOrg.value = val
 }, { immediate: true })
+
+watch(activeOrg, (val) => {
+  emit('changeOrg', val)
+})
 
 const handleSelectMesh = async (meshName) => {
   activeOrg.value = meshName
@@ -981,9 +985,38 @@ const handleCreateGroup = async () => {
 }
 
 @media (max-width: 768px) {
-  .sidebar-shell { width: 100%; height: 48px; }
-  .org-rail { flex-direction: row; width: auto; height: 48px; padding: 0 8px; }
-  .sidebar-panel { display: none; }
+  .sidebar-shell { 
+    width: 100%; 
+    height: 48px; 
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 100;
+  }
+  .org-rail { 
+    flex-direction: row; 
+    width: 100%; 
+    height: 48px; 
+    padding: 0 8px;
+    flex-shrink: 0; 
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .sidebar-panel { 
+    display: none;
+  }
   .org-active-bar { display: none; }
+  .org-divider {
+    width: 1px;
+    height: 24px;
+    margin: 0 4px;
+    flex-shrink: 0;
+  }
+  .org-icon {
+    flex-shrink: 0;
+  }
+  .org-rail-spacer {
+    display: none;
+  }
 }
 </style>
