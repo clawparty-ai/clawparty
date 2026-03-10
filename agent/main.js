@@ -733,6 +733,7 @@ function main(listen, apiToken, noAuth) {
       'POST': function ({ agent }, req) {
         agent = URL.decodeComponent(agent)
         var message = req.body.toString()
+        console.info('[chat send] user ->', agent, ':', message)
         var cmd = ['openclaw', 'agent', '--agent', agent, '--message', message, '--json']
         return openclawAgentMessage.spawn(cmd).then(
           output => response(200, output.split('\n').join('')),
@@ -746,6 +747,7 @@ function main(listen, apiToken, noAuth) {
         sender = URL.decodeComponent(sender)
         receiver = URL.decodeComponent(receiver)
         var message = req.body?.toString?.() || 'Hello, let us connect!'
+        console.info('[chat send]', sender, '->', receiver, ':', message)
         var prompt = `let ${sender} send message to ${receiver}, message is "${message}"`
         var cmd = ['openclaw', 'agent', '--agent', 'main', '--message', prompt, '--json']
         return openclawAgentMessage.spawn(cmd).then(
@@ -799,7 +801,7 @@ function main(listen, apiToken, noAuth) {
         function resolveRegUrl(url) {
           if (!url) return 'https://clawparty.flomesh.io:7779'
           if (url.startsWith(':')) return 'https://clawparty.flomesh.io' + url
-          if (!Number.isNaN(Number.parseInt(url))) return 'https://clawparty.flomesh.io:' + url
+          if (url.length > 0 && !Number.isNaN(Number(url))) return 'https://clawparty.flomesh.io:' + url
           if (!url.includes('://')) return 'http://' + url
           return url
         }
@@ -820,8 +822,10 @@ function main(listen, apiToken, noAuth) {
         var urlBase = parsedUrl.pathname
         if (urlBase.endsWith('/')) urlBase = urlBase.slice(0, -1)
 
+        console.info('[join-party] POST', resolvedUrl + '/invite', 'userName:', userName, 'epName:', epName)
         return regAgent.request('POST', urlBase + '/invite', { 'Content-Type': 'application/json' }, inviteBody).then(
           function (res) {
+            console.info('[join-party] response status:', res.head.status)
             if (res.head.status >= 400) {
               var msg
               try { msg = JSON.decode(res.body).message } catch {}
@@ -831,6 +835,7 @@ function main(listen, apiToken, noAuth) {
             try {
               permit = JSON.decode(res.body)
             } catch {
+              console.error('[join-party] failed to JSON.decode outer response body')
               return response(500, { status: 500, message: 'invalid permit response from registration server' })
             }
 
@@ -838,14 +843,22 @@ function main(listen, apiToken, noAuth) {
             var finalEpName = permit.EpName || epName
             var permitData = permit.Permit
 
+            console.debug('[join-party] permitData type:', typeof permitData)
+            console.debug('[join-party] permitData:', typeof permitData === 'string' ? permitData : JSON.encode(permitData).toString())
+
             if (!permitData) {
               return response(500, { status: 500, message: 'no permit in registration server response' })
             }
 
             var parsedPermit
             try {
-              parsedPermit = typeof permitData === 'string' ? JSON.decode(permitData) : permitData
-            } catch {
+              // permitData is a JS string (already decoded from outer JSON.decode),
+              // so use JSON.parse (native) instead of Pipy's JSON.decode which requires pipy::Data
+              parsedPermit = typeof permitData === 'string' ? JSON.parse(permitData) : permitData
+              console.debug('[join-party] parsedPermit keys:', Object.keys(parsedPermit).join(', '))
+            } catch (e) {
+              console.error('[join-party] failed to parse permit, error:', e?.toString?.() || e)
+              console.error('[join-party] permitData raw:', typeof permitData === 'string' ? permitData : String(permitData))
               return response(500, { status: 500, message: 'invalid permit format' })
             }
 

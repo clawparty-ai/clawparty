@@ -181,13 +181,19 @@ const isMessageSent = (msg) => {
 }
 
 const parseMessages = (data) => {
-  return data.map(item => ({
-    text: item.message?.text || '',
-    time: formatTime(item.time),
-    sender: item.sender,
-    isSent: item.sender === props.currentUserName,
-    timestamp: item.time
-  }))
+  return data.map(item => {
+    // sender may be "gcid/username" for group chat messages; strip the gcid prefix for display
+    const rawSender = item.sender || ''
+    const displaySender = rawSender.indexOf('/') !== -1 ? rawSender.split('/')[1] : rawSender
+    const isSent = displaySender === props.currentUserName
+    return {
+      text: item.message?.text || '',
+      time: formatTime(item.time),
+      sender: displaySender,
+      isSent,
+      timestamp: item.time
+    }
+  })
 }
 
 const fetchMessages = async () => {
