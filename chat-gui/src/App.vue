@@ -22,7 +22,38 @@
       :activeChat="activeChat"
       @select="selectChat"
       @selectOpenclaw="selectOpenclawAgent"
+      @changeOrg="(org) => { mobileActiveOrg = org; activeChat = null; }"
     />
+    <!-- Mobile agents list view -->
+    <div v-if="isMobile && activeChat === null && mobileActiveOrg === 'agents'" class="mobile-agents-view">
+      <div class="mobile-agents-header">My Agents</div>
+      <div class="mobile-agents-list">
+        <div
+          v-for="agent in openclawAgents"
+          :key="agent.id"
+          class="mobile-agent-item"
+          @click="selectOpenclawAgent(agent)"
+        >
+          <div class="item-avatar openclaw-avatar">{{ agent.emoji }}</div>
+          <span class="item-name">{{ agent.name }}</span>
+        </div>
+      </div>
+    </div>
+    <!-- Mobile groups list view -->
+    <div v-if="isMobile && activeChat === null && mobileActiveOrg === 'groups'" class="mobile-agents-view">
+      <div class="mobile-agents-header">Group Chats</div>
+      <div class="mobile-agents-list">
+        <div
+          v-for="chat in groupChats"
+          :key="chat.id"
+          class="mobile-agent-item"
+          @click="selectChat(getChatIndex(chat.id))"
+        >
+          <div class="item-avatar">#</div>
+          <span class="item-name">{{ chat.name }}</span>
+        </div>
+      </div>
+    </div>
     <ChatMain
       v-if="activeChat !== null && activeChat < chats.length"
       :chat="chats[activeChat]"
@@ -30,14 +61,16 @@
       :currentUserName="currentMeshAgentUsername"
       :sending="sending"
       :openclawSessions="openclawSessions"
+      :showBackButton="isMobile"
       v-model="newMessage"
       v-model:selectedAgent="selectedAgent"
       @send="sendMessage"
       @switchSession="(sessionId) => switchOpenclawSession(chats[activeChat], sessionId)"
       @deleteGroup="handleDeleteGroup"
       @leaveGroup="handleLeaveGroup"
+      @back="activeChat = null"
     />
-    <div v-else class="empty-state">
+    <div v-else-if="!isMobile" class="empty-state">
       <div class="empty-icon">
         <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
           <circle cx="40" cy="40" r="40" fill="#E8E8E8"/>
@@ -50,7 +83,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, provide } from 'vue'
+import { ref, onMounted, onUnmounted, provide, computed } from 'vue'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
 import { meshService, chatService, openclawService, setApiToken, getApiToken } from './services/chatService'
@@ -69,10 +102,26 @@ const showTokenDialog = ref(false)
 const tokenInput = ref('')
 const tokenChecking = ref(false)
 const tokenError = ref('')
+const isMobile = ref(window.innerWidth <= 768)
+const mobileActiveOrg = ref('agents')
 let appStarted = false
 let chatsPollTimer = null
 
+const handleResize = () => {
+  isMobile.value = window.innerWidth <= 768
+}
+
+window.addEventListener('resize', handleResize)
+
 provide('currentMesh', currentMesh)
+
+const groupChats = computed(() =>
+  chats.value.filter(c => c.isGroup && !c.isOpenclaw)
+)
+
+const getChatIndex = (chatId) => {
+  return chats.value.findIndex(c => c.id === chatId)
+}
 
 const formatTime = (timestamp) => {
   if (!timestamp) return ''
@@ -396,33 +445,45 @@ const selectOpenclawAgent = async (agent) => {
         chat.sessions = sessions
         const defaultSessionId = sessions.length > 0 ? String(sessions[0].sessionId) : null
         if (defaultSessionId) {
-          const historyResponse = await openclawService.getSessionHistory(agent.id, defaultSessionId)
-          let historyData = null
-          try {
-            historyData = JSON.parse(`[${historyResponse.data.replaceAll('\n',',')}{}]`)
-          } catch (e) {
-            console.error('Failed to parse history:', e)
-          }
-					chat.messages = [];
-          historyData.filter((n)=>n.type=='message').forEach((n,i)=>{
-						console.log(n.message.content)
-						const text = n.message.content.filter((n)=>n.type=='text')[0]?.text;
-						if(!!text){
-							chat.messages.push(
-							{ 
-								"text": n.message.content.filter((n)=>n.type=='text')[0]?.text, 
-								"time": new Date(n.message.timestamp).toLocaleTimeString(), 
-								"sender": n.message.role, "isSent": n.message.role=='user', "timestamp": n.message.timestamp }
-							)
-						}
-					})
-          chat.sessionId = defaultSessionId
+          await loadSessionHistory(chat, agent.id, defaultSessionId)
         }
         chat.isTemp = false
       } catch (error) {
         console.error('Failed to fetch sessions:', error)
       }
+    } else if (!chat.messages || chat.messages.length === 0) {
+      const defaultSessionId = chat.sessions.length > 0 ? String(chat.sessions[0].sessionId) : null
+      if (defaultSessionId) {
+        await loadSessionHistory(chat, agent.id, defaultSessionId)
+      }
     }
+  }
+}
+
+const loadSessionHistory = async (chat, agentId, sessionId) => {
+  try {
+    const historyResponse = await openclawService.getSessionHistory(agentId, sessionId)
+    let historyData = null
+    try {
+      historyData = JSON.parse(`[${historyResponse.data.replaceAll('\n',',')}{}]`)
+    } catch (e) {
+      console.error('Failed to parse history:', e)
+    }
+    chat.messages = [];
+    historyData.filter((n)=>n.type=='message').forEach((n,i)=>{
+      const text = n.message.content.filter((n)=>n.type=='text')[0]?.text;
+      if(!!text){
+        chat.messages.push(
+        { 
+          "text": n.message.content.filter((n)=>n.type=='text')[0]?.text, 
+          "time": new Date(n.message.timestamp).toLocaleTimeString(), 
+          "sender": n.message.role, "isSent": n.message.role=='user', "timestamp": n.message.timestamp }
+        )
+      }
+    })
+    chat.sessionId = sessionId
+  } catch (error) {
+    console.error('Failed to load session history:', error)
   }
 }
 
@@ -699,7 +760,71 @@ const submitToken = async () => {
 
 @media (max-width: 768px) {
   .chat-container {
-    flex-direction: column;
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    padding-top: 48px;
+    box-sizing: border-box;
+  }
+  
+  .empty-state {
+    height: calc(100vh - 48px);
+  }
+  
+  .mobile-agents-view {
+    position: absolute;
+    top: 48px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--slack-purple);
+    overflow-y: auto;
+  }
+  
+  .mobile-agents-header {
+    padding: 12px 16px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .mobile-agents-list {
+    padding: 8px 0;
+  }
+  
+  .mobile-agent-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  
+  .mobile-agent-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  
+  .mobile-agent-item .item-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 12px;
+    flex-shrink: 0;
+  }
+  
+  .mobile-agent-item .openclaw-avatar {
+    background: linear-gradient(135deg, #ff6b6b, #ffa500);
+    font-size: 18px;
+  }
+  
+  .mobile-agent-item .item-name {
+    color: #fff;
+    font-size: 15px;
+    font-weight: 500;
   }
 }
 </style>

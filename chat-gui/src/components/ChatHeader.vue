@@ -1,6 +1,11 @@
 <template>
   <header class="chat-header">
     <div class="header-left">
+      <button v-if="showBackButton" class="back-btn" @click="$emit('back')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/>
+        </svg>
+      </button>
       <h3 class="channel-name">
         <span class="channel-icon">#</span>
         {{ chat.name }}
@@ -90,10 +95,14 @@ const props = defineProps({
   currentUserName: {
     type: String,
     default: ''
+  },
+  showBackButton: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['search', 'switchSession', 'deleteGroup', 'leaveGroup'])
+const emit = defineEmits(['search', 'switchSession', 'deleteGroup', 'leaveGroup', 'back'])
 
 const searchQuery = ref('')
 
@@ -117,6 +126,26 @@ watch(searchQuery, (val) => {
   display: flex;
   align-items: center;
   min-width: 0;
+}
+
+.back-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.back-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .channel-name {
@@ -245,6 +274,11 @@ watch(searchQuery, (val) => {
 }
 
 @media (max-width: 768px) {
+  .chat-header {
+    padding: 0 12px;
+    height: 52px;
+  }
+  
   .search-box {
     display: none;
   }
@@ -252,6 +286,14 @@ watch(searchQuery, (val) => {
   .header-divider,
   .header-info {
     display: none;
+  }
+  
+  .channel-name {
+    font-size: 15px;
+  }
+  
+  .back-btn {
+    display: flex;
   }
 }
 </style>
