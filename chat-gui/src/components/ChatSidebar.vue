@@ -73,7 +73,6 @@
         :title="currentMeshAgentUsername || 'My Profile'"
       >
         <span class="profile-letter">{{ (currentMeshAgentUsername || '?')[0].toUpperCase() }}</span>
-        <div class="profile-tooltip">{{ currentMeshAgentUsername || 'My Profile' }}</div>
       </div>
     </nav>
 
@@ -568,6 +567,7 @@ const handleCreateGroup = async () => {
 
 /* ── New group button in org-rail ── */
 .new-group-rail-btn {
+  position: relative;
   width: 40px;
   height: 40px;
   border-radius: 12px;
@@ -598,6 +598,50 @@ const handleCreateGroup = async () => {
 .new-group-plus {
   font-size: 11px;
   vertical-align: super;
+}
+
+/* ── Rail icon tooltip (text comes from title) ── */
+.new-group-rail-btn[title]::before,
+.org-icon[title]::before {
+  content: '';
+  position: absolute;
+  left: calc(100% + 4px);
+  top: 50%;
+  transform: translateY(-50%);
+  border: 5px solid transparent;
+  border-right-color: #1a1d21;
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+  z-index: 101;
+}
+
+.new-group-rail-btn[title]::after,
+.org-icon[title]::after {
+  content: attr(title);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: #1a1d21;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 6px 10px;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.new-group-rail-btn[title]:hover::before,
+.new-group-rail-btn[title]:hover::after,
+.org-icon[title]:hover::before,
+.org-icon[title]:hover::after {
+  opacity: 1;
 }
 
 /* ── Modal backdrop ── */
@@ -927,36 +971,6 @@ const handleCreateGroup = async () => {
   color: #fff;
   font-size: 16px;
   font-weight: 700;
-}
-
-.profile-tooltip {
-  display: none;
-  position: absolute;
-  left: calc(100% + 10px);
-  bottom: 0;
-  background: #1a1d21;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  padding: 6px 10px;
-  border-radius: 6px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-  pointer-events: none;
-  z-index: 100;
-}
-
-.profile-tooltip::before {
-  content: '';
-  position: absolute;
-  right: 100%;
-  bottom: 10px;
-  border: 5px solid transparent;
-  border-right-color: #1a1d21;
-}
-
-.profile-icon:hover .profile-tooltip {
-  display: block;
 }
 
 .join-party-icon {
