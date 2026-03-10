@@ -1,8 +1,36 @@
+// Default filter chain applied to every peer (comma-separated filter names)
+var DEFAULT_FILTER_CHAIN = 'repeat-message,blocked-keywords'
+
+// Default onSend filter chain (comma-separated filter names)
+var DEFAULT_SEND_FILTER_CHAIN = 'credit-delay,suppress-json'
+
+// Base credit for a new peer
+var BASE_CREDIT = 100
+
+// Cache of loaded filter functions keyed by name
+var filterCache = {}
+
+function loadFilter(name) {
+  if (filterCache[name]) return filterCache[name]
+  try {
+    var mod = pipy.import(`../../../filters/${name}.js`)
+    if (typeof mod.default !== 'function') {
+      console.error('[chat filter] filter', name, 'does not export a default function')
+      return null
+    }
+    filterCache[name] = mod.default
+    return mod.default
+  } catch (e) {
+    console.error('[chat filter] failed to load filter', name, ':', e?.toString?.() || e)
+    return null
+  }
+}
+
 export default function ({ app, mesh, db, spawnOpenclaw }) {
   var chats = []
 
   function getPeerConfig(peer) {
-    return db.getChatPeer(mesh.name, peer) || { peer, autoReply: false, autoReplyAgent: 'main' }
+    return db.getChatPeer(mesh.name, peer) || { peer, autoReply: false, autoReplyAgent: 'main', credit: BASE_CREDIT, filterChain: '', sendFilterChain: '' }
   }
 
   function setPeerConfig(peer, config) {
@@ -11,6 +39,95 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
   function allPeerConfigs() {
     return db.allChatPeers(mesh.name)
+  }
+
+  // Run filter chain for an incoming message.
+  // Adjusts the peer's credit in the DB based on filter scores.
+  // Returns the updated credit value.
+  function onReceive(peer, sender, text) {
+    var peerConfig = getPeerConfig(peer)
+    var chainStr = peerConfig.filterChain || DEFAULT_FILTER_CHAIN
+    var filterNames = chainStr.split(',').map(s => s.trim()).filter(Boolean)
+
+    var ctx = {
+      mesh: mesh.name,
+      peer,
+      sender,
+      text,
+      db,
+    }
+
+    var totalDelta = 0
+    filterNames.forEach(function (name) {
+      var fn = loadFilter(name)
+      if (!fn) return
+      try {
+        var score = fn(ctx)
+        console.info('[chat filter]', name, 'score:', score, 'for peer:', peer)
+        if (typeof score === 'number' && score < 0) {
+          totalDelta += score
+        }
+      } catch (e) {
+        console.error('[chat filter]', name, 'threw error:', e?.toString?.() || e)
+      }
+    })
+
+    if (totalDelta < 0) {
+      console.info('[chat filter] adjusting credit for', peer, 'by', totalDelta)
+      db.adjustCredit(mesh.name, peer, totalDelta)
+    }
+
+    // Re-read updated credit
+    var updated = db.getChatPeer(mesh.name, peer)
+    return updated ? updated.credit : BASE_CREDIT
+  }
+
+  // Run onSend filter chain sequentially.
+  // Each filter receives ctx and may return:
+  //   false         → abort sending
+  //   null/undefined → continue to next filter
+  //   Promise        → wait for resolution before continuing (resolved value used as return)
+  // Returns a Promise that resolves to true (send) or false (abort).
+  function onSend(peer, replyText, credit) {
+    var peerConfig = getPeerConfig(peer)
+    var chainStr = peerConfig.sendFilterChain || DEFAULT_SEND_FILTER_CHAIN
+    var filterNames = chainStr.split(',').map(s => s.trim()).filter(Boolean)
+
+    var ctx = {
+      mesh: mesh.name,
+      peer,
+      replyText,
+      credit,
+      db,
+    }
+
+    function runNext(i) {
+      if (i >= filterNames.length) return Promise.resolve(true)
+      var name = filterNames[i]
+      var fn = loadFilter(name)
+      if (!fn) return runNext(i + 1)
+      var result
+      try {
+        result = fn(ctx)
+      } catch (e) {
+        console.error('[send-filter]', name, 'threw error:', e?.toString?.() || e)
+        return runNext(i + 1)
+      }
+      var proceed = function (val) {
+        if (val === false) {
+          console.info('[send-filter]', name, 'aborted send for peer:', peer)
+          return Promise.resolve(false)
+        }
+        console.info('[send-filter]', name, 'passed for peer:', peer)
+        return runNext(i + 1)
+      }
+      if (result && typeof result.then === 'function') {
+        return result.then(proceed)
+      }
+      return proceed(result)
+    }
+
+    return runNext(0)
   }
 
   function notifyAutoReplySetup(chat) {
@@ -28,11 +145,28 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     if (!peerConfig.autoReply) return
     var agentName = peerConfig.autoReplyAgent || 'main'
     var text = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
-    var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--json']
+    var sender = msg.sender
+
+    // Run onReceive filters, adjust credit, get updated credit value
+    var credit = onReceive(chat.peer, sender, text)
+    console.info('[chat auto-reply] credit after onReceive:', credit)
+
+    var sessionId = chat.peer + '~' + app.username
+    var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--session-id', sessionId, '--json']
+
     console.info('[chat auto-reply] calling openclaw:', cmd.join(' '))
     spawnOpenclaw(cmd).then(
       output => {
-        console.info('[chat auto-reply] openclaw output:', output)
+        // Log full output to api_log, show abbreviated version in console
+        try {
+          var parsed = JSON.parse(output.split('\n').join(''))
+          var brief = JSON.stringify(parsed).substring(0, 120) + ' ...'
+          console.info('[chat auto-reply] openclaw output:', brief)
+          db.logApi('auto-reply', cmd.join(' '), {}, text, {}, output)
+        } catch {
+          console.info('[chat auto-reply] openclaw output:', output.substring(0, 120) + ' ...')
+          db.logApi('auto-reply', cmd.join(' '), {}, text, {}, output)
+        }
         var replyText
         try {
           var parsed = JSON.parse(output.split('\n').join(''))
@@ -42,13 +176,13 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         } catch {}
         if (!replyText) replyText = output.split('\n').join('').trim()
         if (!replyText) return
-        try {
-          JSON.parse(replyText)
-          console.info('[chat auto-reply] Abort: reply to', chat.peer, 'is JSON, suppressing send:', replyText)
-          return
-        } catch {}
-        console.info('[chat auto-reply] reply to', chat.peer, ':', replyText)
-        addPeerMessage(chat.peer, { text: replyText })
+
+        // Run onSend filter chain (handles delay + suppress-json + any future filters)
+        onSend(chat.peer, replyText, credit).then(function (shouldSend) {
+          if (!shouldSend) return
+          console.info('[chat auto-reply] reply to', chat.peer, ':', replyText)
+          addPeerMessage(chat.peer, { text: replyText, agentName: agentName })
+        })
       },
       err => {
         console.error('[chat auto-reply] openclaw error:', err?.toString?.() || err)
@@ -186,6 +320,15 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
               if (!existingConfig) {
                 db.setChatPeer(mesh.name, chat.peer, { autoReply: false, autoReplyAgent: 'main' })
               }
+              // If any incoming message carries an agentName, record it as the peer's agent
+              messages.forEach(msg => {
+                if (msg.sender !== app.username) {
+                  var msgAgentName = typeof msg.message === 'object' ? msg.message?.agentName : null
+                  if (msgAgentName) {
+                    db.setChatPeer(mesh.name, chat.peer, { peerAgentName: msgAgentName })
+                  }
+                }
+              })
             }
             mergeMessages(chat, messages)
             if (hasIncoming && !initial) {
@@ -320,10 +463,14 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     ).map(
       chat => {
         var updated = chat.newCount
-        var latest = chat.messages.reduce((a, b) => a.time > b.time ? a : b)
+        var latest = chat.messages.length > 0
+          ? chat.messages.reduce((a, b) => a.time > b.time ? a : b)
+          : null
         if (chat.peer) {
+          var peerCfg = db.getChatPeer(mesh.name, chat.peer)
           return {
             peer: chat.peer,
+            peerAgentName: (peerCfg && peerCfg.peerAgentName) || '',
             time: chat.updateTime,
             updated,
             latest,

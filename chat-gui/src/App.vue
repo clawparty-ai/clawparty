@@ -96,10 +96,14 @@ const parseChatData = (data) => {
     const latestMsg = item.latest?.message?.text || ''
     const firstLine = latestMsg.split('\n')[0].substring(0, 30)
     const isGroup = !!item.group
-    
+    const peerAgentName = item.peerAgentName || ''
+    const displayName = (peerAgentName && !isGroup) ? `${name}/${peerAgentName}` : name
+
     return {
       id: item.group || item.peer || Math.random().toString(),
       name: name,
+      displayName: displayName,
+      peerAgentName: peerAgentName,
       time: formatTime(item.time),
       lastMessage: firstLine,
       updated: item.updated || 0,
