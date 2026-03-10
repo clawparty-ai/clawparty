@@ -231,24 +231,23 @@ const fetchChats = async () => {
     const savedIsOpenclaw = activeChat.value !== null ? chats.value[activeChat.value]?.isOpenclaw : false
     
     if (newChats.length > 0) {
-      const existingChatNames = new Set(chats.value.map(c => c.name))
-      const newChatNames = new Set(newChats.map(c => c.name))
-      
+      const newChatIds = new Set(newChats.map(c => c.id))
+
       newChats.forEach(newChat => {
-        const existingIndex = chats.value.findIndex(c => c.name === newChat.name && !c.isOpenclaw && !c.isGroup)
+        const existingIndex = chats.value.findIndex(c => c.id === newChat.id && !c.isOpenclaw)
         if (existingIndex !== -1) {
-          chats.value[existingIndex].id = newChat.id
           chats.value[existingIndex].time = newChat.time
           chats.value[existingIndex].lastMessage = newChat.lastMessage
           chats.value[existingIndex].updated = newChat.updated
+          chats.value[existingIndex].name = newChat.name
           chats.value[existingIndex].isTemp = false
         } else {
           chats.value.push(newChat)
         }
       })
-      
+
       for (let i = chats.value.length - 1; i >= 0; i--) {
-        if (!chats.value[i].isOpenclaw && !newChatNames.has(chats.value[i].name) && !chats.value[i].isTemp) {
+        if (!chats.value[i].isOpenclaw && !newChatIds.has(chats.value[i].id) && !chats.value[i].isTemp) {
           chats.value.splice(i, 1)
         }
       }
