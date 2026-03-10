@@ -4,10 +4,12 @@
       :chat="chat"
       :openclawSessions="openclawSessions"
       :currentUserName="currentUserName"
+      :showBackButton="showBackButton"
       @search="handleSearch"
       @switchSession="$emit('switchSession', $event)"
       @deleteGroup="$emit('deleteGroup', $event)"
       @leaveGroup="$emit('leaveGroup', $event)"
+      @back="$emit('back')"
     />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
@@ -101,10 +103,14 @@ const props = defineProps({
   selectedAgent: {
     type: String,
     default: ''
+  },
+  showBackButton: {
+    type: Boolean,
+    default: false
   }
 })
 
-defineEmits(['send', 'update:modelValue', 'update:selectedAgent', 'switchSession', 'deleteGroup', 'leaveGroup'])
+defineEmits(['send', 'update:modelValue', 'update:selectedAgent', 'switchSession', 'deleteGroup', 'leaveGroup', 'back'])
 
 const messagesContainer = ref(null)
 let pollTimer = null
@@ -562,11 +568,28 @@ onUnmounted(() => {
 
 @media (max-width: 768px) {
   .chat-main {
+    flex: 1;
+    width: 100%;
     height: calc(100vh - 48px);
+    min-height: 0;
+    overflow-x: hidden;
   }
   
   .message-body {
     max-width: 85%;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+  
+  .messages {
+    padding: 0 12px 12px;
+    overflow-x: hidden;
+  }
+  
+  .message-bubble {
+    max-width: 100%;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
 }
 </style>
