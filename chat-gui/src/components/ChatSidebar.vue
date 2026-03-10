@@ -246,7 +246,7 @@
             <div class="item-avatar" :style="{ background: getAvatarColor(user.name) }">
               {{ user.name[0].toUpperCase() }}
             </div>
-            <span class="item-name">{{ user.name }}</span>
+            <span class="item-name">{{ getUserDisplayName(user.name) }}</span>
             <span v-if="getChatUpdated(user.name) > 0" class="unread-badge">{{ getChatUpdated(user.name) > 99 ? '99+' : getChatUpdated(user.name) }}</span>
             <span class="item-status" :class="{ online: user.endpoints?.instances?.[0]?.online }"></span>
           </div>
@@ -263,7 +263,7 @@
             <div class="item-avatar" :style="{ background: getAvatarColor(chat.name) }">
               {{ chat.name[0].toUpperCase() }}
             </div>
-            <span class="item-name">{{ chat.name }}</span>
+            <span class="item-name">{{ chat.displayName || chat.name }}</span>
             <span v-if="chat.updated > 0" class="unread-badge">{{ chat.updated > 99 ? '99+' : chat.updated }}</span>
           </div>
         </template>
@@ -319,6 +319,11 @@ const dmChats = computed(() =>
 const getChatUpdated = (userName) => {
   const chat = props.chats.find(c => c.name === userName && !c.isGroup && !c.isOpenclaw)
   return chat?.updated || 0
+}
+
+const getUserDisplayName = (userName) => {
+  const chat = props.chats.find(c => c.name === userName && !c.isGroup && !c.isOpenclaw)
+  return chat?.displayName || userName
 }
 
 const getChatIndex = (chatId, isOpenclaw = false) => {

@@ -2,29 +2,30 @@ import initAPI from './api.js'
 import initCLI from './cli.js'
 import db from '../../../db.js'
 
-var $openclawCmd
-var $openclawOutput
-var openclawPipeline = pipeline($=>$
-  .onStart(cmd => { $openclawCmd = cmd; return new Data })
-  .exec(() => $openclawCmd, {
-    onExit: (code, err) => {
-      if (err) err.toString().split('\n').filter(Boolean).forEach(
-        line => console.error('[openclaw]', line)
-      )
-      return new StreamEnd
-    }
-  })
-  .replaceStreamStart(evt => [new MessageStart, evt])
-  .replaceStreamEnd(() => new MessageEnd)
-  .replaceMessage(msg => {
-    $openclawOutput = msg?.body?.toString?.() || ''
-    return new StreamEnd
-  })
-  .onEnd(() => $openclawOutput)
-)
-
 export default function ({ app, mesh, utils }) {
-  var spawnOpenclaw = (cmd) => openclawPipeline.spawn(cmd)
+  function makeOpenclawPipeline(cmd) {
+    var $output
+    return pipeline($=>$
+      .onStart(new Data)
+      .exec(() => cmd, {
+        onExit: (code, err) => {
+          if (err) err.toString().split('\n').filter(Boolean).forEach(
+            line => console.error('[openclaw]', line)
+          )
+          return new StreamEnd
+        }
+      })
+      .replaceStreamStart(evt => [new MessageStart, evt])
+      .replaceStreamEnd(() => new MessageEnd)
+      .replaceMessage(msg => {
+        $output = msg?.body?.toString?.() || ''
+        return new StreamEnd
+      })
+      .onEnd(() => $output)
+    )
+  }
+
+  var spawnOpenclaw = (cmd) => makeOpenclawPipeline(cmd).spawn()
 
   var api = initAPI({ app, mesh, db, spawnOpenclaw })
   var cli = initCLI({ app, mesh, utils, api })

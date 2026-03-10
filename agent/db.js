@@ -84,7 +84,31 @@ function open(pathname) {
       peer             TEXT NOT NULL,
       auto_reply       INTEGER NOT NULL DEFAULT 0,
       auto_reply_agent TEXT NOT NULL DEFAULT 'main',
+      peer_agent_name  TEXT NOT NULL DEFAULT '',
       PRIMARY KEY (mesh, peer)
+    )
+  `)
+
+  // Migrations: add columns if they don't exist yet (for existing databases)
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN peer_agent_name TEXT NOT NULL DEFAULT ''`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN credit INTEGER NOT NULL DEFAULT 100`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN filter_chain TEXT NOT NULL DEFAULT ''`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN send_filter_chain TEXT NOT NULL DEFAULT ''`)
+  } catch {}
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS blocked_keywords (
+      id      INTEGER PRIMARY KEY AUTOINCREMENT,
+      mesh    TEXT    NOT NULL,
+      keyword TEXT    NOT NULL,
+      UNIQUE(mesh, keyword)
     )
   `)
 
@@ -478,6 +502,10 @@ function getChatPeer(mesh, peer) {
     peer: row.peer,
     autoReply: row.auto_reply === 1,
     autoReplyAgent: row.auto_reply_agent,
+    peerAgentName: row.peer_agent_name || '',
+    credit: row.credit !== undefined ? row.credit : 100,
+    filterChain: row.filter_chain || '',
+    sendFilterChain: row.send_filter_chain || '',
   }
 }
 
@@ -486,20 +514,36 @@ function setChatPeer(mesh, peer, config) {
   if (old) {
     var autoReply = 'autoReply' in config ? (config.autoReply ? 1 : 0) : (old.autoReply ? 1 : 0)
     var autoReplyAgent = config.autoReplyAgent || old.autoReplyAgent
-    db.sql('UPDATE chat_peer SET auto_reply = ?, auto_reply_agent = ? WHERE mesh = ? AND peer = ?')
+    var peerAgentName = 'peerAgentName' in config ? (config.peerAgentName || '') : (old.peerAgentName || '')
+    var credit = 'credit' in config ? config.credit : old.credit
+    var filterChain = 'filterChain' in config ? (config.filterChain || '') : (old.filterChain || '')
+    var sendFilterChain = 'sendFilterChain' in config ? (config.sendFilterChain || '') : (old.sendFilterChain || '')
+    db.sql('UPDATE chat_peer SET auto_reply = ?, auto_reply_agent = ?, peer_agent_name = ?, credit = ?, filter_chain = ?, send_filter_chain = ? WHERE mesh = ? AND peer = ?')
       .bind(1, autoReply)
       .bind(2, autoReplyAgent)
-      .bind(3, mesh)
-      .bind(4, peer)
+      .bind(3, peerAgentName)
+      .bind(4, credit)
+      .bind(5, filterChain)
+      .bind(6, sendFilterChain)
+      .bind(7, mesh)
+      .bind(8, peer)
       .exec()
   } else {
     var autoReply = config.autoReply ? 1 : 0
     var autoReplyAgent = config.autoReplyAgent || 'main'
-    db.sql('INSERT INTO chat_peer(mesh, peer, auto_reply, auto_reply_agent) VALUES(?, ?, ?, ?)')
+    var peerAgentName = config.peerAgentName || ''
+    var credit = 'credit' in config ? config.credit : 100
+    var filterChain = config.filterChain || ''
+    var sendFilterChain = config.sendFilterChain || ''
+    db.sql('INSERT INTO chat_peer(mesh, peer, auto_reply, auto_reply_agent, peer_agent_name, credit, filter_chain, send_filter_chain) VALUES(?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(1, mesh)
       .bind(2, peer)
       .bind(3, autoReply)
       .bind(4, autoReplyAgent)
+      .bind(5, peerAgentName)
+      .bind(6, credit)
+      .bind(7, filterChain)
+      .bind(8, sendFilterChain)
       .exec()
   }
 }
@@ -513,7 +557,63 @@ function allChatPeers(mesh) {
       peer: row.peer,
       autoReply: row.auto_reply === 1,
       autoReplyAgent: row.auto_reply_agent,
+      peerAgentName: row.peer_agent_name || '',
+      credit: row.credit !== undefined ? row.credit : 100,
+      filterChain: row.filter_chain || '',
+      sendFilterChain: row.send_filter_chain || '',
     }))
+}
+
+function adjustCredit(mesh, peer, delta) {
+  var old = getChatPeer(mesh, peer)
+  if (!old) return
+  var newCredit = old.credit + delta
+  db.sql('UPDATE chat_peer SET credit = ? WHERE mesh = ? AND peer = ?')
+    .bind(1, newCredit)
+    .bind(2, mesh)
+    .bind(3, peer)
+    .exec()
+}
+
+function getBlockedKeywords(mesh) {
+  return db.sql('SELECT keyword FROM blocked_keywords WHERE mesh = ?')
+    .bind(1, mesh)
+    .exec()
+    .map(row => row.keyword)
+}
+
+function addBlockedKeyword(mesh, keyword) {
+  try {
+    db.sql('INSERT INTO blocked_keywords(mesh, keyword) VALUES(?, ?)')
+      .bind(1, mesh)
+      .bind(2, keyword)
+      .exec()
+    return true
+  } catch {
+    return false
+  }
+}
+
+function delBlockedKeyword(mesh, keyword) {
+  db.sql('DELETE FROM blocked_keywords WHERE mesh = ? AND keyword = ?')
+    .bind(1, mesh)
+    .bind(2, keyword)
+    .exec()
+}
+
+function countRecentMessages(mesh, chatId, sender, content, withinSeconds) {
+  var since = Date.now() / 1000 - withinSeconds
+  var rows = db.sql(`
+    SELECT COUNT(*) as cnt FROM chat_log
+    WHERE mesh = ? AND chat_type = 'peer' AND chat_id = ? AND sender = ? AND content = ? AND time >= ?
+  `)
+    .bind(1, mesh)
+    .bind(2, chatId)
+    .bind(3, sender)
+    .bind(4, content)
+    .bind(5, since)
+    .exec()
+  return rows[0] ? rows[0].cnt : 0
 }
 
 // event: 'message' | 'group_create' | 'group_delete' | 'group_leave'
@@ -606,4 +706,9 @@ export default {
   getChatPeer,
   setChatPeer,
   allChatPeers,
+  adjustCredit,
+  getBlockedKeywords,
+  addBlockedKeyword,
+  delBlockedKeyword,
+  countRecentMessages,
 }
