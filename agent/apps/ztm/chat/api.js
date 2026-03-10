@@ -138,6 +138,100 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     if (time > chat.updateTime) chat.updateTime = time
   }
 
+  // Fetch local openclaw agent names as a Promise resolving to a string[]
+  function getLocalAgentNames() {
+    if (!spawnOpenclaw) return Promise.resolve([])
+    return spawnOpenclaw(['openclaw', 'agents', 'list', '--json']).then(
+      output => {
+        try {
+          var list = JSON.parse(output.split('\n').join(''))
+          if (Array.isArray(list)) {
+            return list.map(a => a.identityName || a.id || a.name).filter(Boolean)
+          }
+        } catch {}
+        return []
+      },
+      () => []
+    )
+  }
+
+  function triggerGroupAutoReply(chat, msg) {
+    if (!spawnOpenclaw) return
+    if (!chat.group) return
+    var gcid = chat.gcid || ''
+    var text = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
+    var senderField = msg.sender || ''
+    // Derive the plain username from a possibly-tagged sender (gcid/username)
+    var senderUsername = senderField.indexOf('/') !== -1 ? senderField.split('/')[1] : senderField
+
+    getLocalAgentNames().then(function (localAgents) {
+      chat.members.forEach(function (member) {
+        // Skip the sender themselves
+        if (member === senderUsername) return
+        // Skip ourselves (our own messages are not auto-replied to)
+        if (member === app.username) return
+
+        var isLocalAgent = localAgents.indexOf(member) !== -1
+
+        if (isLocalAgent) {
+          // ── Local openclaw agent: call it and post reply back to the group ──
+          var sessionId = gcid + '~' + member
+          var cmd = ['openclaw', 'agent', '--agent', member, '--message', text, '--session-id', sessionId, '--json']
+          console.info('[group auto-reply] calling local agent', member, 'for group', gcid || chat.group)
+          spawnOpenclaw(cmd).then(
+            function (output) {
+              var replyText
+              try {
+                var parsed = JSON.parse(output.split('\n').join(''))
+                replyText = parsed?.payloads?.[0]?.text ||
+                            parsed?.result?.payloads?.[0]?.text ||
+                            parsed?.message || parsed?.content || parsed?.text
+              } catch {}
+              if (!replyText) replyText = output.split('\n').join('').trim()
+              if (!replyText) return
+              console.info('[group auto-reply] agent', member, 'reply to group', gcid || chat.group, ':', replyText)
+              addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: member })
+            },
+            function (err) {
+              console.error('[group auto-reply] openclaw error for agent', member, ':', err?.toString?.() || err)
+            }
+          )
+        } else {
+          // ── ZTM EP member: check their auto-reply config via chat_peer (keyed by gcid) ──
+          if (!gcid) return
+          var peerConfig = getPeerConfig(gcid)
+          if (!peerConfig.autoReply) return
+          var agentName = peerConfig.autoReplyAgent || 'main'
+          var credit = onReceive(gcid, senderUsername, text)
+          var sessionId = gcid + '~' + app.username
+          var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--session-id', sessionId, '--json']
+          console.info('[group auto-reply] calling agent', agentName, 'for EP member', member, 'in group', gcid)
+          spawnOpenclaw(cmd).then(
+            function (output) {
+              var replyText
+              try {
+                var parsed = JSON.parse(output.split('\n').join(''))
+                replyText = parsed?.payloads?.[0]?.text ||
+                            parsed?.result?.payloads?.[0]?.text ||
+                            parsed?.message || parsed?.content || parsed?.text
+              } catch {}
+              if (!replyText) replyText = output.split('\n').join('').trim()
+              if (!replyText) return
+              onSend(gcid, replyText, credit).then(function (shouldSend) {
+                if (!shouldSend) return
+                console.info('[group auto-reply] EP member', member, 'reply to group', gcid, ':', replyText)
+                addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: agentName })
+              })
+            },
+            function (err) {
+              console.error('[group auto-reply] openclaw error for EP member', member, ':', err?.toString?.() || err)
+            }
+          )
+        }
+      })
+    })
+  }
+
   function triggerAutoReply(chat, msg) {
     if (!spawnOpenclaw) return
     if (!chat.peer) return
@@ -210,10 +304,20 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     return chat
   }
 
+  function generateGcid() {
+    var chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+    var id = ''
+    for (var i = 0; i < 6; i++) {
+      id += chars[Math.floor(Math.random() * chars.length)]
+    }
+    return id
+  }
+
   function newGroupChat(creator, group) {
     var chat = {
       creator,
       group,
+      gcid: generateGcid(),
       name: '',
       members: [],
       messages: [],
@@ -356,6 +460,8 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             var info = JSON.decode(data)
             if (info.name) chat.name = info.name
             if (info.members instanceof Array) chat.members = info.members
+            // Restore gcid from info.json; only overwrite if info has one (creator's node sets it)
+            if (info.gcid) chat.gcid = info.gcid
           } catch {}
         }
       })
@@ -364,17 +470,35 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     if (params) {
       return mesh.read(path).then(data => {
         if (data) {
-          var sender = params.sender
+          var pathSender = params.sender
           var creator = params.creator
           var group = params.group
           var chat = findGroupChat(creator, group)
           if (!chat) chat = newGroupChat(creator, group)
+          var newMsgs = []
           try {
             var messages = JSON.decode(data)
-            messages.forEach(msg => msg.sender = sender)
+            messages.forEach(msg => {
+              // Prefer the tagged sender embedded in the message payload (gcid/username format);
+              // fall back to the path-level sender for backwards compatibility.
+              var embeddedSender = typeof msg.message === 'object' ? msg.message?.sender : null
+              msg.sender = embeddedSender || pathSender
+            })
+            var beforeCount = chat.messages.length
             mergeMessages(chat, messages)
+            // Collect only the newly merged messages for auto-reply
+            if (!initial) {
+              newMsgs = chat.messages.slice(beforeCount)
+            }
           } catch {}
           if (initial) chat.newCount = 0
+          if (newMsgs.length > 0) {
+            newMsgs.forEach(msg => {
+              if (msg.sender !== app.username && !msg.sender.endsWith('/' + app.username)) {
+                triggerGroupAutoReply(chat, msg)
+              }
+            })
+          }
         }
       })
     }
@@ -556,6 +680,10 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     if (!chat) chat = newGroupChat(creator, group)
     if (info.name) chat.name = info.name
     if (info.members instanceof Array) chat.members = info.members
+    // Ensure gcid is registered in chat_peer so auto-reply config can be stored per group
+    if (isNew) {
+      db.setChatPeer(mesh.name, chat.gcid, { autoReply: false, autoReplyAgent: 'main' })
+    }
     var dirname = `/shared/${creator}/publish/groups/${creator}/${group}`
     return mesh.acl(dirname, { users: Object.fromEntries(chat.members.map(name => [name, 'readonly'])) }).then(
       () => mesh.write(os.path.join(dirname, 'info.json'), JSON.encode(chat))
@@ -614,13 +742,21 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var chat = findGroupChat(creator, group)
     if (!chat) return Promise.resolve(false)
     if (app.username !== creator && !chat.members.includes(app.username)) return Promise.resolve(false)
+    // Embed sender as [gcid]/[username] inside the message payload
+    var gcid = chat.gcid || ''
+    var taggedSender = gcid ? (gcid + '/' + app.username) : app.username
+    var taggedMessage = typeof message === 'string'
+      ? { text: message, sender: taggedSender }
+      : Object.assign({}, message, { sender: taggedSender })
+    var msgText = typeof message === 'string' ? message : (message?.text || JSON.stringify(message))
+    console.info('[chat send]', taggedSender, '-> group', group, ':', msgText)
     var dirname = `/shared/${app.username}/publish/groups/${creator}/${group}`
     return mesh.acl(dirname, { users: Object.fromEntries(chat.members.map(name => [name, 'readonly'])) }).then(
-      () => publishMessage(os.path.join(dirname, 'messages'), message)
+      () => publishMessage(os.path.join(dirname, 'messages'), taggedMessage)
     ).then(() => {
       try {
-        db.logChat(mesh.name, 'group', group, chat.name, creator, app.username, 'message',
-          typeof message === 'string' ? message : JSON.stringify(message), null)
+        db.logChat(mesh.name, 'group', group, chat.name, creator, taggedSender, 'message',
+          msgText, null)
       } catch {}
       return true
     })
