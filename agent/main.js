@@ -790,7 +790,7 @@ function main(listen, apiToken, noAuth) {
         var firstName = namesList[Math.floor(Math.random() * namesList.length)]
         var passKeyChars = 'abcdefghijklmnopqrstuvwxyz'
         var passKey = ''
-        for (var i = 0; i < 16; i++) passKey += passKeyChars[Math.floor(Math.random() * 26)]
+        for (var i = 0; i < 16; i++) passKey += passKeyChars.charAt(Math.floor(Math.random() * 26))
         var meshName = 'clawparty'
         var userName = firstName
         var epName = firstName + '-lobster'

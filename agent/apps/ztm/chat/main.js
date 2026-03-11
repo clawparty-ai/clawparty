@@ -148,6 +148,47 @@ export default function ({ app, mesh, utils }) {
       }),
     },
 
+    '/api/groupchat/{gcid}': {
+      'GET': responder((params) => {
+        var gcid = URL.decodeComponent(params.gcid)
+        return api.getGroupByGcid(gcid).then(
+          ret => ret ? response(200, ret) : response(404, { message: 'group not found: ' + gcid })
+        )
+      }),
+
+      'POST': responder((params, req) => {
+        var gcid = URL.decodeComponent(params.gcid)
+        var body
+        try { body = JSON.decode(req.body) } catch {
+          return Promise.resolve(response(400, { message: 'invalid request body' }))
+        }
+        var message = body.message || body.text || body
+        if (!message) return Promise.resolve(response(400, { message: 'missing message field' }))
+        return api.addGroupMessageByGcid(gcid, { text: message }).then(
+          ret => ret ? response(201, { gcid: ret.gcid, group: ret.group, name: ret.name }) : response(404, { message: 'group not found: ' + gcid })
+        )
+      }),
+    },
+
+    '/api/groupchat/{gcid}/agents/{agentName}/auto-reply': {
+      'POST': responder((params) => {
+        var gcid = URL.decodeComponent(params.gcid)
+        var agentName = URL.decodeComponent(params.agentName)
+        var key = gcid + '~' + agentName
+        api.setPeerConfig(key, { autoReply: true, autoReplyAgent: agentName })
+        console.info('[group auto-reply] approved for agent', agentName, 'in group', gcid)
+        return Promise.resolve(response(200, { gcid, agentName, autoReply: true }))
+      }),
+
+      'DELETE': responder((params) => {
+        var gcid = URL.decodeComponent(params.gcid)
+        var agentName = URL.decodeComponent(params.agentName)
+        var key = gcid + '~' + agentName
+        api.setPeerConfig(key, { autoReply: false })
+        return Promise.resolve(response(200, { gcid, agentName, autoReply: false }))
+      }),
+    },
+
     '/api/peers/{peer}/auto-reply': {
       'GET': responder((params) => {
         var peer = URL.decodeComponent(params.peer)

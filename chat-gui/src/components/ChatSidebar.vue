@@ -144,20 +144,21 @@
               <div class="modal-section-label">Members</div>
               <label
                 v-for="user in filteredUsers"
-                :key="'u-' + user.name"
+                :key="'u-' + user.id"
                 class="modal-item"
-                :class="{ selected: pickerSelected.includes(user.name) }"
+                :class="{ selected: pickerSelected.includes(user.username || user.name) }"
               >
                 <input
                   type="checkbox"
-                  :checked="pickerSelected.includes(user.name)"
-                  @change="togglePickerUser(user.name)"
+                  :checked="pickerSelected.includes(user.username || user.name)"
+                  @change="togglePickerUser(user.username || user.name)"
                 />
-                <div class="item-avatar" :style="{ background: getAvatarColor(user.name) }">
-                  {{ user.name[0].toUpperCase() }}
+                <div class="item-avatar" :style="{ background: getAvatarColor(user.username || user.name) }">
+                  {{ (user.username || user.name)[0].toUpperCase() }}
                 </div>
                 <span class="item-name">{{ user.name }}</span>
-                <span class="item-status" :class="{ online: user.endpoints?.instances?.[0]?.online }"></span>
+                <span class="item-subname" v-if="user.username">{{ user.username }}</span>
+                <span class="item-status" :class="{ online: user.online }"></span>
               </label>
             </template>
 
@@ -206,13 +207,44 @@
             <div
               v-for="chat in groupChats"
               :key="chat.id"
-              class="panel-item"
-              :class="{ active: getChatIndex(chat.id) === activeChat }"
-              @click="$emit('select', getChatIndex(chat.id))"
+              class="group-chat-entry"
             >
-              <div class="item-hash">#</div>
-              <span class="item-name">{{ chat.name }}</span>
-              <span v-if="chat.updated > 0" class="unread-badge">{{ chat.updated > 99 ? '99+' : chat.updated }}</span>
+              <!-- Header row -->
+              <div
+                class="panel-item group-chat-header"
+                :class="{ active: getChatIndex(chat.id) === activeChat }"
+              >
+                <div class="item-hash" @click="$emit('select', getChatIndex(chat.id))">#</div>
+                <!-- Rename inline editor -->
+                <template v-if="renamingChatId === chat.id">
+                  <input
+                    class="group-rename-input"
+                    v-model="renameValue"
+                    @keyup.enter="submitRename(chat)"
+                    @keyup.escape="cancelRename"
+                    @blur="submitRename(chat)"
+                    ref="renameInputRef"
+                  />
+                </template>
+                <template v-else>
+                  <span class="item-name" @click="$emit('select', getChatIndex(chat.id))">{{ chat.name }}</span>
+                </template>
+                <span v-if="chat.updated > 0 && renamingChatId !== chat.id" class="unread-badge">{{ chat.updated > 99 ? '99+' : chat.updated }}</span>
+                <button class="group-action-btn" @click.stop="startRename(chat)" title="Rename">✎</button>
+                <button class="group-action-btn" @click.stop="toggleExpand(chat.id)" :title="expandedGroups.has(chat.id) ? 'Collapse' : 'Expand members'">{{ expandedGroups.has(chat.id) ? '▲' : '▼' }}</button>
+              </div>
+              <!-- Expanded members list -->
+              <div v-if="expandedGroups.has(chat.id)" class="group-members-list">
+                <div
+                  v-for="member in (chat.members || [])"
+                  :key="member"
+                  class="group-member-item"
+                >
+                  <div class="member-avatar" :style="{ background: getAvatarColor(member) }">{{ member[0].toUpperCase() }}</div>
+                  <span class="member-name">{{ member }}</span>
+                </div>
+                <div v-if="!chat.members || chat.members.length === 0" class="group-member-empty">No members</div>
+              </div>
             </div>
           </template>
           <div v-else class="panel-empty">No group chats yet</div>
@@ -234,20 +266,21 @@
 
         <!-- Mesh: users + groups -->
         <template v-else>
-          <!-- Direct message users -->
+          <!-- Direct message users (one entry per EP) -->
           <div
             v-for="user in users"
-            :key="'user-' + user.name"
+            :key="'ep-' + user.id"
             class="panel-item"
-            :class="{ active: getChatIndex(user.name) === activeChat }"
+            :class="{ active: getChatIndex(user.username || user.name) === activeChat }"
             @click="selectUser(user)"
           >
-            <div class="item-avatar" :style="{ background: getAvatarColor(user.name) }">
-              {{ user.name[0].toUpperCase() }}
+            <div class="item-avatar" :style="{ background: getAvatarColor(user.username || user.name) }">
+              {{ (user.username || user.name)[0].toUpperCase() }}
             </div>
-            <span class="item-name">{{ getUserDisplayName(user.name) }}</span>
-            <span v-if="getChatUpdated(user.name) > 0" class="unread-badge">{{ getChatUpdated(user.name) > 99 ? '99+' : getChatUpdated(user.name) }}</span>
-            <span class="item-status" :class="{ online: user.endpoints?.instances?.[0]?.online }"></span>
+            <span class="item-name">{{ user.name }}</span>
+            <span class="item-subname" v-if="user.username">{{ user.username }}</span>
+            <span v-if="getChatUpdated(user.username || user.name) > 0" class="unread-badge">{{ getChatUpdated(user.username || user.name) > 99 ? '99+' : getChatUpdated(user.username || user.name) }}</span>
+            <span class="item-status" :class="{ online: user.online }"></span>
           </div>
 
           <!-- Non-group chats: only show peers not already in the users list -->
@@ -288,8 +321,48 @@ const switchMesh = inject('switchMesh')
 const users = inject('users')
 const selectUser = inject('selectUser')
 const createGroupChat = inject('createGroupChat')
+const renameGroupChat = inject('renameGroupChat')
 const currentMeshAgentUsername = inject('currentMeshAgentUsername')
 const joinParty = inject('joinParty')
+
+// Group expand / rename state
+const expandedGroups = ref(new Set())
+const renamingChatId = ref(null)
+const renameValue = ref('')
+const renameInputRef = ref(null)
+
+const toggleExpand = (chatId) => {
+  const s = new Set(expandedGroups.value)
+  if (s.has(chatId)) s.delete(chatId)
+  else s.add(chatId)
+  expandedGroups.value = s
+}
+
+const startRename = (chat) => {
+  renamingChatId.value = chat.id
+  renameValue.value = chat.name
+  // Focus input on next tick
+  setTimeout(() => {
+    if (renameInputRef.value) {
+      const el = Array.isArray(renameInputRef.value) ? renameInputRef.value[0] : renameInputRef.value
+      el && el.focus && el.focus()
+    }
+  }, 30)
+}
+
+const submitRename = async (chat) => {
+  if (renamingChatId.value !== chat.id) return
+  const newName = renameValue.value.trim()
+  renamingChatId.value = null
+  if (newName && newName !== chat.name) {
+    await renameGroupChat(chat, newName)
+  }
+}
+
+const cancelRename = () => {
+  renamingChatId.value = null
+  renameValue.value = ''
+}
 
 // Active org
 const activeOrg = ref('agents')
@@ -355,7 +428,10 @@ const closePicker = () => {
 const filteredUsers = computed(() => {
   const q = pickerSearch.value.trim().toLowerCase()
   if (!q) return users.value
-  return users.value.filter(u => u.name.toLowerCase().includes(q))
+  return users.value.filter(u =>
+    u.name.toLowerCase().includes(q) ||
+    (u.username && u.username.toLowerCase().includes(q))
+  )
 })
 
 const filteredAgents = computed(() => {
@@ -413,10 +489,12 @@ const handleJoinParty = async () => {
 
 const handleCreateGroup = async () => {
   if (pickerSelected.value.length === 0) return
-  const fromUsers = users.value.filter(u => pickerSelected.value.includes(u.name))
+  // pickerSelected stores username (for EP users) or agent name (for agents)
+  const fromUsers = users.value.filter(u => pickerSelected.value.includes(u.username || u.name))
   const fromAgents = openclawAgents.value.filter(a => pickerSelected.value.includes(a.name))
   const selectedObjs = [
-    ...fromUsers,
+    // EP users: pass username as the member identifier
+    ...fromUsers.map(u => ({ name: u.username || u.name })),
     ...fromAgents.map(a => ({ name: a.name }))
   ]
   const groupName = pickerSelected.value.join(', ')
@@ -916,6 +994,16 @@ const handleCreateGroup = async () => {
   text-overflow: ellipsis;
 }
 
+.item-subname {
+  font-size: 11px;
+  color: #aaa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+  flex-shrink: 0;
+}
+
 .panel-item.active .item-name {
   color: #fff;
   font-weight: 700;
@@ -1037,5 +1125,77 @@ const handleCreateGroup = async () => {
   .org-rail-spacer {
     display: none;
   }
+}
+
+/* Group chat expand / rename */
+.group-chat-entry {
+  display: flex;
+  flex-direction: column;
+}
+
+.group-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.group-action-btn {
+  background: none;
+  border: none;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 3px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.group-action-btn:hover { color: #fff; }
+
+.group-rename-input {
+  flex: 1;
+  background: #222;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 13px;
+  padding: 2px 6px;
+  outline: none;
+  min-width: 0;
+}
+
+.group-members-list {
+  padding: 4px 0 4px 28px;
+  background: rgba(0,0,0,0.15);
+}
+
+.group-member-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+}
+
+.member-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.member-name {
+  font-size: 12px;
+  color: #ccc;
+}
+
+.group-member-empty {
+  font-size: 12px;
+  color: #666;
+  padding: 2px 8px;
 }
 </style>
