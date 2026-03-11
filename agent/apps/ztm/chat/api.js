@@ -146,13 +146,56 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         try {
           var list = JSON.parse(output.split('\n').join(''))
           if (Array.isArray(list)) {
-            return list.map(a => a.identityName || a.id || a.name).filter(Boolean)
+            // Use id/name (e.g. "video-agent"), NOT identityName which is the display label
+            return list.map(a => a.id || a.name).filter(Boolean)
           }
         } catch {}
         return []
       },
       () => []
     )
+  }
+
+  // Key used in chat_peer for a local agent's auto-reply config within a specific group
+  function groupAgentKey(gcid, agentName) {
+    return gcid + '~' + agentName
+  }
+
+  // Insert a group-chat-request hint into the local peer chat for a given agent
+  function notifyGroupChatRequest(chat, agentName) {
+    if (!chat.gcid) {
+      console.info('[group request] skipping hint for agent', agentName, '- group has no gcid yet')
+      return
+    }
+    // Only insert once per agent per group
+    var agentChat = findPeerChat(agentName)
+    if (!agentChat) agentChat = newPeerChat(agentName)
+    var alreadyHinted = false
+    for (var i = 0; i < agentChat.messages.length; i++) {
+      var m = agentChat.messages[i]
+      if (m.isGroupRequest && m.gcid === chat.gcid) { alreadyHinted = true; break }
+    }
+    if (alreadyHinted) {
+      console.info('[group request] hint already present for agent', agentName, 'in group', chat.gcid)
+      return
+    }
+    var time = Date.now()
+    var hint = {
+      time: time,
+      sender: app.username,
+      message: {
+        text: 'Group chat request: agent "' + agentName + '" has been added to group "' + (chat.name || chat.gcid) + '". Enable auto-reply so it can participate in the group chat.',
+      },
+      isSystemHint: true,
+      isGroupRequest: true,
+      gcid: chat.gcid,
+      agentName: agentName,
+      groupName: chat.name || '',
+    }
+    agentChat.messages.push(hint)
+    if (time > agentChat.updateTime) agentChat.updateTime = time
+    agentChat.newCount++
+    console.info('[group request] inserted group chat request hint for agent', agentName, 'in group', chat.gcid)
   }
 
   function triggerGroupAutoReply(chat, msg) {
@@ -174,7 +217,15 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         var isLocalAgent = localAgents.indexOf(member) !== -1
 
         if (isLocalAgent) {
-          // ── Local openclaw agent: call it and post reply back to the group ──
+          // ── Local openclaw agent: check per-group auto-reply config ──
+          var key = groupAgentKey(gcid, member)
+          var agentConfig = getPeerConfig(key)
+          if (!agentConfig.autoReply) {
+            // Not yet approved — insert a request hint in this agent's peer chat
+            notifyGroupChatRequest(chat, member)
+            return
+          }
+          // Approved — call the agent and post its reply back to the group
           var sessionId = gcid + '~' + member
           var cmd = ['openclaw', 'agent', '--agent', member, '--message', text, '--session-id', sessionId, '--json']
           console.info('[group auto-reply] calling local agent', member, 'for group', gcid || chat.group)
@@ -190,7 +241,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
               if (!replyText) replyText = output.split('\n').join('').trim()
               if (!replyText) return
               console.info('[group auto-reply] agent', member, 'reply to group', gcid || chat.group, ':', replyText)
-              addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: member })
+              addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: member }, true)
             },
             function (err) {
               console.error('[group auto-reply] openclaw error for agent', member, ':', err?.toString?.() || err)
@@ -220,7 +271,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
               onSend(gcid, replyText, credit).then(function (shouldSend) {
                 if (!shouldSend) return
                 console.info('[group auto-reply] EP member', member, 'reply to group', gcid, ':', replyText)
-                addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: agentName })
+                addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: agentName }, true)
               })
             },
             function (err) {
@@ -757,7 +808,8 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     return Promise.resolve(true)
   }
 
-  function addGroupMessage(creator, group, message) {
+  // fromAgent: true means this message is an auto-reply from a local agent — do not re-trigger
+  function addGroupMessage(creator, group, message, fromAgent) {
     var chat = findGroupChat(creator, group)
     if (!chat) return Promise.resolve(false)
     if (app.username !== creator && !chat.members.includes(app.username)) return Promise.resolve(false)
@@ -777,6 +829,10 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         db.logChat(mesh.name, 'group', group, chat.name, creator, taggedSender, 'message',
           msgText, null)
       } catch {}
+      // Only trigger auto-reply for human-sent messages, not agent replies (avoid infinite loop)
+      if (!fromAgent) {
+        triggerGroupAutoReply(chat, { time: Date.now(), sender: taggedSender, message: taggedMessage })
+      }
       return true
     })
   }

@@ -170,6 +170,25 @@ export default function ({ app, mesh, utils }) {
       }),
     },
 
+    '/api/groupchat/{gcid}/agents/{agentName}/auto-reply': {
+      'POST': responder((params) => {
+        var gcid = URL.decodeComponent(params.gcid)
+        var agentName = URL.decodeComponent(params.agentName)
+        var key = gcid + '~' + agentName
+        api.setPeerConfig(key, { autoReply: true, autoReplyAgent: agentName })
+        console.info('[group auto-reply] approved for agent', agentName, 'in group', gcid)
+        return Promise.resolve(response(200, { gcid, agentName, autoReply: true }))
+      }),
+
+      'DELETE': responder((params) => {
+        var gcid = URL.decodeComponent(params.gcid)
+        var agentName = URL.decodeComponent(params.agentName)
+        var key = gcid + '~' + agentName
+        api.setPeerConfig(key, { autoReply: false })
+        return Promise.resolve(response(200, { gcid, agentName, autoReply: false }))
+      }),
+    },
+
     '/api/peers/{peer}/auto-reply': {
       'GET': responder((params) => {
         var peer = URL.decodeComponent(params.peer)

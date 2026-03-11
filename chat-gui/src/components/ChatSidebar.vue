@@ -489,10 +489,12 @@ const handleJoinParty = async () => {
 
 const handleCreateGroup = async () => {
   if (pickerSelected.value.length === 0) return
-  const fromUsers = users.value.filter(u => pickerSelected.value.includes(u.name))
+  // pickerSelected stores username (for EP users) or agent name (for agents)
+  const fromUsers = users.value.filter(u => pickerSelected.value.includes(u.username || u.name))
   const fromAgents = openclawAgents.value.filter(a => pickerSelected.value.includes(a.name))
   const selectedObjs = [
-    ...fromUsers,
+    // EP users: pass username as the member identifier
+    ...fromUsers.map(u => ({ name: u.username || u.name })),
     ...fromAgents.map(a => ({ name: a.name }))
   ]
   const groupName = pickerSelected.value.join(', ')
