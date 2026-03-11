@@ -43,8 +43,11 @@
               <span class="message-author">{{ isMessageSent(msg) ? (currentUserName || 'You') : chat.name }}</span>
               <span class="message-time">{{ msg.time }}</span>
             </div>
-            <div class="message-bubble">
+            <div class="message-bubble" :class="{ 'system-hint': msg.isSystemHint }">
               <div class="message-content" v-html="renderMarkdown(msg.text)"></div>
+              <div v-if="msg.isGroupRequest" class="group-request-actions">
+                <button class="approve-btn" @click="approveGroupRequest(msg)">Approve</button>
+              </div>
             </div>
           </template>
         </div>
@@ -196,9 +199,26 @@ const parseMessages = (data) => {
       time: formatTime(item.time),
       sender: displaySender,
       isSent,
-      timestamp: item.time
+      timestamp: item.time,
+      isSystemHint: item.isSystemHint || false,
+      isGroupRequest: item.isGroupRequest || false,
+      gcid: item.gcid || '',
+      agentName: item.agentName || '',
+      groupName: item.groupName || '',
     }
   })
+}
+
+const approveGroupRequest = async (msg) => {
+  if (!props.meshName || !msg.gcid || !msg.agentName) return
+  try {
+    await chatService.approveGroupAgentAutoReply(props.meshName, msg.gcid, msg.agentName)
+    // Replace the request hint with a confirmation in-place
+    msg.isGroupRequest = false
+    msg.text = `Auto-reply approved for agent "${msg.agentName}" in group "${msg.groupName || msg.gcid}".`
+  } catch (err) {
+    console.error('Failed to approve group auto-reply:', err)
+  }
 }
 
 const fetchMessages = async () => {
@@ -437,6 +457,31 @@ onUnmounted(() => {
   position: relative;
   max-width: 600px;
   width: fit-content;
+}
+
+.message-bubble.system-hint {
+  background: #2a2a40;
+  border: 1px solid #4a4a6a;
+  color: #c8c8e8;
+}
+
+.group-request-actions {
+  margin-top: 8px;
+}
+
+.approve-btn {
+  background: var(--slack-green, #2bac76);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.approve-btn:hover {
+  opacity: 0.85;
 }
 
 .message.sent .message-bubble {
