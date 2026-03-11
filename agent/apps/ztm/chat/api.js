@@ -292,6 +292,10 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     return chats.find(c => c.creator === creator && c.group === group)
   }
 
+  function findGroupChatByGcid(gcid) {
+    return chats.find(c => c.gcid === gcid)
+  }
+
   function newPeerChat(peer) {
     var chat = {
       peer,
@@ -306,18 +310,18 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
   function generateGcid() {
     var chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
-    var id = ''
+    var result = ''
     for (var i = 0; i < 6; i++) {
-      id += chars[Math.floor(Math.random() * chars.length)]
+      result += chars.charAt(Math.floor(Math.random() * chars.length))
     }
-    return id
+    return result
   }
 
-  function newGroupChat(creator, group) {
+  function newGroupChat(creator, group, existingGcid) {
     var chat = {
       creator,
       group,
-      gcid: generateGcid(),
+      gcid: existingGcid || generateGcid(),
       name: '',
       members: [],
       messages: [],
@@ -474,7 +478,20 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
           var creator = params.creator
           var group = params.group
           var chat = findGroupChat(creator, group)
-          if (!chat) chat = newGroupChat(creator, group)
+          // If no local chat found, check info.json for existing gcid before creating new
+          if (!chat) {
+            // Try to read gcid from info.json first
+            var infoPath = `/shared/${creator}/publish/groups/${creator}/${group}/info.json`
+            var existingGcid = null
+            try {
+              var infoData = mesh.read(infoPath)
+              if (infoData) {
+                var info = JSON.decode(infoData)
+                existingGcid = info.gcid || null
+              }
+            } catch {}
+            chat = newGroupChat(creator, group, existingGcid)
+          }
           var newMsgs = []
           try {
             var messages = JSON.decode(data)
@@ -603,7 +620,9 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
           return {
             creator: chat.creator,
             group: chat.group,
+            gcid: chat.gcid || '',
             name: chat.name,
+            members: chat.members || [],
             time: chat.updateTime,
             updated,
             latest,
@@ -781,6 +800,18 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     return Promise.resolve(true)
   }
 
+  function addGroupMessageByGcid(gcid, message) {
+    var chat = findGroupChatByGcid(gcid)
+    if (!chat) return Promise.resolve(null)
+    return addGroupMessage(chat.creator, chat.group, message).then(ok => ok ? chat : null)
+  }
+
+  function getGroupByGcid(gcid) {
+    var chat = findGroupChatByGcid(gcid)
+    if (!chat) return Promise.resolve(null)
+    return Promise.resolve({ gcid: chat.gcid, creator: chat.creator, group: chat.group, name: chat.name, members: chat.members })
+  }
+
   return {
     allEndpoints,
     allUsers,
@@ -789,10 +820,12 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     addPeerMessage,
     allGroupMessages,
     getGroup,
+    getGroupByGcid,
     setGroup,
     delGroup,
     leaveGroup,
     addGroupMessage,
+    addGroupMessageByGcid,
     addFile,
     getFile,
     delFile,

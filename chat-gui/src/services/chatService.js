@@ -102,7 +102,7 @@ export const chatService = {
   },
   
   getUsers(meshName) {
-    return api.get(`/meshes/${meshName}/users?limit=100`)
+    return api.get(`/meshes/${meshName}/endpoints?limit=500`)
   },
   
   getMessages(meshName, peer) {

@@ -960,54 +960,64 @@ var getEndpoint = pipeline($=>$
   )
 )
 
+function buildUsersFromEndpoints(epList, nameFilter, keyword, offset, limit) {
+  var users = {}
+  epList.forEach(
+    ep => {
+      var uname = ep.username
+      var user = (users[uname] ??= {
+        name: uname,
+        endpoints: {
+          count: 0,
+          instances: []
+        }
+      })
+      var epInstances = user.endpoints
+      if (epInstances.instances.length < 5) {
+        epInstances.instances.push({
+          id: ep.id,
+          name: ep.name,
+          labels: ep.labels || [],
+          ip: ep.ip,
+          port: ep.port,
+          heartbeat: ep.heartbeat,
+          ping: ep.ping,
+          online: isEndpointOnline(ep),
+        })
+      }
+      epInstances.count++
+    }
+  )
+  return Object.values(users).filter(
+    user => {
+      if (nameFilter && user.name !== nameFilter) return false
+      if (keyword && user.name.indexOf(keyword) < 0) return false
+      return true
+    }
+  ).filter(
+    (_, i) => offset <= i && i < offset + limit
+  )
+}
+
 var getUsers = pipeline($=>$
   .replaceData()
   .replaceMessage(
     function (req) {
       var url = new URL(req.head.path)
       var params = url.searchParams
-      var name = params.get('name')
+      var nameFilter = params.get('name')
       var keyword = params.get('keyword')
       var offset = Number.parseInt(params.get('offset')) || 0
       var limit = Number.parseInt(params.get('limit')) || 100
-      if (name) name = URL.decodeComponent(name)
+      if (nameFilter) nameFilter = URL.decodeComponent(nameFilter)
       if (keyword) keyword = URL.decodeComponent(keyword)
-      var users = {}
-      endpointList.forEach(
-        ep => {
-          var name = ep.username
-          var user = (users[name] ??= {
-            name,
-            endpoints: {
-              count: 0,
-              instances: []
-            }
-          })
-          var epList = user.endpoints
-          if (epList.instances.length < 5) {
-            epList.instances.push({
-              id: ep.id,
-              name: ep.name,
-              labels: ep.labels || [],
-              ip: ep.ip,
-              port: ep.port,
-              heartbeat: ep.heartbeat,
-              ping: ep.ping,
-              online: isEndpointOnline(ep),
-            })
-          }
-          epList.count++
-        }
-      )
-      return response(200, Object.values(users).filter(
-        user => {
-          if (name && user.name !== name) return false
-          if (keyword && user.name.indexOf(keyword) < 0) return false
-          return true
-        }
-      ).filter(
-        (_, i) => offset <= i && i < offset + limit
-      ))
+      if (cluster) {
+        // In cluster mode, fetch all endpoints from all hub peers first
+        return cluster.getEndpoints(null, null, null, null, 10000, 0).then(
+          eps => response(200, buildUsersFromEndpoints(eps, nameFilter, keyword, offset, limit))
+        )
+      }
+      return response(200, buildUsersFromEndpoints(endpointList, nameFilter, keyword, offset, limit))
     }
   )
 )
