@@ -140,20 +140,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
   // Fetch local openclaw agent names as a Promise resolving to a string[]
   function getLocalAgentNames() {
-    if (!spawnOpenclaw) return Promise.resolve([])
-    return spawnOpenclaw(['openclaw', 'agents', 'list', '--json']).then(
-      output => {
-        try {
-          var list = JSON.parse(output.split('\n').join(''))
-          if (Array.isArray(list)) {
-            // Use id/name (e.g. "video-agent"), NOT identityName which is the display label
-            return list.map(a => a.id || a.name).filter(Boolean)
-          }
-        } catch {}
-        return []
-      },
-      () => []
-    )
+    try {
+      var ids = db.getCache('local_agent_ids')
+      if (ids && typeof ids.forEach === 'function') return Promise.resolve(ids)
+    } catch {}
+    return Promise.resolve([])
   }
 
   // Key used in chat_peer for a local agent's auto-reply config within a specific group
@@ -199,15 +190,17 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   }
 
   function triggerGroupAutoReply(chat, msg) {
-    if (!spawnOpenclaw) return
-    if (!chat.group) return
+    if (!spawnOpenclaw) { console.info('[group auto-reply] skip: no spawnOpenclaw'); return }
+    if (!chat.group) { console.info('[group auto-reply] skip: no chat.group'); return }
     var gcid = chat.gcid || ''
     var text = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
     var senderField = msg.sender || ''
     // Derive the plain username from a possibly-tagged sender (gcid/username)
     var senderUsername = senderField.indexOf('/') !== -1 ? senderField.split('/')[1] : senderField
 
+    console.info('[group auto-reply] triggered | gcid:', gcid, 'members:', JSON.stringify(chat.members), 'sender:', senderUsername, 'self:', app.username)
     getLocalAgentNames().then(function (localAgents) {
+      console.info('[group auto-reply] localAgents:', JSON.stringify(localAgents))
       chat.members.forEach(function (member) {
         // Skip the sender themselves
         if (member === senderUsername) return
@@ -215,17 +208,10 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         if (member === app.username) return
 
         var isLocalAgent = localAgents.indexOf(member) !== -1
+        console.info('[group auto-reply] member:', member, 'isLocalAgent:', isLocalAgent)
 
         if (isLocalAgent) {
-          // ── Local openclaw agent: check per-group auto-reply config ──
-          var key = groupAgentKey(gcid, member)
-          var agentConfig = getPeerConfig(key)
-          if (!agentConfig.autoReply) {
-            // Not yet approved — insert a request hint in this agent's peer chat
-            notifyGroupChatRequest(chat, member)
-            return
-          }
-          // Approved — call the agent and post its reply back to the group
+          // ── Local openclaw agent: always auto-reply (local user owns these agents) ──
           var sessionId = gcid + '~' + member
           var cmd = ['openclaw', 'agent', '--agent', member, '--message', text, '--session-id', sessionId, '--json']
           console.info('[group auto-reply] calling local agent', member, 'for group', gcid || chat.group)
@@ -393,8 +379,8 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         if (sender !== app.username) chat.newCount++
         if (time > chat.updateTime) chat.updateTime = time
         // Write to chat_log — only for messages from others (own messages are logged in add*Message)
+        var msgText = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
         if (sender !== app.username) {
-          var msgText = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
           console.info('[chat recv]', app.username, '<-', sender, ':', msgText)
           triggerAutoReply(chat, msg)
           try {
@@ -408,6 +394,13 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
                 null)
             }
           } catch {}
+        }
+        // For group chats, trigger local agents regardless of who sent the message.
+        // Local agents are virtual members of this EP — we proxy their participation.
+        // Skip if this message was itself posted by a local agent (avoid infinite loop).
+        var isAgentReply = typeof msg.message === 'object' && !!msg.message?.agentName
+        if (chat.group && !isAgentReply) {
+          triggerGroupAutoReply(chat, msg)
         }
       }
     })
@@ -560,13 +553,6 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             }
           } catch {}
           if (initial) chat.newCount = 0
-          if (newMsgs.length > 0) {
-            newMsgs.forEach(msg => {
-              if (msg.sender !== app.username && !msg.sender.endsWith('/' + app.username)) {
-                triggerGroupAutoReply(chat, msg)
-              }
-            })
-          }
         }
       })
     }
@@ -813,9 +799,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var chat = findGroupChat(creator, group)
     if (!chat) return Promise.resolve(false)
     if (app.username !== creator && !chat.members.includes(app.username)) return Promise.resolve(false)
-    // Embed sender as [gcid]/[username] inside the message payload
+    // Embed sender as [gcid]/[username] inside the message payload.
+    // For agent replies use the agent's own name as the username part so the UI shows the agent.
     var gcid = chat.gcid || ''
-    var taggedSender = gcid ? (gcid + '/' + app.username) : app.username
+    var senderName = (fromAgent && message && message.agentName) ? message.agentName : app.username
+    var taggedSender = gcid ? (gcid + '/' + senderName) : senderName
     var taggedMessage = typeof message === 'string'
       ? { text: message, sender: taggedSender }
       : Object.assign({}, message, { sender: taggedSender })
@@ -829,10 +817,6 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         db.logChat(mesh.name, 'group', group, chat.name, creator, taggedSender, 'message',
           msgText, null)
       } catch {}
-      // Only trigger auto-reply for human-sent messages, not agent replies (avoid infinite loop)
-      if (!fromAgent) {
-        triggerGroupAutoReply(chat, { time: Date.now(), sender: taggedSender, message: taggedMessage })
-      }
       return true
     })
   }

@@ -21,15 +21,15 @@
         class="message"
         :class="{ sent: isMessageSent(msg), typing: msg.isTyping }"
       >
-        <div class="message-avatar">
+          <div class="message-avatar">
           <div v-if="chat.isOpenclaw && !isMessageSent(msg) && !msg.isTyping" class="avatar-emoji">
             {{ chat.emoji }}
           </div>
           <div v-else-if="msg.isTyping && chat.isOpenclaw" class="avatar-emoji">
             {{ chat.emoji }}
           </div>
-          <div v-else-if="!msg.isTyping" class="avatar-placeholder" :style="{ background: getAvatarColor(isMessageSent(msg) ? (currentUserName || 'You') : chat.name) }">
-            {{ (isMessageSent(msg) ? (currentUserName || 'You') : chat.name)[0].toUpperCase() }}
+          <div v-else-if="!msg.isTyping" class="avatar-placeholder" :style="{ background: getAvatarColor(isMessageSent(msg) ? (currentUserName || 'You') : (msg.sender || chat.name)) }">
+            {{ (isMessageSent(msg) ? (currentUserName || 'You') : (msg.sender || chat.name))[0].toUpperCase() }}
           </div>
         </div>
         <div class="message-body">
@@ -40,7 +40,7 @@
           </div>
           <template v-else>
             <div class="message-header">
-              <span class="message-author">{{ isMessageSent(msg) ? (currentUserName || 'You') : chat.name }}</span>
+              <span class="message-author">{{ isMessageSent(msg) ? (currentUserName || 'You') : (msg.sender || chat.name) }}</span>
               <span class="message-time">{{ msg.time }}</span>
             </div>
             <div class="message-bubble" :class="{ 'system-hint': msg.isSystemHint }">

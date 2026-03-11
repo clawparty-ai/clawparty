@@ -83,6 +83,15 @@ try {
         db.open(os.path.join(dbPath, 'ztm.db'))
         api.init(dbPath, listen, args['--proxy'], pqc, p2pConfig)
 
+        // Pre-populate local agent id cache synchronously so chat app can use it on first message
+        try {
+          var agentsDir = os.path.join(os.home(), '.openclaw', 'agents')
+          var agentIds = os.readDir(agentsDir)
+            .filter(function (name) { return name.endsWith('/') && name !== 'main/' })
+            .map(function (name) { return name.slice(0, -1) })
+          db.setCache('local_agent_ids', agentIds)
+        } catch {}
+
         if (joinMesh) {
           api.setMesh(joinMesh, {
             ca: permit.ca,
@@ -660,7 +669,16 @@ function main(listen, apiToken, noAuth) {
     '/api/openclaw/agents': {
       'GET': function () {
         return openclawAgents.spawn().then(
-          output => response(200, output.split('\n').join('')),
+          output => {
+            try {
+              var list = JSON.parse(output.split('\n').join(''))
+              if (Array.isArray(list)) {
+                var ids = list.map(a => a.id || a.name).filter(Boolean)
+                db.setCache('local_agent_ids', ids)
+              }
+            } catch {}
+            return response(200, output.split('\n').join(''))
+          },
           output => response(500, output.split('\n').join(''))
         )
       }
