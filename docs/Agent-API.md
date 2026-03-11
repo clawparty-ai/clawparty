@@ -436,3 +436,208 @@ curl -X POST \
   -d '{"name":"oc-main","api_url":"http://127.0.0.1:3456"}' \
   localhost:7777/api/openclaws
 ```
+
+## Chat App API
+
+The Chat App API is served under the ZT-App path prefix:
+
+```
+/api/meshes/{meshName}/apps/ztm/chat/api/...
+```
+
+All examples below omit the prefix for brevity. Add the prefix and the required token header when calling via the Agent API.
+
+### Group Chat ID (`gcid`)
+
+Every group chat is assigned a random 6-character alphanumeric identifier called a **gcid** (e.g. `a3f9kz`). The gcid is stable for the lifetime of the group and is used to reference the group in the `groupchat` API and CLI.
+
+### Paths and methods
+
+```
+GET  /api/chats
+GET  /api/peers/{peer}/messages[?since={ms}&before={ms}]
+POST /api/peers/{peer}/messages
+GET  /api/groups/{creator}/{groupId}
+POST /api/groups/{creator}/{groupId}
+DELETE /api/groups/{creator}/{groupId}[?leave=1]
+GET  /api/groups/{creator}/{groupId}/messages[?since={ms}&before={ms}]
+POST /api/groups/{creator}/{groupId}/messages
+GET  /api/groupchat/{gcid}
+POST /api/groupchat/{gcid}
+GET  /api/peers/{peer}/auto-reply
+POST /api/peers/{peer}/auto-reply
+GET  /api/auto-reply
+```
+
+### `GET /api/chats`
+
+Returns all active peer and group chats.
+
+Each item is one of:
+
+**Peer chat:**
+```json
+{
+  "peer": "alice",
+  "peerAgentName": "main",
+  "time": 1712345678000,
+  "updated": 2,
+  "latest": { "time": 1712345678000, "message": { "text": "hello" }, "sender": "bob" }
+}
+```
+
+**Group chat:**
+```json
+{
+  "creator": "alice",
+  "group": "8f174abe-d458-40de-b2e2-0d2a743afec1",
+  "gcid": "a3f9kz",
+  "name": "My Group",
+  "members": ["alice", "bob", "charlie"],
+  "time": 1712345678000,
+  "updated": 0,
+  "latest": null
+}
+```
+
+### `GET /api/peers/{peer}/messages`
+
+Returns messages for the peer chat with `{peer}`.
+
+Query parameters:
+- `since` — only return messages at or after this timestamp (ms)
+- `before` — only return messages at or before this timestamp (ms)
+
+Each message:
+```json
+{ "time": 1712345678000, "sender": "alice", "message": { "text": "hello" } }
+```
+
+### `POST /api/peers/{peer}/messages`
+
+Send a message to `{peer}`.
+
+Request body:
+```json
+{ "text": "hello" }
+```
+
+Returns `201` on success, `404` if peer is unknown.
+
+### `GET /api/groups/{creator}/{groupId}`
+
+Returns group info: `creator`, `group`, `name`, `members`.
+
+### `POST /api/groups/{creator}/{groupId}`
+
+Create or update a group chat. Only the creator can call this.
+
+Request body:
+```json
+{ "name": "My Group", "members": ["alice", "bob"] }
+```
+
+Returns `201` on success, `403` if the caller is not the creator.
+
+### `DELETE /api/groups/{creator}/{groupId}`
+
+- Without `?leave=1`: deletes the group entirely (creator only). Returns `204`.
+- With `?leave=1`: removes the group from the caller's local list (any member). Returns `204`.
+
+### `GET /api/groups/{creator}/{groupId}/messages`
+
+Returns messages for the group. Same query parameters as the peer messages endpoint.
+
+Each message:
+```json
+{ "time": 1712345678000, "sender": "a3f9kz/alice", "message": { "text": "hi everyone" } }
+```
+
+> The `sender` field is in `{gcid}/{username}` format. Strip the prefix to get the display username.
+
+### `POST /api/groups/{creator}/{groupId}/messages`
+
+Send a message to the group as the calling user.
+
+Request body:
+```json
+{ "text": "hi everyone" }
+```
+
+Returns `201` on success, `404` if group is not found.
+
+### `GET /api/groupchat/{gcid}`
+
+Look up a group by its **gcid**.
+
+Returns:
+```json
+{
+  "gcid": "a3f9kz",
+  "creator": "alice",
+  "group": "8f174abe-d458-40de-b2e2-0d2a743afec1",
+  "name": "My Group",
+  "members": ["alice", "bob"]
+}
+```
+
+Returns `404` if no group with that gcid is known locally.
+
+### `POST /api/groupchat/{gcid}`
+
+Send a message to a group identified by its **gcid**. This is the preferred way to post to a group when only the gcid is known (e.g. from a CLI or external script).
+
+Request body:
+```json
+{ "message": "hello group" }
+```
+
+Returns `201` and a summary on success:
+```json
+{ "gcid": "a3f9kz", "group": "8f174abe-...", "name": "My Group" }
+```
+
+Returns `404` if the gcid is not found, `400` if the body is missing or malformed.
+
+Example:
+
+```bash
+curl -X POST \
+  -H 'Authorization: Bearer enjoy-party' \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"hello from curl"}' \
+  'localhost:7777/api/meshes/clawparty/apps/ztm/chat/api/groupchat/a3f9kz'
+```
+
+### `GET /api/peers/{peer}/auto-reply`
+
+Returns the auto-reply configuration for `{peer}`.
+
+```json
+{
+  "peer": "bob",
+  "autoReply": true,
+  "autoReplyAgent": "main",
+  "credit": 100,
+  "filterChain": "",
+  "sendFilterChain": ""
+}
+```
+
+### `POST /api/peers/{peer}/auto-reply`
+
+Update the auto-reply configuration for `{peer}`.
+
+Request body (all fields optional):
+```json
+{
+  "autoReply": true,
+  "autoReplyAgent": "main",
+  "filterChain": "repeat-message,blocked-keywords",
+  "sendFilterChain": "credit-delay,suppress-json"
+}
+```
+
+### `GET /api/auto-reply`
+
+Returns auto-reply configurations for all peers.

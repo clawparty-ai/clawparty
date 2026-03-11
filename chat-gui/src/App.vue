@@ -159,6 +159,7 @@ const parseChatData = (data) => {
       isGroup: isGroup,
       creator: item.creator || '',
       groupId: item.group || '',
+      members: item.members || [],
       messages: item.latest ? [
         {
           text: item.latest.message?.text || '',
@@ -240,6 +241,7 @@ const fetchChats = async () => {
           chats.value[existingIndex].lastMessage = newChat.lastMessage
           chats.value[existingIndex].updated = newChat.updated
           chats.value[existingIndex].name = newChat.name
+          if (newChat.members) chats.value[existingIndex].members = newChat.members
           chats.value[existingIndex].isTemp = false
         } else {
           chats.value.push(newChat)
@@ -390,20 +392,21 @@ const switchMesh = async (meshName) => {
 const users = ref([])
 
 const fetchUsers = async () => {
-  console.log('[fetchUsers] currentMesh:', currentMesh.value)
   if (!currentMesh.value) return
   try {
-    console.log('[fetchUsers] calling getUsers for mesh:', currentMesh.value)
     const response = await chatService.getUsers(currentMesh.value)
-    console.log('[fetchUsers] response:', response.data)
-    users.value = response.data
+    // Response is now a list of EP objects: { id, name, username, online, ... }
+    // Exclude own endpoint(s)
+    users.value = (response.data || []).filter(ep => ep.username !== currentMeshAgentUsername.value)
   } catch (error) {
     console.error('[fetchUsers] error:', error)
   }
 }
 
 const selectUser = async (user) => {
-  const existingChat = chats.value.find(c => c.name === user.name)
+  // user is an EP object; peer identity for chat is ep.username
+  const peerName = user.username || user.name
+  const existingChat = chats.value.find(c => c.name === peerName)
   if (existingChat) {
     const index = chats.value.indexOf(existingChat)
     activeChat.value = index
@@ -413,7 +416,8 @@ const selectUser = async (user) => {
   } else {
     const newChat = {
       id: 'dm-' + Date.now(),
-      name: user.name,
+      name: peerName,
+      displayName: user.name !== peerName ? user.name + ' (' + peerName + ')' : peerName,
       time: '',
       lastMessage: '',
       updated: 0,
@@ -560,6 +564,19 @@ const joinParty = async (regUrl) => {
   await fetchMeshes()
 }
 
+const renameGroupChat = async (chat, newName) => {
+  if (!currentMesh.value || !newName.trim()) return
+  try {
+    await chatService.createGroup(currentMesh.value, chat.creator, chat.groupId, {
+      name: newName.trim(),
+      members: chat.members || []
+    })
+    await fetchChats()
+  } catch (error) {
+    console.error('Failed to rename group:', error)
+  }
+}
+
 provide('switchMesh', switchMesh)
 provide('meshes', meshes)
 provide('openclawAgents', openclawAgents)
@@ -567,6 +584,7 @@ provide('fetchUsers', fetchUsers)
 provide('users', users)
 provide('selectUser', selectUser)
 provide('createGroupChat', createGroupChat)
+provide('renameGroupChat', renameGroupChat)
 provide('currentMeshAgentUsername', currentMeshAgentUsername)
 provide('joinParty', joinParty)
 
