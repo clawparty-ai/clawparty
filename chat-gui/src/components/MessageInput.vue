@@ -125,6 +125,10 @@ const props = defineProps({
   isOpenclaw: {
     type: Boolean,
     default: false
+  },
+  autoFocus: {
+    type: Boolean,
+    default: true
   }
 })
 

@@ -54,6 +54,30 @@
         </div>
       </div>
     </div>
+    <!-- Mobile mesh (ClawParty) list view -->
+    <div v-if="isMobile && activeChat === null && mobileActiveOrg && mobileActiveOrg !== 'agents' && mobileActiveOrg !== 'groups'" class="mobile-agents-view">
+      <div class="mobile-agents-header">{{ mobileActiveOrg }}</div>
+      <div class="mobile-agents-list">
+        <div
+          v-for="user in users"
+          :key="'user-' + user.name"
+          class="mobile-agent-item"
+          @click="selectUser(user)"
+        >
+          <div class="item-avatar">{{ user.name[0].toUpperCase() }}</div>
+          <span class="item-name">{{ user.name }}</span>
+        </div>
+        <div
+          v-for="chat in meshChats"
+          :key="chat.id"
+          class="mobile-agent-item"
+          @click="selectChat(getChatIndex(chat.id))"
+        >
+          <div class="item-avatar">{{ chat.name[0].toUpperCase() }}</div>
+          <span class="item-name">{{ chat.name }}</span>
+        </div>
+      </div>
+    </div>
     <ChatMain
       v-if="activeChat !== null && activeChat < chats.length"
       :chat="chats[activeChat]"
@@ -62,6 +86,7 @@
       :sending="sending"
       :openclawSessions="openclawSessions"
       :showBackButton="isMobile"
+      :autoFocus="!isMobile"
       v-model="newMessage"
       v-model:selectedAgent="selectedAgent"
       @send="sendMessage"
@@ -104,6 +129,7 @@ const tokenChecking = ref(false)
 const tokenError = ref('')
 const isMobile = ref(window.innerWidth <= 768)
 const mobileActiveOrg = ref('agents')
+const users = ref([])
 let appStarted = false
 let chatsPollTimer = null
 
@@ -118,6 +144,13 @@ provide('currentMesh', currentMesh)
 const groupChats = computed(() =>
   chats.value.filter(c => c.isGroup && !c.isOpenclaw)
 )
+
+const meshChats = computed(() => {
+  if (!mobileActiveOrg.value || mobileActiveOrg.value === 'agents' || mobileActiveOrg.value === 'groups') {
+    return []
+  }
+  return chats.value.filter(c => !c.isGroup && !c.isOpenclaw)
+})
 
 const getChatIndex = (chatId) => {
   return chats.value.findIndex(c => c.id === chatId)
@@ -386,8 +419,6 @@ const switchMesh = async (meshName) => {
   await fetchChats()
   await fetchUsers()
 }
-
-const users = ref([])
 
 const fetchUsers = async () => {
   console.log('[fetchUsers] currentMesh:', currentMesh.value)
