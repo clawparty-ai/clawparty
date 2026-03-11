@@ -57,6 +57,7 @@
       :agents="availableAgents"
       :selectedAgent="selectedAgent"
       :isOpenclaw="chat.isOpenclaw"
+      :autoFocus="autoFocus"
       @update:modelValue="$emit('update:modelValue', $event)" 
       @update:selectedAgent="$emit('update:selectedAgent', $event)"
       @send="$emit('send')" 
@@ -107,6 +108,10 @@ const props = defineProps({
   showBackButton: {
     type: Boolean,
     default: false
+  },
+  autoFocus: {
+    type: Boolean,
+    default: true
   }
 })
 
