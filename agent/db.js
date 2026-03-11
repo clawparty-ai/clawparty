@@ -133,6 +133,13 @@ function open(pathname) {
     db.exec(`CREATE INDEX IF NOT EXISTS chat_log_time ON chat_log(time)`)
     db.exec(`CREATE INDEX IF NOT EXISTS chat_log_sender ON chat_log(sender)`)
   } catch {}
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cache (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  `)
 }
 
 function allZones() {
@@ -616,6 +623,33 @@ function countRecentMessages(mesh, chatId, sender, content, withinSeconds) {
   return rows[0] ? rows[0].cnt : 0
 }
 
+function getCache(key) {
+  var rows = db.sql('SELECT value FROM cache WHERE key = ?')
+    .bind(1, key)
+    .exec()
+  if (!rows[0]) {
+    console.info('[db cache] get', key, '-> (miss)')
+    return null
+  }
+  try {
+    var parsed = JSON.parse(rows[0].value)
+    console.info('[db cache] get', key, '->', JSON.stringify(parsed).substring(0, 100))
+    return parsed
+  } catch {
+    console.info('[db cache] get', key, '->', rows[0].value.substring(0, 100))
+    return rows[0].value
+  }
+}
+
+function setCache(key, value) {
+  var json = JSON.stringify(value)
+  console.info('[db cache] set', key, '->', json.substring(0, 100))
+  db.sql('INSERT INTO cache(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    .bind(1, key)
+    .bind(2, json)
+    .exec()
+}
+
 // event: 'message' | 'group_create' | 'group_delete' | 'group_leave'
 // chat_type: 'peer' | 'group'
 function logChat(mesh, chatType, chatId, chatName, creator, sender, event, content, members) {
@@ -711,4 +745,6 @@ export default {
   addBlockedKeyword,
   delBlockedKeyword,
   countRecentMessages,
+  getCache,
+  setCache,
 }

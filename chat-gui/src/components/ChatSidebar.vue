@@ -169,12 +169,12 @@
                 v-for="agent in filteredAgents"
                 :key="'a-' + agent.id"
                 class="modal-item"
-                :class="{ selected: pickerSelected.includes(agent.name) }"
+                :class="{ selected: pickerSelected.includes(agent.id) }"
               >
                 <input
                   type="checkbox"
-                  :checked="pickerSelected.includes(agent.name)"
-                  @change="togglePickerUser(agent.name)"
+                  :checked="pickerSelected.includes(agent.id)"
+                  @change="togglePickerUser(agent.id)"
                 />
                 <div class="item-avatar openclaw-avatar">{{ agent.emoji }}</div>
                 <span class="item-name">{{ agent.name }}</span>
@@ -491,13 +491,19 @@ const handleCreateGroup = async () => {
   if (pickerSelected.value.length === 0) return
   // pickerSelected stores username (for EP users) or agent name (for agents)
   const fromUsers = users.value.filter(u => pickerSelected.value.includes(u.username || u.name))
-  const fromAgents = openclawAgents.value.filter(a => pickerSelected.value.includes(a.name))
+  const fromAgents = openclawAgents.value.filter(a => pickerSelected.value.includes(a.id))
   const selectedObjs = [
     // EP users: pass username as the member identifier
     ...fromUsers.map(u => ({ name: u.username || u.name })),
-    ...fromAgents.map(a => ({ name: a.name }))
+    // Agents: use agent id (e.g. "video-agent") so it matches getLocalAgentNames() output
+    ...fromAgents.map(a => ({ name: a.id }))
   ]
-  const groupName = pickerSelected.value.join(', ')
+  // Build a human-friendly group name using display names
+  const displayNames = [
+    ...fromUsers.map(u => u.name || u.username),
+    ...fromAgents.map(a => a.name)
+  ]
+  const groupName = displayNames.join(', ')
   await createGroupChat(selectedObjs, groupName)
   closePicker()
   activeOrg.value = 'groups'
