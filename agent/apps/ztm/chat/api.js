@@ -142,7 +142,12 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   function getLocalAgentNames() {
     try {
       var ids = db.getCache('local_agent_ids')
-      if (ids && typeof ids.forEach === 'function') return Promise.resolve(ids)
+      if (ids && typeof ids.forEach === 'function') {
+        // Re-map into a fresh local array to avoid cross-module serialization issues
+        var fresh = []
+        ids.forEach(function (id) { fresh.push('' + id) })
+        return Promise.resolve(fresh)
+      }
     } catch {}
     return Promise.resolve([])
   }
@@ -150,6 +155,42 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   // Key used in chat_peer for a local agent's auto-reply config within a specific group
   function groupAgentKey(gcid, agentName) {
     return gcid + '~' + agentName
+  }
+
+  // Remove any group EP request hints from the group chat message list (called after approve)
+  function clearGroupEpRequestHint(gcid) {
+    var chat = chats.find(function (c) { return c.gcid === gcid })
+    if (!chat) return
+    chat.messages = chat.messages.filter(function (m) { return !m.isGroupEpRequest })
+  }
+
+  // Insert an approve-auto-reply hint into the group chat message list (local only, not published)
+  function notifyGroupEpRequest(chat) {
+    if (!chat.gcid) return
+    // Do the duplicate check synchronously before entering async, to avoid race conditions
+    if (chat.messages.some(function (m) { return m.isGroupEpRequest })) return
+    // Mark immediately so concurrent calls don't race past the check above
+    var placeholder = { isGroupEpRequest: true, _placeholder: true }
+    chat.messages.push(placeholder)
+    getLocalAgentNames().then(function (localAgents) {
+      // Replace placeholder with the real hint
+      var idx = chat.messages.indexOf(placeholder)
+      var time = Date.now()
+      var hint = {
+        time: time,
+        sender: app.username,
+        message: { text: 'You have been added to a group chat. Select an agent to auto-reply on your behalf.' },
+        isSystemHint: true,
+        isGroupRequest: true,
+        isGroupEpRequest: true,
+        gcid: chat.gcid,
+        groupName: chat.name || '',
+        availableAgents: localAgents.map(function (id) { return '' + id }),
+      }
+      if (idx !== -1) chat.messages.splice(idx, 1, hint)
+      else chat.messages.push(hint)
+      if (time > chat.updateTime) chat.updateTime = time
+    })
   }
 
   // Insert a group-chat-request hint into the local peer chat for a given agent
@@ -200,72 +241,74 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
     console.info('[group auto-reply] triggered | gcid:', gcid, 'members:', JSON.stringify(chat.members), 'sender:', senderUsername, 'self:', app.username)
     getLocalAgentNames().then(function (localAgents) {
-      console.info('[group auto-reply] localAgents:', JSON.stringify(localAgents))
+      // ── 1. Trigger local openclaw agents that are members of this group ──
       chat.members.forEach(function (member) {
-        // Skip the sender themselves
-        if (member === senderUsername) return
-        // Skip ourselves (our own messages are not auto-replied to)
-        if (member === app.username) return
+        if (member === senderUsername) return   // skip sender
+        if (member === app.username) return     // skip self (handled below)
+        if (localAgents.indexOf(member) === -1) return  // skip remote EP members
 
-        var isLocalAgent = localAgents.indexOf(member) !== -1
-        console.info('[group auto-reply] member:', member, 'isLocalAgent:', isLocalAgent)
-
-        if (isLocalAgent) {
-          // ── Local openclaw agent: always auto-reply (local user owns these agents) ──
-          var sessionId = gcid + '~' + member
-          var cmd = ['openclaw', 'agent', '--agent', member, '--message', text, '--session-id', sessionId, '--json']
-          console.info('[group auto-reply] calling local agent', member, 'for group', gcid || chat.group)
-          spawnOpenclaw(cmd).then(
-            function (output) {
-              var replyText
-              try {
-                var parsed = JSON.parse(output.split('\n').join(''))
-                replyText = parsed?.payloads?.[0]?.text ||
-                            parsed?.result?.payloads?.[0]?.text ||
-                            parsed?.message || parsed?.content || parsed?.text
-              } catch {}
-              if (!replyText) replyText = output.split('\n').join('').trim()
-              if (!replyText) return
-              console.info('[group auto-reply] agent', member, 'reply to group', gcid || chat.group, ':', replyText)
-              addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: member }, true)
-            },
-            function (err) {
-              console.error('[group auto-reply] openclaw error for agent', member, ':', err?.toString?.() || err)
-            }
-          )
-        } else {
-          // ── ZTM EP member: check their auto-reply config via chat_peer (keyed by gcid) ──
-          if (!gcid) return
-          var peerConfig = getPeerConfig(gcid)
-          if (!peerConfig.autoReply) return
-          var agentName = peerConfig.autoReplyAgent || 'main'
-          var credit = onReceive(gcid, senderUsername, text)
-          var sessionId = gcid + '~' + app.username
-          var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--session-id', sessionId, '--json']
-          console.info('[group auto-reply] calling agent', agentName, 'for EP member', member, 'in group', gcid)
-          spawnOpenclaw(cmd).then(
-            function (output) {
-              var replyText
-              try {
-                var parsed = JSON.parse(output.split('\n').join(''))
-                replyText = parsed?.payloads?.[0]?.text ||
-                            parsed?.result?.payloads?.[0]?.text ||
-                            parsed?.message || parsed?.content || parsed?.text
-              } catch {}
-              if (!replyText) replyText = output.split('\n').join('').trim()
-              if (!replyText) return
-              onSend(gcid, replyText, credit).then(function (shouldSend) {
-                if (!shouldSend) return
-                console.info('[group auto-reply] EP member', member, 'reply to group', gcid, ':', replyText)
-                addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: agentName }, true)
-              })
-            },
-            function (err) {
-              console.error('[group auto-reply] openclaw error for EP member', member, ':', err?.toString?.() || err)
-            }
-          )
-        }
+        // Local openclaw agent: always auto-reply
+        var sessionId = gcid + '~' + member
+        var cmd = ['openclaw', 'agent', '--agent', member, '--message', text, '--session-id', sessionId, '--json']
+        console.info('[group auto-reply] calling local agent', member, 'for group', gcid || chat.group)
+        spawnOpenclaw(cmd).then(
+          function (output) {
+            var replyText
+            try {
+              var parsed = JSON.parse(output.split('\n').join(''))
+              replyText = parsed?.payloads?.[0]?.text ||
+                          parsed?.result?.payloads?.[0]?.text ||
+                          parsed?.message || parsed?.content || parsed?.text
+            } catch {}
+            if (!replyText) replyText = output.split('\n').join('').trim()
+            if (!replyText) return
+            console.info('[group auto-reply] agent', member, 'reply to group', gcid || chat.group, ':', replyText)
+            addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: member }, true)
+          },
+          function (err) {
+            console.error('[group auto-reply] openclaw error for agent', member, ':', err?.toString?.() || err)
+          }
+        )
       })
+
+      // ── 2. Handle self (app.username) as a group member: EP-level auto-reply ──
+      // Only triggered when the message was sent by a remote EP (not self, not a local agent)
+      if (senderUsername === app.username) return
+      if (localAgents.indexOf(senderUsername) !== -1) return
+      if (!gcid) return
+      var peerConfig = getPeerConfig(gcid)
+      if (!peerConfig.autoReply) {
+        // Show approve hint in this group's message flow so the user can enable auto-reply
+        notifyGroupEpRequest(chat)
+        return
+      }
+      var agentName = peerConfig.autoReplyAgent || 'main'
+      var credit = onReceive(gcid, senderUsername, text)
+      var sessionId = gcid + '~' + app.username
+      var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--session-id', sessionId, '--json']
+      console.info('[group auto-reply] calling agent', agentName, 'for self in group', gcid)
+      spawnOpenclaw(cmd).then(
+        function (output) {
+          var replyText
+          try {
+            var parsed = JSON.parse(output.split('\n').join(''))
+            replyText = parsed?.payloads?.[0]?.text ||
+                        parsed?.result?.payloads?.[0]?.text ||
+                        parsed?.message || parsed?.content || parsed?.text
+          } catch {}
+          if (!replyText) replyText = output.split('\n').join('').trim()
+          if (!replyText) return
+          onSend(gcid, replyText, credit).then(function (shouldSend) {
+            if (!shouldSend) return
+            console.info('[group auto-reply] self reply to group', gcid, 'via agent', agentName, ':', replyText)
+            // Use app.username as sender so the EP's own name appears in the group chat
+            addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: app.username }, true)
+          })
+        },
+        function (err) {
+          console.error('[group auto-reply] openclaw error for self in group', gcid, ':', err?.toString?.() || err)
+        }
+      )
     })
   }
 
@@ -685,6 +728,14 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     if (chat) {
       chat.checkTime = chat.updateTime
       chat.newCount = 0
+      // Filter out EP request hints if auto-reply is already approved (e.g. after page refresh)
+      var gcid = chat.gcid
+      if (gcid) {
+        var peerConfig = getPeerConfig(gcid)
+        if (peerConfig && peerConfig.autoReply) {
+          chat.messages = chat.messages.filter(function (m) { return !m.isGroupEpRequest })
+        }
+      }
       return Promise.resolve(getMessagesBetween(chat.messages, since, before))
     } else {
       return Promise.resolve(null)
@@ -872,5 +923,6 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     getPeerConfig,
     setPeerConfig,
     allPeerConfigs,
+    clearGroupEpRequestHint,
   }
 }

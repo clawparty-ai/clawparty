@@ -188,6 +188,31 @@ export default function ({ app, mesh, utils }) {
       }),
     },
 
+    '/api/groupchat/{gcid}/auto-reply': {
+      'GET': responder((params) => {
+        var gcid = URL.decodeComponent(params.gcid)
+        return Promise.resolve(response(200, api.getPeerConfig(gcid)))
+      }),
+
+      'POST': responder((params, req) => {
+        var gcid = URL.decodeComponent(params.gcid)
+        var body
+        try { body = JSON.decode(req.body) } catch { body = {} }
+        var agentName = body.agent || 'main'
+        api.setPeerConfig(gcid, { autoReply: true, autoReplyAgent: agentName })
+        api.clearGroupEpRequestHint(gcid)
+        console.info('[group auto-reply] EP auto-reply enabled for group', gcid, 'agent:', agentName)
+        return Promise.resolve(response(200, api.getPeerConfig(gcid)))
+      }),
+
+      'DELETE': responder((params) => {
+        var gcid = URL.decodeComponent(params.gcid)
+        api.setPeerConfig(gcid, { autoReply: false })
+        console.info('[group auto-reply] EP auto-reply disabled for group', gcid)
+        return Promise.resolve(response(200, api.getPeerConfig(gcid)))
+      }),
+    },
+
     '/api/peers/{peer}/auto-reply': {
       'GET': responder((params) => {
         var peer = URL.decodeComponent(params.peer)
