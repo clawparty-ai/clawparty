@@ -141,12 +141,24 @@ export const chatService = {
     return api.delete(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}?leave=1`)
   },
 
+  updateGroupMembers(meshName, creator, groupId, name, members) {
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}`, { name, members })
+  },
+
   approveGroupAgentAutoReply(meshName, gcid, agentName) {
     return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/agents/${agentName}/auto-reply`)
   },
 
   revokeGroupAgentAutoReply(meshName, gcid, agentName) {
     return api.delete(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/agents/${agentName}/auto-reply`)
+  },
+
+  approveGroupEpAutoReply(meshName, gcid, agentName) {
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/auto-reply`, { agent: agentName || 'main' })
+  },
+
+  revokeGroupEpAutoReply(meshName, gcid) {
+    return api.delete(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/auto-reply`)
   }
 }
 

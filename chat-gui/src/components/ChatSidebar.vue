@@ -200,6 +200,66 @@
       </div>
     </Teleport>
 
+    <!-- Edit members modal -->
+    <Teleport to="body">
+      <div v-if="showEditMembers" class="modal-backdrop" @click.self="closeEditMembers">
+        <div class="modal-dialog">
+          <div class="modal-header">
+            <span class="modal-title">Edit Members — {{ editingChat?.name }}</span>
+            <button class="modal-close" @click="closeEditMembers">✕</button>
+          </div>
+          <div class="modal-search">
+            <input v-model="editMembersSearch" class="search-input" placeholder="Search members..." autofocus />
+          </div>
+          <div class="modal-list">
+            <template v-if="filteredEditUsers.length > 0">
+              <div class="modal-section-label">Members</div>
+              <label
+                v-for="user in filteredEditUsers"
+                :key="'eu-' + user.id"
+                class="modal-item"
+                :class="{ selected: editMembersSelected.includes(user.username || user.name) }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="editMembersSelected.includes(user.username || user.name)"
+                  @change="toggleEditMember(user.username || user.name)"
+                />
+                <div class="item-avatar" :style="{ background: getAvatarColor(user.username || user.name) }">
+                  {{ (user.username || user.name)[0].toUpperCase() }}
+                </div>
+                <span class="item-name">{{ user.name }}</span>
+                <span class="item-subname" v-if="user.username">{{ user.username }}</span>
+              </label>
+            </template>
+            <template v-if="filteredEditAgents.length > 0">
+              <div class="modal-section-label">Local Agents</div>
+              <label
+                v-for="agent in filteredEditAgents"
+                :key="'ea-' + agent.id"
+                class="modal-item"
+                :class="{ selected: editMembersSelected.includes(agent.id) }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="editMembersSelected.includes(agent.id)"
+                  @change="toggleEditMember(agent.id)"
+                />
+                <div class="item-avatar openclaw-avatar">{{ agent.emoji }}</div>
+                <span class="item-name">{{ agent.name }}</span>
+                <span class="item-tag">agent</span>
+              </label>
+            </template>
+          </div>
+          <div class="modal-footer">
+            <span class="modal-count">{{ editMembersSelected.length }} selected</span>
+            <button class="modal-cancel-btn" @click="closeEditMembers">Cancel</button>
+            <button class="modal-create-btn" :disabled="editMembersSelected.length === 0" @click="handleUpdateMembers">Save</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
       <div class="panel-list">
         <!-- Group Chats view — all groups across meshes -->
         <template v-if="activeOrg === 'groups'">
@@ -214,7 +274,7 @@
                 class="panel-item group-chat-header"
                 :class="{ active: getChatIndex(chat.id) === activeChat }"
               >
-                <div class="item-hash" @click="$emit('select', getChatIndex(chat.id))">#</div>
+                <div class="item-hash" @click.stop="toggleExpand(chat.id)" :title="expandedGroups.has(chat.id) ? 'Collapse members' : 'Expand members'">{{ expandedGroups.has(chat.id) ? '▼' : '▶' }}</div>
                 <!-- Rename inline editor -->
                 <template v-if="renamingChatId === chat.id">
                   <input
@@ -231,7 +291,7 @@
                 </template>
                 <span v-if="chat.updated > 0 && renamingChatId !== chat.id" class="unread-badge">{{ chat.updated > 99 ? '99+' : chat.updated }}</span>
                 <button class="group-action-btn" @click.stop="startRename(chat)" title="Rename">✎</button>
-                <button class="group-action-btn" @click.stop="toggleExpand(chat.id)" :title="expandedGroups.has(chat.id) ? 'Collapse' : 'Expand members'">{{ expandedGroups.has(chat.id) ? '▲' : '▼' }}</button>
+                <button class="group-action-btn" @click.stop="openEditMembers(chat)" title="Edit members">👥</button>
               </div>
               <!-- Expanded members list -->
               <div v-if="expandedGroups.has(chat.id)" class="group-members-list">
@@ -322,6 +382,7 @@ const users = inject('users')
 const selectUser = inject('selectUser')
 const createGroupChat = inject('createGroupChat')
 const renameGroupChat = inject('renameGroupChat')
+const updateGroupMembers = inject('updateGroupMembers')
 const currentMeshAgentUsername = inject('currentMeshAgentUsername')
 const joinParty = inject('joinParty')
 
@@ -362,6 +423,58 @@ const submitRename = async (chat) => {
 const cancelRename = () => {
   renamingChatId.value = null
   renameValue.value = ''
+}
+
+// Edit members state
+const showEditMembers = ref(false)
+const editingChat = ref(null)
+const editMembersSelected = ref([])
+const editMembersSearch = ref('')
+
+const filteredEditUsers = computed(() => {
+  const q = editMembersSearch.value.trim().toLowerCase()
+  // Exclude the creator (always a member, can't be removed)
+  const nonCreator = users.value.filter(u => (u.username || u.name) !== editingChat.value?.creator)
+  if (!q) return nonCreator
+  return nonCreator.filter(u =>
+    u.name.toLowerCase().includes(q) ||
+    (u.username && u.username.toLowerCase().includes(q))
+  )
+})
+
+const filteredEditAgents = computed(() => {
+  const q = editMembersSearch.value.trim().toLowerCase()
+  if (!q) return openclawAgents.value
+  return openclawAgents.value.filter(a => a.name.toLowerCase().includes(q))
+})
+
+const openEditMembers = (chat) => {
+  editingChat.value = chat
+  // Pre-select current members (excluding creator who is always included)
+  editMembersSelected.value = (chat.members || []).filter(m => m !== chat.creator)
+  editMembersSearch.value = ''
+  showEditMembers.value = true
+}
+
+const closeEditMembers = () => {
+  showEditMembers.value = false
+  editingChat.value = null
+  editMembersSelected.value = []
+  editMembersSearch.value = ''
+}
+
+const toggleEditMember = (name) => {
+  const idx = editMembersSelected.value.indexOf(name)
+  if (idx === -1) editMembersSelected.value.push(name)
+  else editMembersSelected.value.splice(idx, 1)
+}
+
+const handleUpdateMembers = async () => {
+  if (!editingChat.value) return
+  // Always include the creator
+  const members = [editingChat.value.creator, ...editMembersSelected.value.filter(m => m !== editingChat.value.creator)]
+  await updateGroupMembers(editingChat.value, members)
+  closeEditMembers()
 }
 
 // Active org
@@ -976,16 +1089,22 @@ const handleCreateGroup = async () => {
 }
 
 .item-hash {
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: rgba(255, 255, 255, 0.5);
-  font-size: 18px;
+  font-size: 11px;
   font-weight: 700;
-  margin-right: 10px;
+  margin-right: 6px;
   flex-shrink: 0;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.item-hash:hover {
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .panel-item.active .item-hash { color: rgba(255, 255, 255, 0.9); }
