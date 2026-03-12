@@ -290,10 +290,10 @@ const fetchChats = async () => {
       if (savedChatId !== null) {
         const newIndex = chats.value.findIndex(c => c.id === savedChatId && c.isOpenclaw === savedIsOpenclaw)
         if (newIndex !== -1) {
-          activeChat.value = newIndex
+          // activeChat.value = newIndex
         }
       } else if (activeChat.value === null && chats.value.length > 0) {
-        activeChat.value = 0
+        // activeChat.value = 0
       }
     }
   } catch (error) {
