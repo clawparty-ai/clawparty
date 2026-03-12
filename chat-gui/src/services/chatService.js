@@ -145,6 +145,13 @@ export const chatService = {
     return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}`, { name, members })
   },
 
+  approvePeerAutoReply(meshName, peer, agentName) {
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${peer}/auto-reply`, {
+      autoReply: true,
+      autoReplyAgent: agentName || 'main'
+    })
+  },
+
   approveGroupAgentAutoReply(meshName, gcid, agentName) {
     return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/agents/${agentName}/auto-reply`)
   },

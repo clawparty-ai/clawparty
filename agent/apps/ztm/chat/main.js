@@ -224,6 +224,7 @@ export default function ({ app, mesh, utils }) {
         var body
         try { body = JSON.decode(req.body) } catch { body = {} }
         api.setPeerConfig(peer, body)
+        if (body.autoReply) api.clearPeerRequestHint(peer)
         return Promise.resolve(response(200, api.getPeerConfig(peer)))
       }),
     },
