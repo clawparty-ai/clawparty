@@ -45,8 +45,8 @@
             </div>
             <div class="message-bubble" :class="{ 'system-hint': msg.isSystemHint }">
               <div class="message-content" v-html="renderMarkdown(msg.text)"></div>
-              <div v-if="msg.isGroupRequest" class="group-request-actions">
-                <template v-if="msg.isGroupEpRequest && msg.availableAgents && msg.availableAgents.length > 0">
+              <div v-if="msg.isGroupRequest || msg.isPeerRequest" class="group-request-actions">
+                <template v-if="(msg.isPeerRequest || msg.isGroupEpRequest) && msg.availableAgents && msg.availableAgents.length > 0">
                   <select v-model="msg.selectedAgent" class="agent-select">
                     <option v-for="a in msg.availableAgents" :key="a" :value="a">{{ a }}</option>
                   </select>
@@ -208,7 +208,9 @@ const parseMessages = (data) => {
       isSystemHint: item.isSystemHint || false,
       isGroupRequest: item.isGroupRequest || false,
       isGroupEpRequest: item.isGroupEpRequest || false,
+      isPeerRequest: item.isPeerRequest || false,
       gcid: item.gcid || '',
+      peer: item.peer || '',
       agentName: item.agentName || '',
       groupName: item.groupName || '',
       availableAgents: item.availableAgents || [],
@@ -218,9 +220,16 @@ const parseMessages = (data) => {
 }
 
 const approveGroupRequest = async (msg) => {
-  if (!props.meshName || !msg.gcid) return
+  if (!props.meshName) return
   try {
-    if (msg.isGroupEpRequest) {
+    if (msg.isPeerRequest) {
+      // Peer chat: enable auto-reply with selected agent
+      const agentName = msg.selectedAgent || 'main'
+      await chatService.approvePeerAutoReply(props.meshName, msg.peer, agentName)
+      msg.isPeerRequest = false
+      msg.isSystemHint = false
+      msg.text = `Auto-reply enabled for "${msg.peer}" via agent "${agentName}".`
+    } else if (msg.isGroupEpRequest) {
       // ZTM EP member: enable auto-reply for this group with the selected agent
       const agentName = msg.selectedAgent || 'main'
       await chatService.approveGroupEpAutoReply(props.meshName, msg.gcid, agentName)
@@ -228,14 +237,14 @@ const approveGroupRequest = async (msg) => {
       msg.isGroupEpRequest = false
       msg.text = `Auto-reply enabled for group "${msg.groupName || msg.gcid}" via agent "${agentName}".`
     } else {
-      // Local openclaw agent
+      // Local openclaw agent in group
       if (!msg.agentName) return
       await chatService.approveGroupAgentAutoReply(props.meshName, msg.gcid, msg.agentName)
       msg.isGroupRequest = false
       msg.text = `Auto-reply approved for agent "${msg.agentName}" in group "${msg.groupName || msg.gcid}".`
     }
   } catch (err) {
-    console.error('Failed to approve group auto-reply:', err)
+    console.error('Failed to approve auto-reply:', err)
   }
 }
 

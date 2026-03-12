@@ -131,11 +131,33 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   }
 
   function notifyAutoReplySetup(chat) {
-    var hint = `Auto-reply is currently disabled for this conversation. ` +
-      `You can enable it with: clawparty chat auto-reply ${chat.peer} --enable [--agent <name>]`
-    var time = Date.now()
-    chat.messages.push({ time, message: { text: hint }, sender: app.username, isSystemHint: true })
-    if (time > chat.updateTime) chat.updateTime = time
+    if (!chat.peer) return
+    // Only insert once
+    if (chat.messages.some(function (m) { return m.isPeerRequest })) return
+    var placeholder = { isPeerRequest: true, isSystemHint: true, _placeholder: true }
+    chat.messages.push(placeholder)
+    getLocalAgentNames().then(function (localAgents) {
+      var idx = chat.messages.indexOf(placeholder)
+      var time = Date.now()
+      var hint = {
+        time: time,
+        sender: app.username,
+        message: { text: 'New chat request from ' + chat.peer + '. Select an agent to auto-reply on your behalf.' },
+        isSystemHint: true,
+        isPeerRequest: true,
+        peer: chat.peer,
+        availableAgents: localAgents.map(function (id) { return '' + id }),
+      }
+      if (idx !== -1) chat.messages.splice(idx, 1, hint)
+      else chat.messages.push(hint)
+      if (time > chat.updateTime) chat.updateTime = time
+    })
+  }
+
+  function clearPeerRequestHint(peer) {
+    var chat = findPeerChat(peer)
+    if (!chat) return
+    chat.messages = chat.messages.filter(function (m) { return !m.isPeerRequest })
   }
 
   // Fetch local openclaw agent names as a Promise resolving to a string[]
@@ -526,9 +548,9 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
               })
             }
             mergeMessages(chat, messages)
-            if (hasIncoming && !initial) {
+            if (hasIncoming) {
               var cfg = db.getChatPeer(mesh.name, chat.peer)
-              if (cfg && !cfg.autoReply && !chat.messages.some(m => m.isSystemHint)) {
+              if (cfg && !cfg.autoReply && !chat.messages.some(m => m.isPeerRequest)) {
                 notifyAutoReplySetup(chat)
               }
             }
@@ -545,6 +567,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
           var creator = params.creator
           var group = params.group
           if (sender !== creator) return
+          if (isGroupDismissed(creator, group)) return
           var chat = findGroupChat(creator, group)
           if (!chat) chat = newGroupChat(creator, group)
           try {
@@ -564,6 +587,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
           var pathSender = params.sender
           var creator = params.creator
           var group = params.group
+          if (isGroupDismissed(creator, group)) return
           var chat = findGroupChat(creator, group)
           // If no local chat found, check info.json for existing gcid before creating new
           if (!chat) {
@@ -717,6 +741,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     if (chat) {
       chat.checkTime = chat.updateTime
       chat.newCount = 0
+      // Filter out peer request hints if auto-reply is already approved
+      var peerConfig = getPeerConfig(peer)
+      if (peerConfig && peerConfig.autoReply) {
+        chat.messages = chat.messages.filter(function (m) { return !m.isPeerRequest })
+      }
       return Promise.resolve(getMessagesBetween(chat.messages, since, before))
     } else {
       return Promise.resolve(null)
@@ -803,6 +832,18 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     })
   }
 
+  function groupDismissedKey(creator, group) {
+    return 'group_dismissed:' + creator + ':' + group
+  }
+
+  function isGroupDismissed(creator, group) {
+    try { return !!db.getCache(groupDismissedKey(creator, group)) } catch { return false }
+  }
+
+  function markGroupDismissed(creator, group) {
+    try { db.setCache(groupDismissedKey(creator, group), true) } catch {}
+  }
+
   function delGroup(creator, group) {
     if (creator !== app.username) return Promise.resolve(false)
     var chat = findGroupChat(creator, group)
@@ -812,18 +853,20 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     return mesh.dir(dirname).then(files => {
       return Promise.all(files.map(f => mesh.unlink(os.path.join(dirname, f))))
     }).then(() => mesh.unlink(os.path.join(dirname, 'info.json'))).then(() => {
-      // Remove from in-memory list
+      // Remove from in-memory list and mark dismissed in db
       var idx = chats.indexOf(chat)
       if (idx >= 0) chats.splice(idx, 1)
+      markGroupDismissed(creator, group)
       try {
         db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
           'group_delete', null, chat.members)
       } catch {}
       return true
     }).catch(() => {
-      // Even if unlink fails, remove from memory and log
+      // Even if unlink fails, remove from memory and mark dismissed
       var idx = chats.indexOf(chat)
       if (idx >= 0) chats.splice(idx, 1)
+      markGroupDismissed(creator, group)
       try {
         db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
           'group_delete', null, chat.members)
@@ -835,9 +878,10 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   function leaveGroup(creator, group) {
     var chat = findGroupChat(creator, group)
     if (!chat) return Promise.resolve(false)
-    // Non-creator: just remove from local in-memory list
+    // Remove from in-memory list and mark dismissed in db
     var idx = chats.indexOf(chat)
     if (idx >= 0) chats.splice(idx, 1)
+    markGroupDismissed(creator, group)
     try {
       db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
         'group_leave', null, chat.members)
@@ -924,5 +968,6 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     setPeerConfig,
     allPeerConfigs,
     clearGroupEpRequestHint,
+    clearPeerRequestHint,
   }
 }
