@@ -269,7 +269,7 @@ const pollMessages = async () => {
           props.chat.messages.push(newMsg)
         }
       })
-      scrollToBottom()
+      // scrollToBottom()
     }
   } catch (error) {
     if (error.response?.status !== 404) {
