@@ -112,7 +112,8 @@ import { ref, onMounted, onUnmounted, provide, computed } from 'vue'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
 import { meshService, chatService, openclawService, setApiToken, getApiToken } from './services/chatService'
-
+import ShellService from './services/ShellService'
+const shellService = new ShellService();
 const meshes = ref([])
 const openclawAgents = ref([])
 const openclawSessions = ref([])
@@ -136,6 +137,7 @@ let chatsPollTimer = null
 const handleResize = () => {
   isMobile.value = window.innerWidth <= 768
 }
+
 
 window.addEventListener('resize', handleResize)
 
@@ -645,8 +647,9 @@ const stopChatsPolling = () => {
   }
 }
 
-onMounted(() => {
-  initAuth()
+onMounted(async () => {
+	await shellService.startPipy(()=>{});
+	initAuth()
 })
 
 onUnmounted(() => {
