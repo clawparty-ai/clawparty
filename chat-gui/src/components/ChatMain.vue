@@ -10,6 +10,7 @@
       @deleteGroup="$emit('deleteGroup', $event)"
       @leaveGroup="$emit('leaveGroup', $event)"
       @back="$emit('back')"
+      @download="handleDownload"
     />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
@@ -66,6 +67,8 @@
       :selectedAgent="selectedAgent"
       :isOpenclaw="chat.isOpenclaw"
       :autoFocus="autoFocus"
+      :members="chat.isGroup ? (chat.members || []).filter(m => m !== currentUserName) : []"
+      :agentGroups="agentGroupChats"
       @update:modelValue="$emit('update:modelValue', $event)" 
       @update:selectedAgent="$emit('update:selectedAgent', $event)"
       @send="$emit('send')" 
@@ -129,12 +132,22 @@ const messagesContainer = ref(null)
 let pollTimer = null
 const searchQuery = ref('')
 const openclawAgents = inject('openclawAgents', ref([]))
+const allGroupChats = inject('groupChats', ref([]))
+const resolveEpDisplayName = inject('resolveEpDisplayName', (u) => u)
 
 defineExpose({})
 
 const availableAgents = computed(() => {
   const currentAgentId = props.chat.agentId
   return (openclawAgents.value || []).filter(agent => agent.id !== currentAgentId)
+})
+
+const agentGroupChats = computed(() => {
+  if (!props.chat.isOpenclaw) return []
+  const agentId = props.chat.agentId
+  return allGroupChats.value.filter(c =>
+    c.members && c.members.indexOf(agentId) !== -1
+  )
 })
 
 const currentDate = computed(() => {
@@ -145,6 +158,27 @@ const currentDate = computed(() => {
 
 const handleSearch = (query) => {
   searchQuery.value = query
+}
+
+const handleDownload = () => {
+  const messages = props.chat.messages || []
+  const chatName = props.chat.name || 'chat'
+  const lines = messages
+    .filter(msg => !msg.isTyping)
+    .map(msg => {
+      const time = msg.time || ''
+      const sender = msg.sender || (msg.isSent ? (props.currentUserName || 'Me') : chatName)
+      const text = msg.text || ''
+      return `[${time}] ${sender}: ${text}`
+    })
+  const content = lines.join('\n')
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${chatName}-chat-history.txt`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 const filteredMessages = computed(() => {
@@ -199,10 +233,11 @@ const parseMessages = (data) => {
     const rawSender = item.sender || ''
     const displaySender = rawSender.indexOf('/') !== -1 ? rawSender.split('/')[1] : rawSender
     const isSent = displaySender === props.currentUserName
+    const senderDisplay = props.chat?.isGroup ? resolveEpDisplayName(displaySender) : displaySender
     return {
       text: item.message?.text || '',
       time: formatTime(item.time),
-      sender: displaySender,
+      sender: senderDisplay,
       isSent,
       timestamp: item.time,
       isSystemHint: item.isSystemHint || false,

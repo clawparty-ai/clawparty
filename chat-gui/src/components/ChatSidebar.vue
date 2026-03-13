@@ -301,7 +301,7 @@
                   class="group-member-item"
                 >
                   <div class="member-avatar" :style="{ background: getAvatarColor(member) }">{{ member[0].toUpperCase() }}</div>
-                  <span class="member-name">{{ member }}</span>
+                  <span class="member-name">{{ resolveEpDisplayName(member) }}</span>
                 </div>
                 <div v-if="!chat.members || chat.members.length === 0" class="group-member-empty">No members</div>
               </div>
@@ -385,6 +385,7 @@ const renameGroupChat = inject('renameGroupChat')
 const updateGroupMembers = inject('updateGroupMembers')
 const currentMeshAgentUsername = inject('currentMeshAgentUsername')
 const joinParty = inject('joinParty')
+const resolveEpDisplayName = inject('resolveEpDisplayName')
 
 // Group expand / rename state
 const expandedGroups = ref(new Set())
