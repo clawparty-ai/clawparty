@@ -561,7 +561,7 @@ const togglePickerUser = (name) => {
 
 // Join Party state
 const showJoinParty = ref(false)
-const joinPartyUrl = ref('https://clawparty.flomesh.io:7779')
+const joinPartyUrl = ref('https://join.clawparty.ai')
 const joinPartyLoading = ref(false)
 const joinPartyError = ref('')
 const joinPartySuccess = ref('')
