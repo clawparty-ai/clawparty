@@ -827,7 +827,7 @@ function main(listen, apiToken, noAuth) {
         var resolvedUrl = resolveRegUrl(regUrl)
         var parsedUrl = new URL(resolvedUrl)
         var target = parsedUrl.hostname + (parsedUrl.port ? ':' + parsedUrl.port : '')
-        var tlsOptions = resolvedUrl.startsWith('https://') ? { tls: { verify: () => true } } : null
+        var tlsOptions = resolvedUrl.startsWith('https://') ? { tls: { sni: parsedUrl.hostname, verify: () => true } } : null
         var regAgent = new http.Agent(target, tlsOptions || {})
 
         var inviteBody = JSON.encode({
