@@ -2,8 +2,6 @@ name: Release ZTM Cli
 
 on:
   workflow_dispatch:
-  permissions:
-    contents: write
   push:
     tags:
       - 'v*.*.*'
@@ -283,6 +281,8 @@ jobs:
           path: libztm-${{needs.set-release-version.outputs.release_version}}-android.tar.gz
 
   create-release:
+    permissions:
+      contents: write
     name: create release
     runs-on: ubuntu-22.04
     needs:
