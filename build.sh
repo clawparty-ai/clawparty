@@ -23,5 +23,3 @@ build/deps.sh
 cd "$ZTM_DIR"
 build/gui.sh
 build/pipy.sh
-
-ln -sf ztm "$ZTM_DIR/bin/clawparty"
