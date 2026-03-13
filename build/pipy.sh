@@ -109,12 +109,15 @@ then
     exit 0
   fi
 
-  bin/ztm version
-
   source version.env
 
   if [ -z "$BUILD_ZTM_SHARED" ]
   then
+    bin/ztm version
+    pushd bin
+    ln -sfn ztm clawparty
+    popd
+
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
       OS_NAME=generic_linux
     elif [[ "$OSTYPE" == "darwin"* ]]; then
@@ -126,7 +129,7 @@ then
     then
       OS_ARCH=arm64
     fi
-    tar zcvf ztm-aio-${VERSION}-${OS_NAME}-${OS_ARCH}.tar.gz bin/ztm
+    tar zcvf ztm-aio-${VERSION}-${OS_NAME}-${OS_ARCH}.tar.gz bin/ztm bin/clawparty
   else
     tar zcvf libztm-${VERSION}-android.tar.gz usr/local/lib/*.so
   fi
