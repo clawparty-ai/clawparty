@@ -2,6 +2,8 @@ name: Release ZTM Cli
 
 on:
   workflow_dispatch:
+  permissions:
+    contents: write
   push:
     tags:
       - 'v*.*.*'
