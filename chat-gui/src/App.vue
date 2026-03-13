@@ -608,6 +608,19 @@ const renameGroupChat = async (chat, newName) => {
   }
 }
 
+const updateGroupMembers = async (chat, members) => {
+  if (!currentMesh.value) return
+  try {
+    await chatService.updateGroupMembers(
+      currentMesh.value, chat.creator, chat.groupId,
+      chat.name, members
+    )
+    await fetchChats()
+  } catch (error) {
+    console.error('Failed to update group members:', error)
+  }
+}
+
 provide('switchMesh', switchMesh)
 provide('meshes', meshes)
 provide('openclawAgents', openclawAgents)
@@ -616,6 +629,7 @@ provide('users', users)
 provide('selectUser', selectUser)
 provide('createGroupChat', createGroupChat)
 provide('renameGroupChat', renameGroupChat)
+provide('updateGroupMembers', updateGroupMembers)
 provide('currentMeshAgentUsername', currentMeshAgentUsername)
 provide('joinParty', joinParty)
 
