@@ -25,6 +25,7 @@
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-os": "~2",
     "@tauri-apps/plugin-shell": "2.3.4",
+		"@tauri-apps/plugin-http": "^2",
     "axios": "^1.13.6",
     "marked": "^17.0.3",
     "vue": "^3.4.0"

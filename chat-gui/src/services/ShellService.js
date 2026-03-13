@@ -14,7 +14,7 @@ export default class ShellService {
 		return `${appDataDirPath}/ztmdb`
 	}
 	async startPipy (callError){
-		const pm = platform();
+		const pm = window.__TAURI_OS_PLUGIN_INTERNALS__ && platform();
 		console.log(pm)
 		const port = 6789;
 		let resourceDirPath = '';

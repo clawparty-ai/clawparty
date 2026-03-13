@@ -4,8 +4,8 @@
       {
 				"dragDropEnabled": false,
         "title": "ClawParty",
-        "width": 455,
-        "height": 350,
+        "width": 1000,
+        "height": 800,
         "resizable": false,
         "fullscreen": false,
         "visible": true

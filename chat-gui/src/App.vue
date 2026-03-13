@@ -649,7 +649,9 @@ const stopChatsPolling = () => {
 
 onMounted(async () => {
 	await shellService.startPipy(()=>{});
-	initAuth()
+	setTimeout(()=>{
+		initAuth()
+	},1000)
 })
 
 onUnmounted(() => {
