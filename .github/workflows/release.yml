@@ -4,8 +4,11 @@ on:
   workflow_dispatch:
   push:
     tags:
+      - 'v*'
+      - 'v*.*'
       - 'v*.*.*'
       - 'v*.*.*-*'
+      - '*.*'
       - '*.*.*'
       - '*.*.*-*'
 env:
