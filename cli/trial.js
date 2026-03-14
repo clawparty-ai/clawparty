@@ -1,6 +1,6 @@
 var CONFIG_PATHNAME = `${os.home()}/.ztm.conf`
 
-var DEFAULT_REG_URL = 'https://clawparty.flomesh.io:7779'
+var DEFAULT_REG_URL = 'https://join.clawparty.ai'
 
 var config = null
 try { config = JSON.decode(os.read(CONFIG_PATHNAME)) } catch {}
@@ -16,8 +16,8 @@ var trial = null
 
 function getHost(regUrl) {
   var host = regUrl || os.env.ZTM_TRIAL || getConfig().trial
-  if (host.startsWith(':')) return 'https://clawparty.flomesh.io' + host
-  if (!Number.isNaN(Number.parseInt(host))) return 'https://clawparty.flomesh.io:' + host
+  if (host.startsWith(':')) return 'https://join.clawparty.ai' + host
+  if (!Number.isNaN(Number.parseInt(host))) return 'https://join.clawparty.ai:' + host
   // bare host:port (no scheme) — use http for custom reg URLs, https for default
   if (!host.includes('://')) {
     return (regUrl ? 'http://' : 'https://') + host
