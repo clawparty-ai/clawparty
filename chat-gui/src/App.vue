@@ -651,7 +651,7 @@ onMounted(async () => {
 	await shellService.startPipy(()=>{});
 	setTimeout(()=>{
 		initAuth()
-	},1000)
+	},1500)
 })
 
 onUnmounted(() => {
