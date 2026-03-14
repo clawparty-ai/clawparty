@@ -20,6 +20,16 @@ export default function ({ app, mesh, api, utils }) {
       return Promise.resolve([buffer, new StreamEnd])
     }
 
+    function resolveGroupGcid(nameOrGcid) {
+      return api.allChats().then(chats => {
+        var groups = chats.filter(c => c.group)
+        var found = groups.find(g => g.gcid === nameOrGcid)
+                 || groups.find(g => g.name === nameOrGcid)
+        if (!found) throw 'group not found: ' + nameOrGcid
+        return found
+      })
+    }
+
     try {
       return utils.parseArgv(argv, {
         help: text => Promise.resolve(output(text + '\n')),
@@ -184,21 +194,136 @@ export default function ({ app, mesh, api, utils }) {
 
           // ── auto-reply-list ───────────────────────────────────────────────
           {
-            title: 'List auto-reply settings for all peers',
+            title: 'List auto-reply settings for all peers and groups',
             usage: 'auto-reply-list',
             options: '',
             action: () => {
-              var configs = api.allPeerConfigs()
-              if (configs.length === 0) {
-                output('No auto-reply settings configured.\n')
-              } else {
-                output(printTable(configs, {
-                  'PEER':        row => row.peer,
-                  'AUTO-REPLY':  row => row.autoReply ? 'enabled' : 'disabled',
-                  'AGENT':       row => row.autoReplyAgent,
-                }))
-              }
-              return Promise.resolve()
+              return api.allChats().then(chats => {
+                var groups = chats.filter(c => c.group)
+                var configs = api.allPeerConfigs()
+
+                // Peer DM configs: peer field is a plain username (no '~', not a UUID)
+                var uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+                var peerConfigs = configs.filter(c => !uuidRe.test(c.peer) && c.peer.indexOf('~') === -1)
+                var groupEpConfigs = configs.filter(c => uuidRe.test(c.peer))
+                var groupAgentConfigs = configs.filter(c => c.peer.indexOf('~') !== -1)
+
+                var any = false
+
+                if (peerConfigs.length > 0) {
+                  any = true
+                  output('Peer auto-reply:\n')
+                  output(printTable(peerConfigs, {
+                    'PEER':        row => row.peer,
+                    'AUTO-REPLY':  row => row.autoReply ? 'enabled' : 'disabled',
+                    'AGENT':       row => row.autoReplyAgent,
+                  }))
+                }
+
+                if (groupEpConfigs.length > 0) {
+                  if (any) output('\n')
+                  any = true
+                  output('Group auto-reply (EP-level):\n')
+                  output(printTable(groupEpConfigs, {
+                    'GROUP':       row => { var g = groups.find(g => g.gcid === row.peer); return g ? g.name : row.peer },
+                    'GCID':        row => row.peer,
+                    'AUTO-REPLY':  row => row.autoReply ? 'enabled' : 'disabled',
+                    'AGENT':       row => row.autoReplyAgent,
+                  }))
+                }
+
+                if (groupAgentConfigs.length > 0) {
+                  if (any) output('\n')
+                  any = true
+                  output('Group auto-reply (per-agent):\n')
+                  output(printTable(groupAgentConfigs, {
+                    'GROUP':       row => { var gcid = row.peer.split('~')[0]; var g = groups.find(g => g.gcid === gcid); return g ? g.name : gcid },
+                    'GCID':        row => row.peer.split('~')[0],
+                    'AGENT':       row => row.peer.split('~')[1],
+                    'AUTO-REPLY':  row => row.autoReply ? 'enabled' : 'disabled',
+                  }))
+                }
+
+                if (!any) output('No auto-reply settings configured.\n')
+              })
+            }
+          },
+
+          // ── group-auto-reply ──────────────────────────────────────────────
+          {
+            title: 'View or configure EP-level auto-reply for a group chat',
+            usage: 'group-auto-reply <group>',
+            options: `
+              --enable            Enable auto-reply for this group
+              --disable           Disable auto-reply for this group
+              --agent  <name>     Set the openclaw agent to use for auto-reply (default: main)
+            `,
+            action: (args) => {
+              var nameOrGcid = args['<group>']
+              if (!nameOrGcid) throw 'missing argument: <group> (group name or gcid)'
+
+              var enable    = args['--enable']
+              var disable   = args['--disable']
+              var agentName = args['--agent']
+
+              if (enable && disable) throw 'options --enable and --disable are mutually exclusive'
+
+              return resolveGroupGcid(nameOrGcid).then(group => {
+                var changed = enable || disable || agentName
+                if (changed) {
+                  var config = {}
+                  if (enable)    config.autoReply = true
+                  if (disable)   config.autoReply = false
+                  config.autoReplyAgent = agentName || 'main'
+                  api.setPeerConfig(group.gcid, config)
+                }
+
+                var cfg = api.getPeerConfig(group.gcid)
+                output('Group:      ' + group.name + '\n')
+                output('GCID:       ' + group.gcid + '\n')
+                output('Auto-Reply: ' + (cfg.autoReply ? 'enabled' : 'disabled') + '\n')
+                output('Agent:      ' + cfg.autoReplyAgent + '\n')
+                return Promise.resolve()
+              })
+            }
+          },
+
+          // ── group-agent-auto-reply ────────────────────────────────────────
+          {
+            title: 'View or configure per-agent auto-reply for a group chat',
+            usage: 'group-agent-auto-reply <group> <agent>',
+            options: `
+              --enable            Enable auto-reply for this agent in the group
+              --disable           Disable auto-reply for this agent in the group
+            `,
+            action: (args) => {
+              var nameOrGcid = args['<group>']
+              var agentName  = args['<agent>']
+              if (!nameOrGcid) throw 'missing argument: <group> (group name or gcid)'
+              if (!agentName)  throw 'missing argument: <agent>'
+
+              var enable  = args['--enable']
+              var disable = args['--disable']
+
+              if (enable && disable) throw 'options --enable and --disable are mutually exclusive'
+
+              return resolveGroupGcid(nameOrGcid).then(group => {
+                var key = group.gcid + '~' + agentName
+                var changed = enable || disable
+                if (changed) {
+                  var config = { autoReplyAgent: agentName }
+                  if (enable)  config.autoReply = true
+                  if (disable) config.autoReply = false
+                  api.setPeerConfig(key, config)
+                }
+
+                var cfg = api.getPeerConfig(key)
+                output('Group:      ' + group.name + '\n')
+                output('GCID:       ' + group.gcid + '\n')
+                output('Agent:      ' + agentName + '\n')
+                output('Auto-Reply: ' + (cfg.autoReply ? 'enabled' : 'disabled') + '\n')
+                return Promise.resolve()
+              })
             }
           },
         ]
