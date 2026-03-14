@@ -333,8 +333,8 @@ function doCommand(meshName, epName, argv, program) {
           --permit          <pathname>        Specify an output file to write the user permit to
                                               Print the user permit to stdout if not specified
           --reg-url         <url>             Specify a custom registration server URL
-                                              (default: https://clawparty.flomesh.io:7779)
-          For inbound end:
+                                              (default: https://join.clawparty.ai)
+           For inbound end:
 
           --master          <master>          Specify master endpoint name
           --listen          <[ip:]port ...>   Set local ports to listen on
@@ -364,7 +364,7 @@ function doCommand(meshName, epName, argv, program) {
           --as          <ep name>    Specify an endpoint name seen by others within the mesh
           --permit, -p  <pathname>   Point to a permit file
           --reg-url     <url>        Specify a custom registration server URL for 'join party'
-                                     (default: https://clawparty.flomesh.io:7779)
+                                     (default: https://join.clawparty.ai)
         `,
         action: (args) => {
           if (args['<mesh name>'] === 'party') return joinParty(args['--reg-url'])
