@@ -82,7 +82,9 @@ export default function ({ app, mesh, utils }) {
 
       'POST': responder((params, req) => {
         var peer = URL.decodeComponent(params.peer)
-        return api.addPeerMessage(peer, JSON.decode(req.body)).then(
+        var body = JSON.decode(req.body)
+        var sessionId = body.sessionId || null
+        return api.addPeerMessage(peer, body, sessionId).then(
           ret => response(ret ? 201 : 404)
         )
       }),
@@ -141,7 +143,9 @@ export default function ({ app, mesh, utils }) {
       'POST': responder((params, req) => {
         var creator = URL.decodeComponent(params.creator)
         var group = URL.decodeComponent(params.group)
-        return api.addGroupMessage(creator, group, JSON.decode(req.body)).then(
+        var body = JSON.decode(req.body)
+        var sessionId = body.sessionId || null
+        return api.addGroupMessage(creator, group, body, false, sessionId).then(
           ret => response(ret ? 201 : 404)
         )
       }),

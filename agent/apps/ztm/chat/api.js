@@ -1,6 +1,10 @@
 // Default filter chain applied to every peer (comma-separated filter names)
 var DEFAULT_FILTER_CHAIN = 'repeat-message,blocked-keywords'
 
+function makeSessionId(peerA, peerB) {
+  return peerA < peerB ? peerA + '~' + peerB : peerB + '~' + peerA
+}
+
 // Default onSend filter chain (comma-separated filter names)
 var DEFAULT_SEND_FILTER_CHAIN = 'credit-delay,suppress-json'
 
@@ -30,7 +34,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   var chats = []
 
   function getPeerConfig(peer) {
-    return db.getChatPeer(mesh.name, peer) || { peer, autoReply: false, autoReplyAgent: 'main', credit: BASE_CREDIT, filterChain: '', sendFilterChain: '' }
+    return db.getChatPeer(mesh.name, peer) || { peer, autoReply: false, autoReplyAgent: 'main', credit: BASE_CREDIT, filterChain: '', sendFilterChain: '', isBlocked: false, run: 1, muted: false, thinkingTime: 3 }
   }
 
   function setPeerConfig(peer, config) {
@@ -270,7 +274,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         if (localAgents.indexOf(member) === -1) return  // skip remote EP members
 
         // Local openclaw agent: always auto-reply
-        var sessionId = gcid + '~' + member
+        var sessionId = makeSessionId(member, gcid)
         var cmd = ['openclaw', 'agent', '--agent', member, '--message', text, '--session-id', sessionId, '--json']
         console.info('[group auto-reply] calling local agent', member, 'for group', gcid || chat.group)
         spawnOpenclaw(cmd).then(
@@ -284,8 +288,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             } catch {}
             if (!replyText) replyText = output.split('\n').join('').trim()
             if (!replyText) return
-            console.info('[group auto-reply] agent', member, 'reply to group', gcid || chat.group, ':', replyText)
-            addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: member }, true)
+            var thinkingTime1 = getPeerConfig(sessionId).thinkingTime || 3
+            new Timeout(thinkingTime1).wait().then(function () {
+              console.info('[group auto-reply] agent', member, 'reply to group', gcid || chat.group, ':', replyText)
+              addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: member }, true, sessionId)
+            })
           },
           function (err) {
             console.error('[group auto-reply] openclaw error for agent', member, ':', err?.toString?.() || err)
@@ -306,7 +313,8 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       }
       var agentName = peerConfig.autoReplyAgent || 'main'
       var credit = onReceive(gcid, senderUsername, text)
-      var sessionId = gcid + '~' + app.username
+      var sessionId = makeSessionId(app.username, gcid)
+      var thinkingTime2 = peerConfig.thinkingTime !== undefined ? peerConfig.thinkingTime : 3
       var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--session-id', sessionId, '--json']
       console.info('[group auto-reply] calling agent', agentName, 'for self in group', gcid)
       spawnOpenclaw(cmd).then(
@@ -322,9 +330,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
           if (!replyText) return
           onSend(gcid, replyText, credit).then(function (shouldSend) {
             if (!shouldSend) return
-            console.info('[group auto-reply] self reply to group', gcid, 'via agent', agentName, ':', replyText)
-            // Use app.username as sender so the EP's own name appears in the group chat
-            addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: app.username }, true)
+            new Timeout(thinkingTime2).wait().then(function () {
+              console.info('[group auto-reply] self reply to group', gcid, 'via agent', agentName, ':', replyText)
+              // Use app.username as sender so the EP's own name appears in the group chat
+              addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: app.username }, true, sessionId)
+            })
           })
         },
         function (err) {
@@ -347,10 +357,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var credit = onReceive(chat.peer, sender, text)
     console.info('[chat auto-reply] credit after onReceive:', credit)
 
-    var sessionId = chat.peer + '~' + app.username
+    var sessionId = makeSessionId(app.username, chat.peer)
     var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--session-id', sessionId, '--json']
+    var thinkingTime = peerConfig.thinkingTime !== undefined ? peerConfig.thinkingTime : 3
 
-    console.info('[chat auto-reply] calling openclaw:', cmd.join(' '))
+    console.info('[openclaw cli]', cmd.join(' ').slice(0, 40))
     spawnOpenclaw(cmd).then(
       output => {
         // Log full output to api_log, show abbreviated version in console
@@ -376,8 +387,10 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         // Run onSend filter chain (handles delay + suppress-json + any future filters)
         onSend(chat.peer, replyText, credit).then(function (shouldSend) {
           if (!shouldSend) return
-          console.info('[chat auto-reply] reply to', chat.peer, ':', replyText)
-          addPeerMessage(chat.peer, { text: replyText, agentName: agentName })
+          new Timeout(thinkingTime).wait().then(function () {
+            console.info('[chat auto-reply] reply to', chat.peer, ':', replyText)
+            addPeerMessage(chat.peer, { text: replyText, agentName: agentName }, sessionId)
+          })
         })
       },
       err => {
@@ -445,21 +458,24 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         if (time > chat.updateTime) chat.updateTime = time
         // Write to chat_log — only for messages from others (own messages are logged in add*Message)
         var msgText = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
-        if (sender !== app.username) {
-          console.info('[chat recv]', app.username, '<-', sender, ':', msgText)
-          triggerAutoReply(chat, msg)
-          try {
-            if (chat.peer) {
-              db.logChat(mesh.name, 'peer', chat.peer, null, null, sender, 'message',
-                typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
-                null)
-            } else if (chat.group) {
-              db.logChat(mesh.name, 'group', chat.group, chat.name, chat.creator, sender, 'message',
-                typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
-                null)
-            }
-          } catch {}
-        }
+          if (sender !== app.username) {
+            console.info('[chat recv]', app.username, '<-', sender, ':', msgText)
+            triggerAutoReply(chat, msg)
+            try {
+              if (chat.peer) {
+                var recvSessionId = makeSessionId(sender, app.username)
+                db.logChat(mesh.name, 'peer', chat.peer, null, null, sender, 'message',
+                  typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
+                  null, recvSessionId)
+              } else if (chat.group) {
+                var senderUsername = sender.indexOf('/') !== -1 ? sender.split('/')[1] : sender
+                var recvSessionId = chat.gcid ? makeSessionId(senderUsername, chat.gcid) : null
+                db.logChat(mesh.name, 'group', chat.group, chat.name, chat.creator, sender, 'message',
+                  typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
+                  null, recvSessionId)
+              }
+            } catch {}
+          }
         // For group chats, trigger local agents regardless of who sent the message.
         // Local agents are virtual members of this EP — we proxy their participation.
         // Skip if this message was itself posted by a local agent (avoid infinite loop).
@@ -533,6 +549,12 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             messages.forEach(msg => msg.sender = sender)
             var hasIncoming = messages.some(m => m.sender !== app.username)
             if (hasIncoming && !initial) {
+              // run=0: discard messages entirely, do not store
+              var peerCfg = db.getChatPeer(mesh.name, chat.peer)
+              if (peerCfg && !peerCfg.run) {
+                console.info('[chat] peer stopped, discarding messages from', peer)
+                return
+              }
               var existingConfig = db.getChatPeer(mesh.name, chat.peer)
               if (!existingConfig) {
                 db.setChatPeer(mesh.name, chat.peer, { autoReply: false, autoReplyAgent: 'main' })
@@ -550,6 +572,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             mergeMessages(chat, messages)
             if (hasIncoming) {
               var cfg = db.getChatPeer(mesh.name, chat.peer)
+              // is_blocked: store message but skip all processing
+              if (cfg && cfg.isBlocked) {
+                console.info('[chat] peer blocked, skipping processing for', peer)
+                return
+              }
               if (cfg && !cfg.autoReply && !chat.messages.some(m => m.isPeerRequest)) {
                 notifyAutoReplySetup(chat)
               }
@@ -603,6 +630,13 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             } catch {}
             chat = newGroupChat(creator, group, existingGcid)
           }
+          var gcid = chat.gcid
+          var groupCfg = gcid ? db.getChatPeer(mesh.name, gcid) : null
+          // run=0: discard messages entirely, do not store
+          if (groupCfg && !groupCfg.run) {
+            console.info('[chat] group stopped, discarding messages for group', group)
+            return
+          }
           var newMsgs = []
           try {
             var messages = JSON.decode(data)
@@ -617,6 +651,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             // Collect only the newly merged messages for auto-reply
             if (!initial) {
               newMsgs = chat.messages.slice(beforeCount)
+              // is_blocked: store messages but skip auto-reply
+              if (groupCfg && groupCfg.isBlocked) {
+                console.info('[chat] group blocked, skipping auto-reply for group', group)
+                newMsgs = []
+              }
             }
           } catch {}
           if (initial) chat.newCount = 0
@@ -779,8 +818,13 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     )
   }
 
-  function addPeerMessage(peer, message) {
+  function addPeerMessage(peer, message, sessionId) {
     if (!peer) return Promise.resolve(false)
+    var cfg = db.getChatPeer(mesh.name, peer)
+    if (cfg && cfg.muted) {
+      console.info('[chat] muted, skip send to peer:', peer)
+      return Promise.resolve(false)
+    }
     var msgText = typeof message === 'string' ? message : (message?.text || JSON.stringify(message))
     console.info('[chat send]', app.username, '->', peer, ':', msgText)
     var dirname = `/shared/${app.username}/publish/peers/${peer}/messages`
@@ -788,8 +832,9 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       () => publishMessage(dirname, message)
     ).then(() => {
       try {
+        var sid = sessionId || makeSessionId(app.username, peer)
         db.logChat(mesh.name, 'peer', peer, null, null, app.username, 'message',
-          typeof message === 'string' ? message : JSON.stringify(message), null)
+          typeof message === 'string' ? message : JSON.stringify(message), null, sid)
       } catch {}
       return true
     })
@@ -890,10 +935,18 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   }
 
   // fromAgent: true means this message is an auto-reply from a local agent — do not re-trigger
-  function addGroupMessage(creator, group, message, fromAgent) {
+  function addGroupMessage(creator, group, message, fromAgent, sessionId) {
     var chat = findGroupChat(creator, group)
     if (!chat) return Promise.resolve(false)
     if (app.username !== creator && !chat.members.includes(app.username)) return Promise.resolve(false)
+    var gcid = chat.gcid
+    if (gcid) {
+      var cfg = db.getChatPeer(mesh.name, gcid)
+      if (cfg && cfg.muted) {
+        console.info('[chat] muted, skip send to group:', group)
+        return Promise.resolve(false)
+      }
+    }
     // Embed sender as [gcid]/[username] inside the message payload.
     // For agent replies use the agent's own name as the username part so the UI shows the agent.
     var gcid = chat.gcid || ''
@@ -909,8 +962,9 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       () => publishMessage(os.path.join(dirname, 'messages'), taggedMessage)
     ).then(() => {
       try {
+        var sid = sessionId || (chat.gcid ? makeSessionId(app.username, chat.gcid) : null)
         db.logChat(mesh.name, 'group', group, chat.name, creator, taggedSender, 'message',
-          msgText, null)
+          msgText, null, sid)
       } catch {}
       return true
     })

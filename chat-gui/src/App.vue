@@ -400,9 +400,13 @@ const sendMessage = async () => {
         }
       })
     } else if (chat.isGroup) {
-      await chatService.sendGroupMessage(currentMesh.value, chat.creator, chat.groupId, text)
+      const groupParts = [currentMeshAgentUsername.value, chat.gcid].sort()
+      const groupSessionId = groupParts[0] + '~' + groupParts[1]
+      await chatService.sendGroupMessage(currentMesh.value, chat.creator, chat.groupId, text, groupSessionId)
     } else {
-      await chatService.sendMessage(currentMesh.value, chat.name, text)
+      const peerParts = [currentMeshAgentUsername.value, chat.name].sort()
+      const peerSessionId = peerParts[0] + '~' + peerParts[1]
+      await chatService.sendMessage(currentMesh.value, chat.name, text, peerSessionId)
     }
   } catch (error) {
     console.error('Failed to send message:', error)

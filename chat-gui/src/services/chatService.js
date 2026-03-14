@@ -121,12 +121,12 @@ export const chatService = {
     return api.get(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}/messages?since=${since}`)
   },
   
-  sendMessage(meshName, peer, text) {
-    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${peer}/messages`, { text })
+  sendMessage(meshName, peer, text, sessionId) {
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${peer}/messages`, { text, sessionId: sessionId || null })
   },
   
-  sendGroupMessage(meshName, creator, groupId, text) {
-    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}/messages`, { text })
+  sendGroupMessage(meshName, creator, groupId, text, sessionId) {
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}/messages`, { text, sessionId: sessionId || null })
   },
   
   createGroup(meshName, creator, groupId, data) {
