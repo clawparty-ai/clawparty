@@ -27,8 +27,10 @@ function getHost(regUrl) {
 
 function getTlsOptions(host) {
   if (host.startsWith('https://')) {
+    var url = new URL(host)
     return {
       tls: {
+        sni: url.hostname,
         verify: (ok, cert) => true,
       }
     }
