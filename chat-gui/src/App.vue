@@ -113,6 +113,8 @@ import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
 import { meshService, chatService, openclawService, setApiToken, getApiToken } from './services/chatService'
 import ShellService from './services/ShellService'
+import { platform } from '@tauri-apps/plugin-os';
+
 const shellService = new ShellService();
 const meshes = ref([])
 const openclawAgents = ref([])
@@ -683,9 +685,13 @@ const stopChatsPolling = () => {
 
 onMounted(async () => {
 	await shellService.startPipy(()=>{});
-	setTimeout(()=>{
+	if(window.__TAURI_OS_PLUGIN_INTERNALS__ && !!platform()){
+		setTimeout(()=>{
+			initAuth()
+		},3000)
+	} else {
 		initAuth()
-	},1500)
+	}
 })
 
 onUnmounted(() => {
