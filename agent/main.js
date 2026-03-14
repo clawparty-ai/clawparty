@@ -670,14 +670,17 @@ function main(listen, apiToken, noAuth) {
       'GET': function () {
         return openclawAgents.spawn().then(
           output => {
+            var cleaned = output.split('\n').join('')
             try {
-              var list = JSON.parse(output.split('\n').join(''))
+              var list = JSON.parse(cleaned)
               if (Array.isArray(list)) {
                 var ids = list.map(a => a.id || a.name).filter(Boolean)
                 db.setCache('local_agent_ids', ids)
+                return response(200, cleaned)
               }
             } catch {}
-            return response(200, output.split('\n').join(''))
+            // openclaw not installed or returned non-JSON output — return empty array
+            return response(200, '[]')
           },
           output => response(500, output.split('\n').join(''))
         )

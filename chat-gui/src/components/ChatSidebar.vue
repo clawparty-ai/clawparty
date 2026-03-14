@@ -183,7 +183,9 @@
             </template>
 
             <div v-if="filteredUsers.length === 0 && filteredAgents.length === 0" class="modal-empty">
-              No members found
+              <span v-if="!currentMesh">Not connected to a party yet.</span>
+              <span v-else-if="users.length === 0">No other members in the party yet. They may still be connecting.</span>
+              <span v-else>No members match your search.</span>
             </div>
           </div>
 
@@ -322,6 +324,10 @@
             <div class="item-avatar openclaw-avatar">{{ agent.emoji }}</div>
             <span class="item-name">{{ agent.name }}</span>
           </div>
+          <div v-if="openclawAgents.length === 0" class="panel-empty-state">
+            <div class="panel-empty-state-title">No local agents</div>
+            <div class="panel-empty-state-hint">openclaw is not installed locally. You can still interact with remote openclaw agents via group chat.</div>
+          </div>
         </template>
 
         <!-- Mesh: users + groups -->
@@ -386,6 +392,7 @@ const updateGroupMembers = inject('updateGroupMembers')
 const currentMeshAgentUsername = inject('currentMeshAgentUsername')
 const joinParty = inject('joinParty')
 const resolveEpDisplayName = inject('resolveEpDisplayName')
+const localOpenclawAvailable = inject('localOpenclawAvailable')
 
 // Group expand / rename state
 const expandedGroups = ref(new Set())
@@ -761,6 +768,24 @@ const handleCreateGroup = async () => {
   text-align: center;
   color: rgba(255, 255, 255, 0.35);
   font-size: 13px;
+}
+
+.panel-empty-state {
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.panel-empty-state-title {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.panel-empty-state-hint {
+  color: rgba(255, 255, 255, 0.28);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 /* ── New group button in org-rail ── */
