@@ -670,14 +670,17 @@ function main(listen, apiToken, noAuth) {
       'GET': function () {
         return openclawAgents.spawn().then(
           output => {
+            var cleaned = output.split('\n').join('')
             try {
-              var list = JSON.parse(output.split('\n').join(''))
+              var list = JSON.parse(cleaned)
               if (Array.isArray(list)) {
                 var ids = list.map(a => a.id || a.name).filter(Boolean)
                 db.setCache('local_agent_ids', ids)
+                return response(200, cleaned)
               }
             } catch {}
-            return response(200, output.split('\n').join(''))
+            // openclaw not installed or returned non-JSON output — return empty array
+            return response(200, '[]')
           },
           output => response(500, output.split('\n').join(''))
         )
@@ -827,7 +830,7 @@ function main(listen, apiToken, noAuth) {
         var resolvedUrl = resolveRegUrl(regUrl)
         var parsedUrl = new URL(resolvedUrl)
         var target = parsedUrl.hostname + (parsedUrl.port ? ':' + parsedUrl.port : '')
-        var tlsOptions = resolvedUrl.startsWith('https://') ? { tls: { verify: () => true } } : null
+        var tlsOptions = resolvedUrl.startsWith('https://') ? { tls: { sni: parsedUrl.hostname, verify: () => true } } : null
         var regAgent = new http.Agent(target, tlsOptions || {})
 
         var inviteBody = JSON.encode({

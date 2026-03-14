@@ -70,6 +70,11 @@
           </svg>
         </button>
       </div>
+      <button class="header-btn" title="Download chat history" @click="emit('download')">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/>
+        </svg>
+      </button>
       <div class="search-box">
         <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 001.415-1.414l-3.85-3.85a1.007 1.007 0 00-.115-.1zM12 6.5a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0z"/>
@@ -102,7 +107,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['search', 'switchSession', 'deleteGroup', 'leaveGroup', 'back'])
+const emit = defineEmits(['search', 'switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download'])
 
 const searchQuery = ref('')
 

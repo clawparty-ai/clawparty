@@ -131,8 +131,10 @@ const tokenError = ref('')
 const isMobile = ref(window.innerWidth <= 768)
 const mobileActiveOrg = ref('agents')
 const users = ref([])
+const localOpenclawAvailable = ref(false)
 let appStarted = false
 let chatsPollTimer = null
+let usersPollTimer = null
 
 const handleResize = () => {
   isMobile.value = window.innerWidth <= 768
@@ -225,6 +227,7 @@ const fetchOpenclawAgents = async () => {
   try {
     const response = await openclawService.getAgents()
     const agentsData = Array.isArray(response.data) ? response.data : []
+    localOpenclawAvailable.value = agentsData.length > 0
     openclawAgents.value = agentsData.map(agent => ({
       id: agent.id,
       name: agent.identityName || agent.id,
@@ -253,6 +256,7 @@ const fetchOpenclawAgents = async () => {
       }
     })
   } catch (error) {
+    localOpenclawAvailable.value = false
     console.error('Failed to fetch OpenClaw agents:', error)
   }
 }
@@ -338,6 +342,19 @@ const sendMessage = async () => {
         })
       },300)
       
+      // Detect #"group name" or #'group name' token — send message to that group as this agent
+      const groupTokenMatch = text.match(/#["']([^"']+)["']/)
+      if (groupTokenMatch) {
+        const groupName = groupTokenMatch[1]
+        const cleanText = text.replace(/#["'][^"']+["']\s*/g, '').trim()
+        const targetGroup = chats.value.find(c => c.isGroup && !c.isOpenclaw && c.name === groupName)
+        if (targetGroup && cleanText && currentMesh.value) {
+          chatService.sendGroupMessageAsAgent(
+            currentMesh.value, targetGroup.gcid, chat.agentId, cleanText
+          ).catch(err => console.error('Failed to send to group as agent:', err))
+        }
+      }
+
       const sendPromise = isBotChat 
         ? openclawService.botChat(chat.agentId, selectedAgent.value, text)
         : openclawService.sendMessage(chat.agentId, text)
@@ -368,7 +385,9 @@ const sendMessage = async () => {
         if (typingIndex !== -1) {
           chat.messages.splice(typingIndex, 1)
         }
-        let replyText = 'Response timed out, please refresh.'
+        let replyText = localOpenclawAvailable.value
+          ? 'Response timed out, please refresh.'
+          : 'openclaw is not installed locally. You can still interact with remote openclaw agents via group chat.'
         if (replyText) {
           const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
           chat.messages.push({
@@ -632,18 +651,33 @@ provide('selectUser', selectUser)
 provide('createGroupChat', createGroupChat)
 provide('renameGroupChat', renameGroupChat)
 provide('updateGroupMembers', updateGroupMembers)
+provide('groupChats', groupChats)
 provide('currentMeshAgentUsername', currentMeshAgentUsername)
 provide('joinParty', joinParty)
+provide('localOpenclawAvailable', localOpenclawAvailable)
+
+const resolveEpDisplayName = (username) => {
+  if (!username) return username
+  const ep = users.value.find(u => u.username === username)
+  if (!ep) return username
+  return ep.username + '/' + ep.name
+}
+provide('resolveEpDisplayName', resolveEpDisplayName)
 
 const startChatsPolling = () => {
   stopChatsPolling()
   chatsPollTimer = setInterval(fetchChats, 3000)
+  usersPollTimer = setInterval(fetchUsers, 5000)
 }
 
 const stopChatsPolling = () => {
   if (chatsPollTimer) {
     clearInterval(chatsPollTimer)
     chatsPollTimer = null
+  }
+  if (usersPollTimer) {
+    clearInterval(usersPollTimer)
+    usersPollTimer = null
   }
 }
 
