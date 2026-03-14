@@ -37,6 +37,10 @@
           <div class="item-avatar openclaw-avatar">{{ agent.emoji }}</div>
           <span class="item-name">{{ agent.name }}</span>
         </div>
+        <div v-if="!openclawAgents || openclawAgents.length === 0" class="mobile-empty">
+          <div>No local agents</div>
+          <div class="mobile-empty-hint">openclaw is not installed locally. You can still interact with remote openclaw agents via group chat.</div>
+        </div>
       </div>
     </div>
     <!-- Mobile groups list view -->
@@ -932,6 +936,19 @@ const submitToken = async () => {
     color: #fff;
     font-size: 15px;
     font-weight: 500;
+  }
+  
+  .mobile-empty {
+    padding: 32px 16px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 14px;
+  }
+  
+  .mobile-empty-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.35);
   }
 }
 </style>
