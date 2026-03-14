@@ -114,6 +114,12 @@ try {
   pipy.exit(-1)
 }
 
+function md5(text) {
+  var h = new crypto.Hash('md5')
+  h.update(text)
+  return h.digest('hex')
+}
+
 function main(listen, apiToken, noAuth) {
   var gui = new http.Directory('gui')
 
@@ -124,7 +130,7 @@ function main(listen, apiToken, noAuth) {
       .exec(() => cmd, {
         onExit: (code, err) => {
           if (err) err.toString().split('\n').filter(Boolean).forEach(
-            line => console.error('[openclaw]', line)
+            line => console.error('[openclaw cli]', line)
           )
           return new StreamEnd
         }
@@ -149,7 +155,7 @@ function main(listen, apiToken, noAuth) {
     .exec(() => $openclawAgentCmd, {
       onExit: (code, err) => {
         if (err) err.toString().split('\n').filter(Boolean).forEach(
-          line => console.error('[openclaw]', line)
+          line => console.error('[openclaw cli]', line)
         )
         return new StreamEnd
       }
@@ -659,6 +665,8 @@ function main(listen, apiToken, noAuth) {
 
     '/api/openclaw/status': {
       'GET': function () {
+        var statusCmd = 'openclaw status --json'
+        console.info('[openclaw cli]', statusCmd.slice(0, 40))
         return openclawStatus.spawn().then(
           output => response(200, output.split('\n').join('')),
           output => response(500, output.split('\n').join(''))
@@ -668,6 +676,8 @@ function main(listen, apiToken, noAuth) {
 
     '/api/openclaw/agents': {
       'GET': function () {
+        var agentsCmd = 'openclaw agents list --json'
+        console.info('[openclaw cli]', agentsCmd.slice(0, 40))
         return openclawAgents.spawn().then(
           output => {
             var cleaned = output.split('\n').join('')
@@ -676,11 +686,10 @@ function main(listen, apiToken, noAuth) {
               if (Array.isArray(list)) {
                 var ids = list.map(a => a.id || a.name).filter(Boolean)
                 db.setCache('local_agent_ids', ids)
-                return response(200, cleaned)
               }
             } catch {}
-            // openclaw not installed or returned non-JSON output — return empty array
-            return response(200, '[]')
+            // return cleaned if non-empty, otherwise return empty array JSON
+            return response(200, cleaned || '[]')
           },
           output => response(500, output.split('\n').join(''))
         )
@@ -705,6 +714,7 @@ function main(listen, apiToken, noAuth) {
       'GET': function ({ agent }) {
         agent = URL.decodeComponent(agent)
         var cmd = ['openclaw', 'sessions', '--agent', agent, '--json']
+        console.info('[openclaw cli]', cmd.join(' ').slice(0, 40))
         return openclawAgentMessage.spawn(cmd).then(
           output => response(200, output.split('\n').join('')),
           output => response(500, output.split('\n').join(''))
@@ -754,8 +764,16 @@ function main(listen, apiToken, noAuth) {
       'POST': function ({ agent }, req) {
         agent = URL.decodeComponent(agent)
         var message = req.body.toString()
+        var sessionId = new URL(req.head.path).searchParams.get('session-id') || ''
+        var messageMd5 = md5(message)
         console.info('[chat send] user ->', agent, ':', message)
+        if (db.hasCliLog(agent, sessionId, messageMd5)) {
+          console.info('[openclaw cli] duplicate call, skipping. agent:', agent, 'session:', sessionId)
+          return response(200, JSON.stringify({ warning: 'duplicated cli call' }))
+        }
+        db.addCliLog(agent, sessionId, messageMd5)
         var cmd = ['openclaw', 'agent', '--agent', agent, '--message', message, '--json']
+        console.info('[openclaw cli]', cmd.join(' ').slice(0, 40))
         return openclawAgentMessage.spawn(cmd).then(
           output => response(200, output.split('\n').join('')),
           output => response(500, output.split('\n').join(''))
@@ -768,9 +786,17 @@ function main(listen, apiToken, noAuth) {
         sender = URL.decodeComponent(sender)
         receiver = URL.decodeComponent(receiver)
         var message = req.body?.toString?.() || 'Hello, let us connect!'
-        console.info('[chat send]', sender, '->', receiver, ':', message)
+        var sessionId = new URL(req.head.path).searchParams.get('session-id') || ''
         var prompt = `let ${sender} send message to ${receiver}, message is "${message}"`
+        var messageMd5 = md5(prompt)
+        console.info('[chat send]', sender, '->', receiver, ':', message)
+        if (db.hasCliLog('main', sessionId, messageMd5)) {
+          console.info('[openclaw cli] duplicate call, skipping. agent: main session:', sessionId)
+          return response(200, JSON.stringify({ warning: 'duplicated cli call' }))
+        }
+        db.addCliLog('main', sessionId, messageMd5)
         var cmd = ['openclaw', 'agent', '--agent', 'main', '--message', prompt, '--json']
+        console.info('[openclaw cli]', cmd.join(' ').slice(0, 40))
         return openclawAgentMessage.spawn(cmd).then(
           output => response(200, output.split('\n').join('')),
           output => response(500, output.split('\n').join(''))
@@ -1000,7 +1026,8 @@ function main(listen, apiToken, noAuth) {
               $reqHead = req.head
               $reqBody = req.body?.toString?.() || ''
               try {
-                println(`${formatLocalTime()} [INF] [api] ${$clientIp} ${$reqHead.path}`)
+                var _logLevel = $reqHead.path.indexOf('/endpoints') !== -1 ? '[DBG]' : '[INF]'
+                println(`${formatLocalTime()} ${_logLevel} [api] ${$clientIp} ${$reqHead.path}`)
               } catch {}
               var path = req.head.path
               var params = null

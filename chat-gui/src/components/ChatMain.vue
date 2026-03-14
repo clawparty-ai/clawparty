@@ -163,20 +163,304 @@ const handleSearch = (query) => {
 const handleDownload = () => {
   const messages = props.chat.messages || []
   const chatName = props.chat.name || 'chat'
-  const lines = messages
+  const exportTime = new Date().toLocaleString('zh-CN')
+
+  // Inline avatar color logic (mirrors avatar.js)
+  const avatarColors = [
+    '#e01e5a', '#2eb67d', '#ecb22e', '#1d9bd1', '#611f69',
+    '#36c5f0', '#f2c744', '#ff6b6b', '#4ecdc4', '#9b59b6',
+    '#e67e22', '#1abc9c',
+  ]
+  const getColor = (name) => {
+    if (!name) return avatarColors[0]
+    let hash = 0
+    for (let i = 0; i < name.length; i++) {
+      hash = name.charCodeAt(i) + ((hash << 5) - hash)
+    }
+    return avatarColors[Math.abs(hash) % avatarColors.length]
+  }
+
+  const escapeHtml = (str) => {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+  }
+
+  const msgRows = messages
     .filter(msg => !msg.isTyping)
     .map(msg => {
-      const time = msg.time || ''
-      const sender = msg.sender || (msg.isSent ? (props.currentUserName || 'Me') : chatName)
-      const text = msg.text || ''
-      return `[${time}] ${sender}: ${text}`
+      const isSent = isMessageSent(msg)
+      const senderName = isSent
+        ? (props.currentUserName || 'Me')
+        : (msg.sender || chatName)
+      const time = escapeHtml(msg.time || '')
+      const isOpenclaw = props.chat.isOpenclaw && !isSent
+      const emoji = props.chat.emoji || ''
+
+      // Avatar HTML
+      let avatarHtml
+      if (isOpenclaw) {
+        avatarHtml = `<div class="avatar-emoji">${escapeHtml(emoji)}</div>`
+      } else {
+        const color = getColor(senderName)
+        const initial = escapeHtml(senderName[0].toUpperCase())
+        avatarHtml = `<div class="avatar-placeholder" style="background:${color}">${initial}</div>`
+      }
+
+      // Message bubble content
+      const bubbleClass = msg.isSystemHint ? 'message-bubble system-hint' : 'message-bubble'
+      const renderedText = marked.parse(msg.text || '')
+
+      return `
+    <div class="message${isSent ? ' sent' : ''}">
+      <div class="message-avatar">${avatarHtml}</div>
+      <div class="message-body">
+        <div class="message-header">
+          <span class="message-author">${escapeHtml(senderName)}</span>
+          <span class="message-time">${time}</span>
+        </div>
+        <div class="${bubbleClass}">
+          <div class="message-content">${renderedText}</div>
+        </div>
+      </div>
+    </div>`
     })
-  const content = lines.join('\n')
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    .join('\n')
+
+  const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(chatName)} - 聊天记录</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+        Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+      font-size: 15px;
+      background: #f8f8f8;
+      color: #1d1c1d;
+    }
+    .chat-header {
+      position: sticky;
+      top: 0;
+      background: #ffffff;
+      border-bottom: 1px solid rgba(0,0,0,0.07);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 10;
+    }
+    .chat-header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1d1c1d;
+    }
+    .chat-header .export-time {
+      font-size: 12px;
+      color: #616061;
+      margin-left: auto;
+    }
+    .messages {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 20px 16px 40px;
+    }
+    .date-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 16px 0;
+      color: #616061;
+      font-size: 12px;
+    }
+    .date-divider::before,
+    .date-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: rgba(0,0,0,0.1);
+    }
+    .message {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 4px 0;
+      margin-bottom: 4px;
+    }
+    .message.sent {
+      flex-direction: row-reverse;
+    }
+    .message-avatar {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+    }
+    .avatar-placeholder {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .avatar-emoji {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      background: rgba(0,0,0,0.04);
+    }
+    .message-body {
+      display: flex;
+      flex-direction: column;
+      max-width: 600px;
+    }
+    .message.sent .message-body {
+      align-items: flex-end;
+    }
+    .message-header {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .message.sent .message-header {
+      flex-direction: row-reverse;
+    }
+    .message-author {
+      font-size: 15px;
+      font-weight: 700;
+      color: #1d1c1d;
+    }
+    .message-time {
+      font-size: 11px;
+      color: #616061;
+    }
+    .message-bubble {
+      position: relative;
+      background: #f2f0f0;
+      border-radius: 12px;
+      padding: 11px 15px;
+      line-height: 1.4667;
+      word-break: break-word;
+    }
+    .message-bubble::before {
+      content: '';
+      position: absolute;
+      top: 12px;
+      left: -6px;
+      border: 6px solid transparent;
+      border-right-color: #f2f0f0;
+      border-left: none;
+    }
+    .message.sent .message-bubble {
+      background: #4a154b;
+      color: #ffffff;
+    }
+    .message.sent .message-bubble::before {
+      left: auto;
+      right: -6px;
+      border-right: none;
+      border-left: 6px solid #4a154b;
+      border-right-color: transparent;
+    }
+    .message-bubble.system-hint {
+      background: #2a2a40;
+      border: 1px solid #4a4a6a;
+      color: #c8c8e8;
+    }
+    .message-bubble.system-hint::before {
+      border-right-color: #2a2a40;
+    }
+    /* Markdown content styles */
+    .message-content p { margin: 0 0 4px; }
+    .message-content p:last-child { margin-bottom: 0; }
+    .message-content code {
+      background: rgba(0,0,0,0.08);
+      border-radius: 3px;
+      padding: 1px 4px;
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 13px;
+    }
+    .message.sent .message-content code {
+      background: rgba(255,255,255,0.15);
+    }
+    .message-content pre {
+      background: rgba(0,0,0,0.05);
+      border-radius: 6px;
+      padding: 10px 12px;
+      overflow-x: auto;
+      margin: 6px 0;
+    }
+    .message-content pre code {
+      background: none;
+      padding: 0;
+    }
+    .message.sent .message-content pre {
+      background: rgba(255,255,255,0.1);
+    }
+    .message-content blockquote {
+      border-left: 3px solid #616061;
+      padding-left: 10px;
+      margin: 6px 0;
+      color: #616061;
+    }
+    .message.sent .message-content blockquote {
+      border-left-color: rgba(255,255,255,0.5);
+      color: rgba(255,255,255,0.75);
+    }
+    .message-content a {
+      color: #1d9bd1;
+    }
+    .message.sent .message-content a {
+      color: #a8d8ea;
+    }
+    .message-content ul, .message-content ol {
+      padding-left: 20px;
+      margin: 4px 0;
+    }
+    .message-content h1, .message-content h2, .message-content h3 {
+      margin: 6px 0 4px;
+    }
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #616061;
+      padding: 20px;
+      border-top: 1px solid rgba(0,0,0,0.07);
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-header">
+    <h1>${escapeHtml(chatName)}</h1>
+    <span class="export-time">导出于 ${escapeHtml(exportTime)}</span>
+  </div>
+  <div class="messages">
+    <div class="date-divider"><span>${escapeHtml(exportTime)}</span></div>
+    ${msgRows}
+  </div>
+  <div class="footer">— 聊天记录导出自 ClawParty —</div>
+</body>
+</html>`
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${chatName}-chat-history.txt`
+  a.download = `${chatName}-chat-history.html`
   a.click()
   URL.revokeObjectURL(url)
 }
