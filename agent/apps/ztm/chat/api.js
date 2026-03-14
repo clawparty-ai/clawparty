@@ -137,6 +137,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var placeholder = { isPeerRequest: true, isSystemHint: true, _placeholder: true }
     chat.messages.push(placeholder)
     getLocalAgentNames().then(function (localAgents) {
+      console.log('[notifyPeerRequest] localAgents =', localAgents)
       var idx = chat.messages.indexOf(placeholder)
       var time = Date.now()
       var hint = {
@@ -148,6 +149,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         peer: chat.peer,
         availableAgents: localAgents.map(function (id) { return '' + id }),
       }
+      console.log('[notifyPeerRequest] hint.availableAgents =', hint.availableAgents)
       if (idx !== -1) chat.messages.splice(idx, 1, hint)
       else chat.messages.push(hint)
       if (time > chat.updateTime) chat.updateTime = time
@@ -162,15 +164,27 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
   // Fetch local openclaw agent names as a Promise resolving to a string[]
   function getLocalAgentNames() {
+    console.log('[getLocalAgentNames] Starting to fetch local agent names')
     try {
+      console.log('[getLocalAgentNames] Attempting to get cache local_agent_ids')
       var ids = db.getCache('local_agent_ids')
+      console.log('[getLocalAgentNames] Got cache, ids =', ids, 'type =', typeof ids)
       if (ids && typeof ids.forEach === 'function') {
-        // Re-map into a fresh local array to avoid cross-module serialization issues
         var fresh = []
         ids.forEach(function (id) { fresh.push('' + id) })
+        console.log('[getLocalAgentNames] Returning fresh array:', fresh)
         return Promise.resolve(fresh)
       }
-    } catch {}
+      console.log('[getLocalAgentNames] ids is not array-like, checking if array:', Array.isArray(ids))
+      if (Array.isArray(ids)) {
+        console.log('[getLocalAgentNames] Converting array, ids =', ids)
+        return Promise.resolve(ids.map(String))
+      }
+      console.log('[getLocalAgentNames] ids is null or undefined, returning empty')
+    } catch (e) {
+      console.error('[getLocalAgentNames] Error:', e)
+    }
+    console.log('[getLocalAgentNames] Returning empty array')
     return Promise.resolve([])
   }
 
@@ -195,6 +209,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var placeholder = { isGroupEpRequest: true, _placeholder: true }
     chat.messages.push(placeholder)
     getLocalAgentNames().then(function (localAgents) {
+      console.log('[notifyGroupEpRequest] localAgents =', localAgents)
       // Replace placeholder with the real hint
       var idx = chat.messages.indexOf(placeholder)
       var time = Date.now()
@@ -209,6 +224,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         groupName: chat.name || '',
         availableAgents: localAgents.map(function (id) { return '' + id }),
       }
+      console.log('[notifyGroupEpRequest] hint.availableAgents =', hint.availableAgents)
       if (idx !== -1) chat.messages.splice(idx, 1, hint)
       else chat.messages.push(hint)
       if (time > chat.updateTime) chat.updateTime = time
@@ -263,6 +279,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
     console.info('[group auto-reply] triggered | gcid:', gcid, 'members:', JSON.stringify(chat.members), 'sender:', senderUsername, 'self:', app.username)
     getLocalAgentNames().then(function (localAgents) {
+      console.log('[group auto-reply] localAgents =', localAgents)
       // ── 1. Trigger local openclaw agents that are members of this group ──
       chat.members.forEach(function (member) {
         if (member === senderUsername) return   // skip sender

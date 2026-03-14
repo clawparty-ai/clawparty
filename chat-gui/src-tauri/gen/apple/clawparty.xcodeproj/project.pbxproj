@@ -727,7 +727,7 @@
 					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.flomesh.clawparty;
-				PRODUCT_NAME = clawparty;
+				PRODUCT_NAME = "clawparty";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SWIFT_OBJC_BRIDGING_HEADER = "Sources/clawparty/clawparty_iOS-Bridging-Header.h";
@@ -790,7 +790,7 @@
 					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.flomesh.clawparty;
-				PRODUCT_NAME = clawparty;
+				PRODUCT_NAME = "clawparty";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SWIFT_OBJC_BRIDGING_HEADER = "Sources/clawparty/clawparty_iOS-Bridging-Header.h";
