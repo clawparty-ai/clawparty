@@ -65,18 +65,18 @@ export default class ShellService {
 				// store.commit('account/pushLog', {level:'Info',msg:`pipy pause with code ${data.code} and signal ${data.signal}`});
 			});
 			command.stdout.on('data', line => {
-				// console.log("[stdout]");
+				console.log("[stdout]",line);
 				// console.log(line);
 				// store.commit('account/pushLog', {level:'Info',msg:line});
 			});
 			command.stderr.on('data', line => {
-				// console.log("[stderr]");
+				console.log("[stderr]",line);
 				// console.log(line);
 				// store.commit('account/pushLog', {level:'Error',msg:line});
 				callError(line);
 			});
 			command.on('error', error => {
-				console.log("[error]");
+				console.log("[error]",error);
 				// store.commit('account/pushLog', {level:'Error',msg:error});
 				callError(error);
 			});
