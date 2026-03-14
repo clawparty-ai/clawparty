@@ -4,8 +4,11 @@ on:
   workflow_dispatch:
   push:
     tags:
+      - 'v*'
+      - 'v*.*'
       - 'v*.*.*'
       - 'v*.*.*-*'
+      - '*.*'
       - '*.*.*'
       - '*.*.*-*'
 env:
@@ -281,6 +284,8 @@ jobs:
           path: libztm-${{needs.set-release-version.outputs.release_version}}-android.tar.gz
 
   create-release:
+    permissions:
+      contents: write
     name: create release
     runs-on: ubuntu-22.04
     needs:
