@@ -11,6 +11,7 @@
       @leaveGroup="$emit('leaveGroup', $event)"
       @back="$emit('back')"
       @download="handleDownload"
+      @download-md="handleDownloadMd"
     />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
@@ -45,7 +46,7 @@
               <span class="message-time">{{ msg.time }}</span>
             </div>
             <div class="message-bubble" :class="{ 'system-hint': msg.isSystemHint }">
-              <div class="message-content" v-html="renderMarkdown(msg.text)"></div>
+              <div class="message-content" v-html="msg.isHtml ? msg.text : renderMarkdown(msg.text)"></div>
               <div v-if="msg.isGroupRequest || msg.isPeerRequest" class="group-request-actions">
                 <template v-if="(msg.isPeerRequest || msg.isGroupEpRequest) && msg.availableAgents && msg.availableAgents.length > 0">
                   <select v-model="msg.selectedAgent" class="agent-select">
@@ -66,12 +67,14 @@
       :agents="availableAgents"
       :selectedAgent="selectedAgent"
       :isOpenclaw="chat.isOpenclaw"
+      :agentId="chat.agentId"
       :autoFocus="autoFocus"
       :members="chat.isGroup ? (chat.members || []).filter(m => m !== currentUserName) : []"
       :agentGroups="agentGroupChats"
       @update:modelValue="$emit('update:modelValue', $event)" 
       @update:selectedAgent="$emit('update:selectedAgent', $event)"
-      @send="$emit('send')" 
+      @send="$emit('send')"
+      @hash-command="handleHashCommand"
     />
   </main>
 </template>
@@ -136,6 +139,129 @@ const allGroupChats = inject('groupChats', ref([]))
 const resolveEpDisplayName = inject('resolveEpDisplayName', (u) => u)
 
 defineExpose({})
+
+// ── # command handlers ───────────────────────────────────────────────────────────
+
+const FIELD_MAP = {
+  auto_reply: 'autoReply',
+  auto_reply_agent: 'autoReplyAgent',
+  peer_agent_name: 'peerAgentName',
+  credit: 'credit',
+  filter_chain: 'filterChain',
+  send_filter_chain: 'sendFilterChain',
+  is_blocked: 'isBlocked',
+  run: 'run',
+  muted: 'muted',
+  thinking_time: 'thinkingTime',
+}
+
+const PEER_CONFIG_TABLE_FIELDS = [
+  'peer', 'autoReply', 'autoReplyAgent', 'peerAgentName', 'credit', 'isBlocked', 'run', 'muted', 'thinkingTime'
+]
+
+function formatPeerConfigsTable(configs) {
+  if (!configs || configs.length === 0) return 'No peer configs found.'
+  const fields = PEER_CONFIG_TABLE_FIELDS
+  let html = '<table class="peer-config-table"><thead><tr>'
+  fields.forEach(f => { html += `<th>${f}</th>` })
+  html += '</tr></thead><tbody>'
+  configs.forEach(cfg => {
+    html += '<tr>'
+    fields.forEach(f => {
+      let val = cfg[f]
+      if (val === undefined || val === null) val = ''
+      if (typeof val === 'boolean') val = val ? 'true' : 'false'
+      html += `<td>${val}</td>`
+    })
+    html += '</tr>'
+  })
+  html += '</tbody></table>'
+  return html
+}
+
+function parseConfigValue(str) {
+  if (str === 'true') return true
+  if (str === 'false') return false
+  const n = Number(str)
+  if (!isNaN(n) && str !== '') return n
+  return str
+}
+
+function insertSystemMessage(text, options = {}) {
+  const now = new Date()
+  const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+  if (!props.chat.messages) props.chat.messages = []
+  props.chat.messages.push({
+    text,
+    time,
+    sender: 'system',
+    timestamp: now.getTime(),
+    isSystemHint: true,
+    isHtml: options.isHtml || false,
+    isTemp: false,
+  })
+}
+
+const handleHashCommand = async (cmdString) => {
+  const trimmed = cmdString.trim()
+  
+  // Insert command echo
+  insertSystemMessage('> ' + trimmed)
+  
+  try {
+    // #list-all
+    if (trimmed === '#list') {
+      const res = await chatService.getAllPeerConfigs(props.meshName)
+      const data = Array.isArray(res.data) ? res.data : []
+      insertSystemMessage(formatPeerConfigsTable(data), { isHtml: true })
+      return
+    }
+    
+    // #config [agent-name] (list peers for this agent)
+    const agentMatch = trimmed.match(/^#config\s+(\S+)$/)
+    if (agentMatch) {
+      const agentName = agentMatch[1]
+      const res = await chatService.getAllPeerConfigs(props.meshName)
+      const data = (Array.isArray(res.data) ? res.data : [])
+        .filter(c => c.autoReplyAgent === agentName)
+      insertSystemMessage(
+        data.length ? formatPeerConfigsTable(data) : `No peers found for agent: ${agentName}`,
+        { isHtml: data.length > 0 }
+      )
+      return
+    }
+    
+    // #config [agent] set [peer] key=value
+    const configMatch = trimmed.match(/^#config\s+(\S+)\s+set\s+(\S+)\s+(\S+)=(.+)$/)
+    if (configMatch) {
+      const agentName = configMatch[1]
+      const peerName = configMatch[2]
+      const key = configMatch[3]
+      const rawValue = configMatch[4]
+      
+      const mappedKey = FIELD_MAP[key]
+      if (!mappedKey) {
+        insertSystemMessage(`Unknown field: ${key}`)
+        return
+      }
+      
+      const value = parseConfigValue(rawValue)
+      
+      // First update auto_reply_agent, then the target key
+      await chatService.updatePeerConfig(props.meshName, peerName, { autoReplyAgent: agentName })
+      await chatService.updatePeerConfig(props.meshName, peerName, { [mappedKey]: value })
+      
+      insertSystemMessage(`✓ Updated **${peerName}**: ${key} = ${rawValue}`)
+      return
+    }
+    
+    insertSystemMessage(`Unknown command. Available: \`#list\`, \`#config [agent] set [peer] key=value\``)
+  } catch (e) {
+    insertSystemMessage(`Error: ${e?.message || String(e)}`)
+  }
+}
+
+// ── end # command handlers ───────────────────────────────────────────────────────
 
 const availableAgents = computed(() => {
   const currentAgentId = props.chat.agentId
@@ -376,12 +502,13 @@ const handleDownload = () => {
       border-right-color: transparent;
     }
     .message-bubble.system-hint {
-      background: #2a2a40;
-      border: 1px solid #4a4a6a;
-      color: #c8c8e8;
+      background: transparent;
+      border: none;
+      color: #333;
+      box-shadow: none;
     }
     .message-bubble.system-hint::before {
-      border-right-color: #2a2a40;
+      display: none;
     }
     /* Markdown content styles */
     .message-content p { margin: 0 0 4px; }
@@ -461,6 +588,55 @@ const handleDownload = () => {
   const a = document.createElement('a')
   a.href = url
   a.download = `${chatName}-chat-history.html`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+const handleDownloadMd = () => {
+  const messages = props.chat.messages || []
+  const chatName = props.chat.name || 'chat'
+  const exportTime = new Date().toLocaleString('zh-CN')
+
+  const mdLines = [
+    `# ${chatName}`,
+    `> 导出于 ${exportTime}`,
+    '',
+    '---',
+    ''
+  ]
+
+  messages
+    .filter(msg => !msg.isTyping)
+    .forEach(msg => {
+      const isSent = isMessageSent(msg)
+      const senderName = isSent
+        ? (props.currentUserName || 'Me')
+        : (msg.sender || chatName)
+      const time = msg.time || ''
+      const text = msg.text || ''
+
+      const rendered = marked.parse(text)
+      const plainText = rendered
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+
+      mdLines.push(`**${senderName}** <${time}>`)
+      mdLines.push(plainText)
+      mdLines.push('')
+    })
+
+  mdLines.push('---')
+  mdLines.push(`*聊天记录导出自 ClawParty*`)
+
+  const md = mdLines.join('\n')
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${chatName}-chat-history.md`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -806,9 +982,17 @@ onUnmounted(() => {
 }
 
 .message-bubble.system-hint {
-  background: #2a2a40;
-  border: 1px solid #4a4a6a;
-  color: #c8c8e8;
+  background: transparent;
+  border: none;
+  color: #333;
+  box-shadow: none;
+  padding: 0;
+  max-width: none;
+  width: auto;
+}
+
+.message-bubble.system-hint::before {
+  display: none;
 }
 
 .group-request-actions {
@@ -870,6 +1054,30 @@ onUnmounted(() => {
   font-size: 15px;
   line-height: 1.4667;
   word-wrap: break-word;
+}
+
+.message-content :deep(table.peer-config-table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.message-content :deep(table.peer-config-table th),
+.message-content :deep(table.peer-config-table td) {
+  border: 1px solid #999;
+  padding: 4px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.message-content :deep(table.peer-config-table th) {
+  background: #e0e0e0;
+  font-weight: 600;
+}
+
+.message-content :deep(table.peer-config-table tr:nth-child(even) td) {
+  background: #f5f5f5;
 }
 
 .message.sent .message-content {

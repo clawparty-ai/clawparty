@@ -166,7 +166,15 @@ export const chatService = {
 
   revokeGroupEpAutoReply(meshName, gcid) {
     return api.delete(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/auto-reply`)
-  }
+  },
+
+  getAllPeerConfigs(meshName) {
+    return api.get(`/meshes/${meshName}/apps/ztm/chat/api/auto-reply`)
+  },
+
+  updatePeerConfig(meshName, peer, config) {
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${encodeURIComponent(peer)}/auto-reply`, config)
+  },
 }
 
 export default api

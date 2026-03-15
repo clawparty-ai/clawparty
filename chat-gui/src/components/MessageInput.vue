@@ -126,13 +126,17 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  agentId: {
+    type: String,
+    default: ''
+  },
   autoFocus: {
     type: Boolean,
     default: true
   }
 })
 
-const emit = defineEmits(['send', 'update:modelValue', 'update:selectedAgent'])
+const emit = defineEmits(['send', 'update:modelValue', 'update:selectedAgent', 'hash-command'])
 
 const textareaRef = ref(null)
 const editorHeight = ref(160)
@@ -196,7 +200,14 @@ const handleKeydown = (e) => {
     insertFormat('*', '*')
   } else if (e.key === 'Enter' && !e.shiftKey && !e.metaKey) {
     e.preventDefault()
-    emit('send')
+    const val = e.target.value
+    // Only intercept # commands in main agent chat
+    if (props.isOpenclaw && props.agentId === 'main' && val.startsWith('#')) {
+      emit('hash-command', val)
+      emit('update:modelValue', '')
+    } else {
+      emit('send')
+    }
   }
 }
 </script>

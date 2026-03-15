@@ -203,9 +203,13 @@ export default function ({ app, mesh, api, utils }) {
                 var configs = api.allPeerConfigs()
 
                 // Peer DM configs: peer field is a plain username (no '~', not a UUID)
-                var uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-                var peerConfigs = configs.filter(c => !uuidRe.test(c.peer) && c.peer.indexOf('~') === -1)
-                var groupEpConfigs = configs.filter(c => uuidRe.test(c.peer))
+                function isUUID(s) {
+                  if (s.length !== 36) return false
+                  return s[8] === '-' && s[13] === '-' && s[18] === '-' && s[23] === '-'
+                }
+
+                var peerConfigs = configs.filter(c => !isUUID(c.peer) && c.peer.indexOf('~') === -1)
+                var groupEpConfigs = configs.filter(c => isUUID(c.peer))
                 var groupAgentConfigs = configs.filter(c => c.peer.indexOf('~') !== -1)
 
                 var any = false
