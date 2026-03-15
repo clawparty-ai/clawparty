@@ -83,15 +83,6 @@ try {
         db.open(os.path.join(dbPath, 'ztm.db'))
         api.init(dbPath, listen, args['--proxy'], pqc, p2pConfig)
 
-        // Pre-populate local agent id cache synchronously so chat app can use it on first message
-        try {
-          var agentsDir = os.path.join(os.home(), '.openclaw', 'agents')
-          var agentIds = os.readDir(agentsDir)
-            .filter(function (name) { return name.endsWith('/') && name !== 'main/' })
-            .map(function (name) { return name.slice(0, -1) })
-          db.setCache('local_agent_ids', agentIds)
-        } catch {}
-
         if (joinMesh) {
           api.setMesh(joinMesh, {
             ca: permit.ca,
@@ -666,7 +657,7 @@ function main(listen, apiToken, noAuth) {
     '/api/openclaw/status': {
       'GET': function () {
         var statusCmd = 'openclaw status --json'
-        console.info('[openclaw cli]', statusCmd.slice(0, 40))
+        console.info('[openclaw cli]', statusCmd.slice(0, 200))
         return openclawStatus.spawn().then(
           output => response(200, output.split('\n').join('')),
           output => response(500, output.split('\n').join(''))
@@ -677,7 +668,7 @@ function main(listen, apiToken, noAuth) {
     '/api/openclaw/agents': {
       'GET': function () {
         var agentsCmd = 'openclaw agents list --json'
-        console.info('[openclaw cli]', agentsCmd.slice(0, 40))
+        console.info('[openclaw cli]', agentsCmd.slice(0, 200))
         return openclawAgents.spawn().then(
           output => {
             var cleaned = output.split('\n').join('')
@@ -688,7 +679,6 @@ function main(listen, apiToken, noAuth) {
                 db.setCache('local_agent_ids', ids)
               }
             } catch {}
-            // return cleaned if non-empty, otherwise return empty array JSON
             return response(200, cleaned || '[]')
           },
           output => response(500, output.split('\n').join(''))
@@ -714,7 +704,7 @@ function main(listen, apiToken, noAuth) {
       'GET': function ({ agent }) {
         agent = URL.decodeComponent(agent)
         var cmd = ['openclaw', 'sessions', '--agent', agent, '--json']
-        console.info('[openclaw cli]', cmd.join(' ').slice(0, 40))
+        console.info('[openclaw cli]', cmd.join(' ').slice(0, 200))
         return openclawAgentMessage.spawn(cmd).then(
           output => response(200, output.split('\n').join('')),
           output => response(500, output.split('\n').join(''))
@@ -773,7 +763,7 @@ function main(listen, apiToken, noAuth) {
         }
         db.addCliLog(agent, sessionId, messageMd5)
         var cmd = ['openclaw', 'agent', '--agent', agent, '--message', message, '--json']
-        console.info('[openclaw cli]', cmd.join(' ').slice(0, 40))
+        console.info('[openclaw cli]', cmd.join(' ').slice(0, 200))
         return openclawAgentMessage.spawn(cmd).then(
           output => response(200, output.split('\n').join('')),
           output => response(500, output.split('\n').join(''))
@@ -796,7 +786,7 @@ function main(listen, apiToken, noAuth) {
         }
         db.addCliLog('main', sessionId, messageMd5)
         var cmd = ['openclaw', 'agent', '--agent', 'main', '--message', prompt, '--json']
-        console.info('[openclaw cli]', cmd.join(' ').slice(0, 40))
+        console.info('[openclaw cli]', cmd.join(' ').slice(0, 200))
         return openclawAgentMessage.spawn(cmd).then(
           output => response(200, output.split('\n').join('')),
           output => response(500, output.split('\n').join(''))
@@ -1026,8 +1016,9 @@ function main(listen, apiToken, noAuth) {
               $reqHead = req.head
               $reqBody = req.body?.toString?.() || ''
               try {
-                var _logLevel = $reqHead.path.indexOf('/endpoints') !== -1 ? '[DBG]' : '[INF]'
-                println(`${formatLocalTime()} ${_logLevel} [api] ${$clientIp} ${$reqHead.path}`)
+                if ($reqHead.path.indexOf('/endpoints') === -1) {
+                  println(`${formatLocalTime()} [INF] [api] ${$clientIp} ${$reqHead.path}`)
+                }
               } catch {}
               var path = req.head.path
               var params = null

@@ -555,6 +555,22 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
                 console.info('[chat] peer stopped, discarding messages from', peer)
                 return
               }
+              // is_blocked: log, reply "You are blocked", do not store or process further
+              if (peerCfg && peerCfg.isBlocked) {
+                console.info('[chat] peer blocked, replying "You are blocked" to', peer)
+                messages.forEach(msg => {
+                  if (msg.sender !== app.username) {
+                    var msgText = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
+                    console.info('[chat recv blocked]', app.username, '<-', msg.sender, ':', msgText)
+                    var recvSessionId = makeSessionId(msg.sender, app.username)
+                    try {
+                      db.logChat(mesh.name, 'peer', chat.peer, null, null, msg.sender, 'message', msgText, null, recvSessionId)
+                    } catch {}
+                  }
+                })
+                addPeerMessage(chat.peer, { text: 'You are blocked' })
+                return
+              }
               var existingConfig = db.getChatPeer(mesh.name, chat.peer)
               if (!existingConfig) {
                 db.setChatPeer(mesh.name, chat.peer, { autoReply: false, autoReplyAgent: 'main' })
@@ -572,11 +588,6 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             mergeMessages(chat, messages)
             if (hasIncoming) {
               var cfg = db.getChatPeer(mesh.name, chat.peer)
-              // is_blocked: store message but skip all processing
-              if (cfg && cfg.isBlocked) {
-                console.info('[chat] peer blocked, skipping processing for', peer)
-                return
-              }
               if (cfg && !cfg.autoReply && !chat.messages.some(m => m.isPeerRequest)) {
                 notifyAutoReplySetup(chat)
               }
@@ -637,6 +648,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             console.info('[chat] group stopped, discarding messages for group', group)
             return
           }
+          // is_blocked: silently discard, do not store or process
+          if (groupCfg && groupCfg.isBlocked) {
+            console.info('[chat] group blocked, silently discarding messages for group', group)
+            return
+          }
           var newMsgs = []
           try {
             var messages = JSON.decode(data)
@@ -651,11 +667,6 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             // Collect only the newly merged messages for auto-reply
             if (!initial) {
               newMsgs = chat.messages.slice(beforeCount)
-              // is_blocked: store messages but skip auto-reply
-              if (groupCfg && groupCfg.isBlocked) {
-                console.info('[chat] group blocked, skipping auto-reply for group', group)
-                newMsgs = []
-              }
             }
           } catch {}
           if (initial) chat.newCount = 0
