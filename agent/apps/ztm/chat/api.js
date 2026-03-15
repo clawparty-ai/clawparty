@@ -288,6 +288,16 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             } catch {}
             if (!replyText) replyText = output.split('\n').join('').trim()
             if (!replyText) return
+            // muted: log the reply but do not send to ztm chat
+            var gcidCfg = gcid ? db.getChatPeer(mesh.name, gcid) : null
+            if (gcidCfg && gcidCfg.muted) {
+              console.info('[group auto-reply] muted, logging reply without sending for agent', member, 'in group', gcid || chat.group)
+              try {
+                db.logChat(mesh.name, 'group', chat.group, chat.name, chat.creator, member, 'message',
+                  JSON.stringify({ text: replyText, agentName: member }), null, sessionId, true)
+              } catch {}
+              return
+            }
             var thinkingTime1 = getPeerConfig(sessionId).thinkingTime || 3
             new Timeout(thinkingTime1).wait().then(function () {
               console.info('[group auto-reply] agent', member, 'reply to group', gcid || chat.group, ':', replyText)
@@ -328,6 +338,15 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
           } catch {}
           if (!replyText) replyText = output.split('\n').join('').trim()
           if (!replyText) return
+          // muted: log the reply but do not send to ztm chat
+          if (peerConfig.muted) {
+            console.info('[group auto-reply] muted, logging reply without sending for self in group', gcid)
+            try {
+              db.logChat(mesh.name, 'group', chat.group, chat.name, chat.creator, app.username, 'message',
+                JSON.stringify({ text: replyText, agentName: agentName }), null, sessionId, true)
+            } catch {}
+            return
+          }
           onSend(gcid, replyText, credit).then(function (shouldSend) {
             if (!shouldSend) return
             new Timeout(thinkingTime2).wait().then(function () {
@@ -383,6 +402,16 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         } catch {}
         if (!replyText) replyText = output.split('\n').join('').trim()
         if (!replyText) return
+
+        // muted: log the reply to chat_log but do not send to ztm chat
+        if (peerConfig.muted) {
+          console.info('[chat auto-reply] muted, logging reply without sending to', chat.peer, ':', replyText)
+          try {
+            db.logChat(mesh.name, 'peer', chat.peer, null, null, app.username, 'message',
+              JSON.stringify({ text: replyText, agentName: agentName }), null, sessionId, true)
+          } catch {}
+          return
+        }
 
         // Run onSend filter chain (handles delay + suppress-json + any future filters)
         onSend(chat.peer, replyText, credit).then(function (shouldSend) {
@@ -831,11 +860,6 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
   function addPeerMessage(peer, message, sessionId) {
     if (!peer) return Promise.resolve(false)
-    var cfg = db.getChatPeer(mesh.name, peer)
-    if (cfg && cfg.muted) {
-      console.info('[chat] muted, skip send to peer:', peer)
-      return Promise.resolve(false)
-    }
     var msgText = typeof message === 'string' ? message : (message?.text || JSON.stringify(message))
     console.info('[chat send]', app.username, '->', peer, ':', msgText)
     var dirname = `/shared/${app.username}/publish/peers/${peer}/messages`
@@ -950,14 +974,6 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var chat = findGroupChat(creator, group)
     if (!chat) return Promise.resolve(false)
     if (app.username !== creator && !chat.members.includes(app.username)) return Promise.resolve(false)
-    var gcid = chat.gcid
-    if (gcid) {
-      var cfg = db.getChatPeer(mesh.name, gcid)
-      if (cfg && cfg.muted) {
-        console.info('[chat] muted, skip send to group:', group)
-        return Promise.resolve(false)
-      }
-    }
     // Embed sender as [gcid]/[username] inside the message payload.
     // For agent replies use the agent's own name as the username part so the UI shows the agent.
     var gcid = chat.gcid || ''

@@ -153,11 +153,17 @@ const FIELD_MAP = {
   run: 'run',
   muted: 'muted',
   thinking_time: 'thinkingTime',
+  peer_profile: 'peerProfile',
+  short_context: 'shortContext',
+  long_context: 'longContext',
 }
 
 const PEER_CONFIG_TABLE_FIELDS = [
-  'peer', 'autoReply', 'autoReplyAgent', 'peerAgentName', 'credit', 'isBlocked', 'run', 'muted', 'thinkingTime'
+  'peer', 'autoReply', 'autoReplyAgent', 'peerAgentName', 'credit', 'isBlocked', 'run', 'muted', 'thinkingTime',
+  'peerProfile', 'shortContext', 'longContext'
 ]
+
+const LONG_TEXT_FIELDS = new Set(['peerProfile', 'shortContext', 'longContext'])
 
 function formatPeerConfigsTable(configs) {
   if (!configs || configs.length === 0) return 'No peer configs found.'
@@ -171,7 +177,12 @@ function formatPeerConfigsTable(configs) {
       let val = cfg[f]
       if (val === undefined || val === null) val = ''
       if (typeof val === 'boolean') val = val ? 'true' : 'false'
-      html += `<td>${val}</td>`
+      val = String(val)
+      if (LONG_TEXT_FIELDS.has(f) && val.length > 100) {
+        val = val.slice(0, 100) + '...'
+      }
+      const style = LONG_TEXT_FIELDS.has(f) ? ' style="max-width:20ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"' : ''
+      html += `<td${style}>${val}</td>`
     })
     html += '</tr>'
   })

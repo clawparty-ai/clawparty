@@ -80,15 +80,18 @@ function open(pathname) {
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS chat_peer (
-      mesh             TEXT NOT NULL,
-      peer             TEXT NOT NULL,
-      auto_reply       INTEGER NOT NULL DEFAULT 0,
-      auto_reply_agent TEXT NOT NULL DEFAULT 'main',
-      peer_agent_name  TEXT NOT NULL DEFAULT '',
-      is_blocked       INTEGER NOT NULL DEFAULT 0,
-      run              INTEGER NOT NULL DEFAULT 1,
-      muted            INTEGER NOT NULL DEFAULT 0,
-      thinking_time    INTEGER NOT NULL DEFAULT 3,
+      mesh               TEXT    NOT NULL,
+      peer               TEXT    NOT NULL,
+      auto_reply         INTEGER NOT NULL DEFAULT 0,
+      auto_reply_agent   TEXT    NOT NULL DEFAULT 'main',
+      peer_agent_name    TEXT    NOT NULL DEFAULT '',
+      is_blocked         INTEGER NOT NULL DEFAULT 0,
+      run                INTEGER NOT NULL DEFAULT 1,
+      muted              INTEGER NOT NULL DEFAULT 0,
+      thinking_time      INTEGER NOT NULL DEFAULT 3,
+      peer_profile       TEXT    NOT NULL DEFAULT '',
+      short_context      TEXT    NOT NULL DEFAULT '',
+      long_context       TEXT    NOT NULL DEFAULT '',
       PRIMARY KEY (mesh, peer)
     )
   `)
@@ -118,6 +121,15 @@ function open(pathname) {
   try {
     db.exec(`ALTER TABLE chat_peer ADD COLUMN thinking_time INTEGER NOT NULL DEFAULT 3`)
   } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN peer_profile TEXT NOT NULL DEFAULT ''`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN short_context TEXT NOT NULL DEFAULT ''`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN long_context TEXT NOT NULL DEFAULT ''`)
+  } catch {}
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS blocked_keywords (
@@ -141,7 +153,8 @@ function open(pathname) {
       event      TEXT    NOT NULL,
       content    TEXT,
       members    TEXT,
-      session_id TEXT
+      session_id TEXT,
+      muted      INTEGER NOT NULL DEFAULT 0
     )
   `)
 
@@ -152,6 +165,9 @@ function open(pathname) {
   } catch {}
   try {
     db.exec(`ALTER TABLE chat_log ADD COLUMN session_id TEXT`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_log ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`)
   } catch {}
 
   db.exec(`
@@ -537,6 +553,9 @@ function getChatPeer(mesh, peer) {
     run: row.run !== undefined ? row.run : 1,
     muted: row.muted === 1,
     thinkingTime: row.thinking_time !== undefined ? row.thinking_time : 3,
+    peerProfile: row.peer_profile || '',
+    shortContext: row.short_context || '',
+    longContext: row.long_context || '',
   }
 }
 
@@ -553,7 +572,10 @@ function setChatPeer(mesh, peer, config) {
     var run = 'run' in config ? config.run : old.run
     var muted = 'muted' in config ? (config.muted ? 1 : 0) : (old.muted ? 1 : 0)
     var thinkingTime = 'thinkingTime' in config ? config.thinkingTime : old.thinkingTime
-    db.sql('UPDATE chat_peer SET auto_reply = ?, auto_reply_agent = ?, peer_agent_name = ?, credit = ?, filter_chain = ?, send_filter_chain = ?, is_blocked = ?, run = ?, muted = ?, thinking_time = ? WHERE mesh = ? AND peer = ?')
+    var peerProfile = 'peerProfile' in config ? (config.peerProfile || '') : (old.peerProfile || '')
+    var shortContext = 'shortContext' in config ? (config.shortContext || '') : (old.shortContext || '')
+    var longContext = 'longContext' in config ? (config.longContext || '') : (old.longContext || '')
+    db.sql('UPDATE chat_peer SET auto_reply = ?, auto_reply_agent = ?, peer_agent_name = ?, credit = ?, filter_chain = ?, send_filter_chain = ?, is_blocked = ?, run = ?, muted = ?, thinking_time = ?, peer_profile = ?, short_context = ?, long_context = ? WHERE mesh = ? AND peer = ?')
       .bind(1, autoReply)
       .bind(2, autoReplyAgent)
       .bind(3, peerAgentName)
@@ -564,8 +586,11 @@ function setChatPeer(mesh, peer, config) {
       .bind(8, run)
       .bind(9, muted)
       .bind(10, thinkingTime)
-      .bind(11, mesh)
-      .bind(12, peer)
+      .bind(11, peerProfile)
+      .bind(12, shortContext)
+      .bind(13, longContext)
+      .bind(14, mesh)
+      .bind(15, peer)
       .exec()
   } else {
     var autoReply = config.autoReply ? 1 : 0
@@ -578,7 +603,10 @@ function setChatPeer(mesh, peer, config) {
     var run = 'run' in config ? config.run : 1
     var muted = config.muted ? 1 : 0
     var thinkingTime = 'thinkingTime' in config ? config.thinkingTime : 3
-    db.sql('INSERT INTO chat_peer(mesh, peer, auto_reply, auto_reply_agent, peer_agent_name, credit, filter_chain, send_filter_chain, is_blocked, run, muted, thinking_time) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    var peerProfile = config.peerProfile || ''
+    var shortContext = config.shortContext || ''
+    var longContext = config.longContext || ''
+    db.sql('INSERT INTO chat_peer(mesh, peer, auto_reply, auto_reply_agent, peer_agent_name, credit, filter_chain, send_filter_chain, is_blocked, run, muted, thinking_time, peer_profile, short_context, long_context) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(1, mesh)
       .bind(2, peer)
       .bind(3, autoReply)
@@ -591,6 +619,9 @@ function setChatPeer(mesh, peer, config) {
       .bind(10, run)
       .bind(11, muted)
       .bind(12, thinkingTime)
+      .bind(13, peerProfile)
+      .bind(14, shortContext)
+      .bind(15, longContext)
       .exec()
   }
 }
@@ -612,6 +643,9 @@ function allChatPeers(mesh) {
       run: row.run !== undefined ? row.run : 1,
       muted: row.muted === 1,
       thinkingTime: row.thinking_time !== undefined ? row.thinking_time : 3,
+      peerProfile: row.peer_profile || '',
+      shortContext: row.short_context || '',
+      longContext: row.long_context || '',
     }))
 }
 
@@ -696,11 +730,11 @@ function setCache(key, value) {
 
 // event: 'message' | 'group_create' | 'group_delete' | 'group_leave'
 // chat_type: 'peer' | 'group'
-function logChat(mesh, chatType, chatId, chatName, creator, sender, event, content, members, sessionId) {
+function logChat(mesh, chatType, chatId, chatName, creator, sender, event, content, members, sessionId, muted) {
   var t = Date.now() / 1000
   db.sql(`
-    INSERT INTO chat_log(time, mesh, chat_type, chat_id, chat_name, creator, sender, event, content, members, session_id)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO chat_log(time, mesh, chat_type, chat_id, chat_name, creator, sender, event, content, members, session_id, muted)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
     .bind(1, t)
     .bind(2, mesh || '')
@@ -713,6 +747,7 @@ function logChat(mesh, chatType, chatId, chatName, creator, sender, event, conte
     .bind(9, content || null)
     .bind(10, members ? JSON.stringify(members) : null)
     .bind(11, sessionId || null)
+    .bind(12, muted ? 1 : 0)
     .exec()
 }
 
