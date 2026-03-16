@@ -32,6 +32,7 @@ function loadFilter(name) {
 
 export default function ({ app, mesh, db, spawnOpenclaw }) {
   var chats = []
+  var localAgentNamesPromise = null  // in-flight dedup for getLocalAgentNames
 
   function getPeerConfig(peer) {
     return db.getChatPeer(mesh.name, peer) || { peer, autoReply: false, autoReplyAgent: 'main', credit: BASE_CREDIT, filterChain: '', sendFilterChain: '', isBlocked: false, run: 1, muted: false, thinkingTime: 3 }
@@ -175,22 +176,31 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         return Promise.resolve(fresh)
       }
     } catch {}
-    // cache miss: call openclaw CLI and populate cache for next time
+    // cache miss: call openclaw CLI and populate cache (deduplicated across concurrent callers)
     if (!spawnOpenclaw) return Promise.resolve([])
-    return spawnOpenclaw(['openclaw', 'agents', 'list', '--json']).then(
+    if (localAgentNamesPromise) return localAgentNamesPromise
+    console.info('[openclaw cli] cache miss, fetching local agent list')
+    localAgentNamesPromise = spawnOpenclaw(['openclaw', 'agents', 'list', '--json']).then(
       function (output) {
+        localAgentNamesPromise = null
         try {
           var list = JSON.parse(output.split('\n').join(''))
           if (Array.isArray(list)) {
             var ids = list.map(function (a) { return a.id || a.name }).filter(Boolean)
             db.setCache('local_agent_ids', ids)
+            console.info('[openclaw cli] local agent list cached:', JSON.stringify(ids))
             return ids
           }
         } catch {}
         return []
       },
-      function () { return [] }
+      function (err) {
+        localAgentNamesPromise = null
+        console.error('[openclaw cli] failed to fetch local agent list:', err?.toString?.() || err)
+        return []
+      }
     )
+    return localAgentNamesPromise
   }
 
   // Key used in chat_peer for a local agent's auto-reply config within a specific group
