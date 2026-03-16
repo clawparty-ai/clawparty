@@ -676,7 +676,7 @@ function main(listen, apiToken, noAuth) {
               var list = JSON.parse(cleaned)
               if (Array.isArray(list)) {
                 var ids = list.map(a => a.id || a.name).filter(Boolean)
-                db.setCache('local_agent_ids', ids)
+                if (ids.length > 0) db.setCache('local_agent_ids', ids)
               }
             } catch {}
             return response(200, cleaned || '[]')
@@ -947,6 +947,26 @@ function main(listen, apiToken, noAuth) {
       }
       return { match, handler }
     }
+  )
+
+  // Warm up local_agent_ids cache on startup so group auto-reply works immediately
+  openclawAgents.spawn().then(
+    output => {
+      var cleaned = output.split('\n').join('')
+      try {
+        var list = JSON.parse(cleaned)
+        if (Array.isArray(list)) {
+          var ids = list.map(a => a.id || a.name).filter(Boolean)
+          if (ids.length > 0) {
+            db.setCache('local_agent_ids', ids)
+            console.info('[openclaw] startup: local agent list cached:', JSON.stringify(ids))
+          } else {
+            console.info('[openclaw] startup: openclaw agents list returned empty, skipping cache')
+          }
+        }
+      } catch {}
+    },
+    err => console.error('[openclaw] startup: failed to fetch local agent list:', err?.toString?.() || err)
   )
 
   var appApiMatch = new http.Match('/api/meshes/{mesh}/apps/{provider}/{app}')
