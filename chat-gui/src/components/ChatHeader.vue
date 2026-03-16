@@ -78,18 +78,12 @@
       <button class="header-btn" title="Download chat history (MD)" @click="emit('download-md')">
         <span style="font-size: 12px; font-weight: 600;">MD</span>
       </button>
-      <div class="search-box">
-        <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 001.415-1.414l-3.85-3.85a1.007 1.007 0 00-.115-.1zM12 6.5a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0z"/>
-        </svg>
-        <input type="text" v-model="searchQuery" placeholder="Search messages">
-      </div>
     </div>
   </header>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+
 
 const props = defineProps({
   chat: {
@@ -110,13 +104,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['search', 'switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md'])
-
-const searchQuery = ref('')
-
-watch(searchQuery, (val) => {
-  emit('search', val)
-})
+const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md'])
 </script>
 
 <style scoped>
@@ -247,48 +235,10 @@ watch(searchQuery, (val) => {
   color: #dc2626;
 }
 
-.search-box {
-  position: relative;
-}
-
-.search-box input {
-  width: 180px;
-  padding: 6px 12px 6px 32px;
-  background: var(--bg-hover);
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-size: 13px;
-  outline: none;
-  transition: all 0.15s;
-}
-
-.search-box input:focus {
-  width: 240px;
-  background: #fff;
-  border-color: var(--slack-blue);
-}
-
-.search-box input::placeholder {
-  color: var(--text-secondary);
-}
-
-.search-icon {
-  position: absolute;
-  left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-secondary);
-}
-
 @media (max-width: 768px) {
   .chat-header {
     padding: 0 12px;
     height: 52px;
-  }
-  
-  .search-box {
-    display: none;
   }
   
   .header-divider,
