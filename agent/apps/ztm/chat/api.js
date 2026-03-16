@@ -566,6 +566,25 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   var matchPublishGroupInfo = new http.Match('/shared/{sender}/publish/groups/{creator}/{group}/info.json')
   var matchPublishGroupMsgs = new http.Match('/shared/{sender}/publish/groups/{creator}/{group}/messages/*')
 
+  // Warm up local_agent_ids cache on startup so group auto-reply works immediately
+  if (spawnOpenclaw) {
+    spawnOpenclaw(['openclaw', 'agents', 'list', '--json']).then(
+      function (output) {
+        try {
+          var list = JSON.parse(output.split('\n').join(''))
+          if (Array.isArray(list)) {
+            var ids = list.map(function (a) { return a.id || a.name }).filter(Boolean)
+            db.setCache('local_agent_ids', ids)
+            console.info('[openclaw] startup: local agent list cached:', JSON.stringify(ids))
+          }
+        } catch {}
+      },
+      function (err) {
+        console.error('[openclaw] startup: failed to fetch local agent list:', err?.toString?.() || err)
+      }
+    )
+  }
+
   mesh.acl(`/shared/${app.username}/publish`, { all: 'block' })
   mesh.acl(`/shared/${app.username}/publish/files`, { all: 'readonly' })
 
