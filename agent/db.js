@@ -176,6 +176,20 @@ function open(pathname) {
       value TEXT NOT NULL
     )
   `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cli_log (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp    REAL    NOT NULL,
+      agent_name   TEXT    NOT NULL,
+      session_id   TEXT    NOT NULL DEFAULT '',
+      message_md5  TEXT    NOT NULL
+    )
+  `)
+
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS cli_log_lookup ON cli_log(agent_name, session_id, message_md5, timestamp)`)
+  } catch {}
 }
 
 function allZones() {
@@ -729,6 +743,28 @@ function setCache(key, value) {
 }
 
 // event: 'message' | 'group_create' | 'group_delete' | 'group_leave'
+function hasCliLog(agentName, sessionId, messageMd5) {
+  var since = Date.now() / 1000 - 4 * 60 * 60
+  var rows = db.sql(
+    'SELECT id FROM cli_log WHERE agent_name = ? AND session_id = ? AND message_md5 = ? AND timestamp >= ?'
+  )
+    .bind(1, agentName)
+    .bind(2, sessionId)
+    .bind(3, messageMd5)
+    .bind(4, since)
+    .exec()
+  return rows.length > 0
+}
+
+function addCliLog(agentName, sessionId, messageMd5) {
+  db.sql('INSERT INTO cli_log(timestamp, agent_name, session_id, message_md5) VALUES(?, ?, ?, ?)')
+    .bind(1, Date.now() / 1000)
+    .bind(2, agentName)
+    .bind(3, sessionId)
+    .bind(4, messageMd5)
+    .exec()
+}
+
 // chat_type: 'peer' | 'group'
 function logChat(mesh, chatType, chatId, chatName, creator, sender, event, content, members, sessionId, muted) {
   var t = Date.now() / 1000
@@ -828,4 +864,6 @@ export default {
   countRecentMessages,
   getCache,
   setCache,
+  hasCliLog,
+  addCliLog,
 }
