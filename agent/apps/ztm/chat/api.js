@@ -175,7 +175,22 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         return Promise.resolve(fresh)
       }
     } catch {}
-    return Promise.resolve([])
+    // cache miss: call openclaw CLI and populate cache for next time
+    if (!spawnOpenclaw) return Promise.resolve([])
+    return spawnOpenclaw(['openclaw', 'agents', 'list', '--json']).then(
+      function (output) {
+        try {
+          var list = JSON.parse(output.split('\n').join(''))
+          if (Array.isArray(list)) {
+            var ids = list.map(function (a) { return a.id || a.name }).filter(Boolean)
+            db.setCache('local_agent_ids', ids)
+            return ids
+          }
+        } catch {}
+        return []
+      },
+      function () { return [] }
+    )
   }
 
   // Key used in chat_peer for a local agent's auto-reply config within a specific group
