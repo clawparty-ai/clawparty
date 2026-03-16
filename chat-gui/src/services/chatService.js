@@ -172,6 +172,10 @@ export const chatService = {
     return api.get(`/meshes/${meshName}/apps/ztm/chat/api/auto-reply`)
   },
 
+  getPeerConfig(meshName, peer) {
+    return api.get(`/meshes/${meshName}/apps/ztm/chat/api/peers/${encodeURIComponent(peer)}/auto-reply`)
+  },
+
   updatePeerConfig(meshName, peer, config) {
     return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${encodeURIComponent(peer)}/auto-reply`, config)
   },

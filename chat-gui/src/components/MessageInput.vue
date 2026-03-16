@@ -54,6 +54,32 @@
         </button>
         <span class="toolbar-divider"></span>
         <span class="toolbar-spacer"></span>
+        <div v-if="showPeerMode" class="peer-mode-group">
+          <button
+            class="mode-btn"
+            :class="{ active: peerMode === 'blocked', 'mode-blocked': peerMode === 'blocked' }"
+            title="Blocked — 停止聊天，自动回复 You are blocked"
+            @click="$emit('update:peerMode', 'blocked')"
+          >P</button>
+          <button
+            class="mode-btn"
+            :class="{ active: peerMode === 'muted', 'mode-muted': peerMode === 'muted' }"
+            title="Muted — Agent 仍运行但回复不发送"
+            @click="$emit('update:peerMode', 'muted')"
+          >N</button>
+          <button
+            class="mode-btn"
+            :class="{ active: peerMode === 'manual', 'mode-manual': peerMode === 'manual' }"
+            title="Manual — 手动输入，不自动回复"
+            @click="$emit('update:peerMode', 'manual')"
+          >M</button>
+          <button
+            class="mode-btn"
+            :class="{ active: peerMode === 'auto', 'mode-auto': peerMode === 'auto' }"
+            title="Auto Reply — 自动回复"
+            @click="$emit('update:peerMode', 'auto')"
+          >A</button>
+        </div>
         <select 
           v-if="isOpenclaw"
           class="agent-select" 
@@ -133,10 +159,18 @@ const props = defineProps({
   autoFocus: {
     type: Boolean,
     default: true
+  },
+  peerMode: {
+    type: String,
+    default: ''
+  },
+  showPeerMode: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['send', 'update:modelValue', 'update:selectedAgent', 'hash-command'])
+const emit = defineEmits(['send', 'update:modelValue', 'update:selectedAgent', 'hash-command', 'update:peerMode'])
 
 const textareaRef = ref(null)
 const editorHeight = ref(160)
@@ -313,6 +347,62 @@ const handleKeydown = (e) => {
 
 .toolbar-spacer {
   flex: 1;
+}
+
+.peer-mode-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+  border: 1px solid var(--border-light);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.mode-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-right: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s;
+  padding: 0;
+}
+
+.mode-btn:last-child {
+  border-right: none;
+}
+
+.mode-btn:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: var(--text-primary);
+}
+
+.mode-btn.active.mode-blocked {
+  background: #dc2626;
+  color: #fff;
+}
+
+.mode-btn.active.mode-muted {
+  background: #f59e0b;
+  color: #fff;
+}
+
+.mode-btn.active.mode-manual {
+  background: #6b7280;
+  color: #fff;
+}
+
+.mode-btn.active.mode-auto {
+  background: #16a34a;
+  color: #fff;
 }
 
 .agent-select {

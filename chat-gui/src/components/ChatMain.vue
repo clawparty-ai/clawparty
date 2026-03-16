@@ -5,7 +5,6 @@
       :openclawSessions="openclawSessions"
       :currentUserName="currentUserName"
       :showBackButton="showBackButton"
-      @search="handleSearch"
       @switchSession="$emit('switchSession', $event)"
       @deleteGroup="$emit('deleteGroup', $event)"
       @leaveGroup="$emit('leaveGroup', $event)"
@@ -71,10 +70,13 @@
       :autoFocus="autoFocus"
       :members="chat.isGroup ? (chat.members || []).filter(m => m !== currentUserName) : []"
       :agentGroups="agentGroupChats"
+      :peerMode="peerMode"
+      :showPeerMode="!chat.isOpenclaw && !!chat.name"
       @update:modelValue="$emit('update:modelValue', $event)" 
       @update:selectedAgent="$emit('update:selectedAgent', $event)"
       @send="$emit('send')"
       @hash-command="handleHashCommand"
+      @update:peerMode="handlePeerModeChange"
     />
   </main>
 </template>
@@ -133,10 +135,10 @@ defineEmits(['send', 'update:modelValue', 'update:selectedAgent', 'switchSession
 
 const messagesContainer = ref(null)
 let pollTimer = null
-const searchQuery = ref('')
 const openclawAgents = inject('openclawAgents', ref([]))
 const allGroupChats = inject('groupChats', ref([]))
 const resolveEpDisplayName = inject('resolveEpDisplayName', (u) => u)
+const peerMode = ref('')  // 'blocked' | 'muted' | 'manual' | 'auto' | ''
 
 defineExpose({})
 
@@ -159,8 +161,18 @@ const FIELD_MAP = {
 }
 
 const PEER_CONFIG_TABLE_FIELDS = [
-  'peer', 'autoReply', 'autoReplyAgent', 'peerAgentName', 'credit', 'isBlocked', 'run', 'muted', 'thinkingTime',
-  'peerProfile', 'shortContext', 'longContext'
+  { key: 'peer',           header: 'peer' },
+  { key: 'autoReply',      header: 'auto_reply' },
+  { key: 'autoReplyAgent', header: 'auto_reply_agent' },
+  { key: 'peerAgentName',  header: 'peer_agent_name' },
+  { key: 'credit',         header: 'credit' },
+  { key: 'isBlocked',      header: 'is_blocked' },
+  { key: 'run',            header: 'run' },
+  { key: 'muted',          header: 'muted' },
+  { key: 'thinkingTime',   header: 'thinking_time' },
+  { key: 'peerProfile',    header: 'peer_profile' },
+  { key: 'shortContext',   header: 'short_context' },
+  { key: 'longContext',    header: 'long_context' },
 ]
 
 const LONG_TEXT_FIELDS = new Set(['peerProfile', 'shortContext', 'longContext'])
@@ -169,19 +181,19 @@ function formatPeerConfigsTable(configs) {
   if (!configs || configs.length === 0) return 'No peer configs found.'
   const fields = PEER_CONFIG_TABLE_FIELDS
   let html = '<table class="peer-config-table"><thead><tr>'
-  fields.forEach(f => { html += `<th>${f}</th>` })
+  fields.forEach(f => { html += `<th>${f.header}</th>` })
   html += '</tr></thead><tbody>'
   configs.forEach(cfg => {
     html += '<tr>'
     fields.forEach(f => {
-      let val = cfg[f]
+      let val = cfg[f.key]
       if (val === undefined || val === null) val = ''
-      if (typeof val === 'boolean') val = val ? 'true' : 'false'
+      if (typeof val === 'boolean') val = val ? 1 : 0
       val = String(val)
-      if (LONG_TEXT_FIELDS.has(f) && val.length > 100) {
+      if (LONG_TEXT_FIELDS.has(f.key) && val.length > 100) {
         val = val.slice(0, 100) + '...'
       }
-      const style = LONG_TEXT_FIELDS.has(f) ? ' style="max-width:20ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"' : ''
+      const style = LONG_TEXT_FIELDS.has(f.key) ? ' style="max-width:20ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"' : ''
       html += `<td${style}>${val}</td>`
     })
     html += '</tr>'
@@ -293,9 +305,7 @@ const currentDate = computed(() => {
   return now.toLocaleDateString('zh-CN', options)
 })
 
-const handleSearch = (query) => {
-  searchQuery.value = query
-}
+
 
 const handleDownload = () => {
   const messages = props.chat.messages || []
@@ -653,24 +663,16 @@ const handleDownloadMd = () => {
 }
 
 const filteredMessages = computed(() => {
-	let msgs = [];
-  if (!searchQuery.value.trim()) {
-    msgs = props.chat.messages || []
-  } else {
-		const query = searchQuery.value.toLowerCase()
-		msgs = (props.chat.messages || []).filter(msg => 
-			msg.text && msg.text.toLowerCase().includes(query)
-		);
-	}
-	msgs.forEach((m)=>{
-		if(!!m.text && m.text.indexOf(' GMT')>=0){
-			m.text = m.text.split(/[^[]*] /).slice(1)[0]
-		}
-		if(!m.text){
-			m.text = '[Empty]'
-		}
-	})
-	return msgs
+  const msgs = props.chat.messages || []
+  msgs.forEach((m) => {
+    if (!!m.text && m.text.indexOf(' GMT') >= 0) {
+      m.text = m.text.split(/[^[]*] /).slice(1)[0]
+    }
+    if (!m.text) {
+      m.text = '[Empty]'
+    }
+  })
+  return msgs
 })
 
 const formatTime = (timestamp) => {
@@ -831,8 +833,56 @@ const scrollToBottom = () => {
   })
 }
 
+// ── peer mode (P/N/M/A buttons) ─────────────────────────────────────────────────
+
+function derivePeerMode(cfg) {
+  if (!cfg) return 'manual'
+  if (cfg.isBlocked) return 'blocked'
+  if (cfg.muted) return 'muted'
+  if (cfg.autoReply) return 'auto'
+  return 'manual'
+}
+
+function getPeerKey() {
+  if (!props.chat || props.chat.isOpenclaw) return null
+  if (props.chat.isGroup) return props.chat.gcid || null
+  return props.chat.name || null
+}
+
+async function loadPeerMode() {
+  const key = getPeerKey()
+  if (!key || !props.meshName) { peerMode.value = ''; return }
+  try {
+    const res = await chatService.getPeerConfig(props.meshName, key)
+    peerMode.value = derivePeerMode(res.data)
+  } catch {
+    peerMode.value = 'manual'
+  }
+}
+
+async function handlePeerModeChange(mode) {
+  if (mode === peerMode.value) return
+  const key = getPeerKey()
+  if (!key || !props.meshName) return
+  const configMap = {
+    blocked: { isBlocked: true,  muted: false, autoReply: false },
+    muted:   { isBlocked: false, muted: true,  autoReply: true  },
+    manual:  { isBlocked: false, muted: false, autoReply: false },
+    auto:    { isBlocked: false, muted: false, autoReply: true  },
+  }
+  try {
+    await chatService.updatePeerConfig(props.meshName, key, configMap[mode])
+    peerMode.value = mode
+  } catch (e) {
+    console.error('Failed to update peer mode:', e)
+  }
+}
+
+// ── end peer mode ────────────────────────────────────────────────────────────────
+
 watch(() => props.chat.name, () => {
   if (props.chat.name) {
+    loadPeerMode()
     fetchMessages().then(() => {
       startPolling()
     })
