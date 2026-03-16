@@ -665,26 +665,36 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var params = matchPublishGroupMsgs(path)
     if (params) {
       return mesh.read(path).then(data => {
-        if (data) {
-          var pathSender = params.sender
-          var creator = params.creator
-          var group = params.group
-          if (isGroupDismissed(creator, group)) return
-          var chat = findGroupChat(creator, group)
-          // If no local chat found, check info.json for existing gcid before creating new
-          if (!chat) {
-            // Try to read gcid from info.json first
-            var infoPath = `/shared/${creator}/publish/groups/${creator}/${group}/info.json`
+        if (!data) return
+        var pathSender = params.sender
+        var creator = params.creator
+        var group = params.group
+        if (isGroupDismissed(creator, group)) return
+        var chat = findGroupChat(creator, group)
+        // If no local chat found, read info.json asynchronously to get gcid and members
+        var infoPromise
+        if (!chat) {
+          var infoPath = `/shared/${creator}/publish/groups/${creator}/${group}/info.json`
+          infoPromise = mesh.read(infoPath).then(function (infoData) {
             var existingGcid = null
+            var existingMembers = null
+            var existingName = null
             try {
-              var infoData = mesh.read(infoPath)
               if (infoData) {
                 var info = JSON.decode(infoData)
                 existingGcid = info.gcid || null
+                existingMembers = info.members instanceof Array ? info.members : null
+                existingName = info.name || null
               }
             } catch {}
             chat = newGroupChat(creator, group, existingGcid)
-          }
+            if (existingMembers) chat.members = existingMembers
+            if (existingName) chat.name = existingName
+          })
+        } else {
+          infoPromise = Promise.resolve()
+        }
+        return infoPromise.then(function () {
           var gcid = chat.gcid
           var groupCfg = gcid ? db.getChatPeer(mesh.name, gcid) : null
           // run=0: discard messages entirely, do not store
@@ -714,7 +724,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             }
           } catch {}
           if (initial) chat.newCount = 0
-        }
+        })
       })
     }
     return Promise.resolve()
