@@ -45,7 +45,8 @@
               <span class="message-time">{{ msg.time }}</span>
             </div>
             <div class="message-bubble" :class="{ 'system-hint': msg.isSystemHint }">
-              <div class="message-content" v-html="msg.isHtml ? msg.text : renderMarkdown(msg.text)"></div>
+              <ConfigTable v-if="msg.isConfigTable" :rows="msg.configRows" :meshName="msg.meshName || meshName" />
+              <div v-else class="message-content" v-html="msg.isHtml ? msg.text : renderMarkdown(msg.text)"></div>
               <div v-if="msg.isGroupRequest || msg.isPeerRequest" class="group-request-actions">
                 <template v-if="(msg.isPeerRequest || msg.isGroupEpRequest) && msg.availableAgents && msg.availableAgents.length > 0">
                   <select v-model="msg.selectedAgent" class="agent-select">
@@ -83,6 +84,7 @@ import { ref, watch, nextTick, computed, onUnmounted, inject } from 'vue'
 import { marked } from 'marked'
 import ChatHeader from './ChatHeader.vue'
 import MessageInput from './MessageInput.vue'
+import ConfigTable from './ConfigTable.vue'
 import { chatService } from '../services/chatService'
 import { getAvatarColor } from '../utils/avatar'
 
@@ -218,6 +220,23 @@ function insertSystemMessage(text, options = {}) {
   })
 }
 
+function insertConfigTableMessage(rows) {
+  const now = new Date()
+  const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+  if (!props.chat.messages) props.chat.messages = []
+  props.chat.messages.push({
+    text: '',
+    time,
+    sender: 'system',
+    timestamp: now.getTime(),
+    isSystemHint: true,
+    isConfigTable: true,
+    configRows: rows,
+    meshName: props.meshName,
+    isTemp: false,
+  })
+}
+
 const handleHashCommand = async (cmdString) => {
   const trimmed = cmdString.trim()
   
@@ -233,20 +252,37 @@ const handleHashCommand = async (cmdString) => {
       return
     }
     
-    // #config [agent-name] (list peers for this agent)
+    // #config [agent] [peer]  — two args (second arg is not 'set')
+    const configTwoArgs = trimmed.match(/^#config\s+(\S+)\s+(\S+)$/)
+    if (configTwoArgs && configTwoArgs[2] !== 'set') {
+      const agentName = configTwoArgs[1]
+      const peerName = configTwoArgs[2]
+      const res = await chatService.getAllPeerConfigs(props.meshName)
+      const data = (Array.isArray(res.data) ? res.data : [])
+        .filter(c => c.autoReplyAgent === agentName && c.peer === peerName)
+      if (data.length) {
+        insertConfigTableMessage(data)
+      } else {
+        insertSystemMessage(`No config found for agent: ${agentName}, peer: ${peerName}`)
+      }
+      return
+    }
+
+    // #config [agent-name] — one arg: list all peers for this agent
     const agentMatch = trimmed.match(/^#config\s+(\S+)$/)
     if (agentMatch) {
       const agentName = agentMatch[1]
       const res = await chatService.getAllPeerConfigs(props.meshName)
       const data = (Array.isArray(res.data) ? res.data : [])
         .filter(c => c.autoReplyAgent === agentName)
-      insertSystemMessage(
-        data.length ? formatPeerConfigsTable(data) : `No peers found for agent: ${agentName}`,
-        { isHtml: data.length > 0 }
-      )
+      if (data.length) {
+        insertConfigTableMessage(data)
+      } else {
+        insertSystemMessage(`No peers found for agent: ${agentName}`)
+      }
       return
     }
-    
+
     // #config [agent] set [peer] key=value
     const configMatch = trimmed.match(/^#config\s+(\S+)\s+set\s+(\S+)\s+(\S+)=(.+)$/)
     if (configMatch) {
@@ -271,7 +307,7 @@ const handleHashCommand = async (cmdString) => {
       return
     }
     
-    insertSystemMessage(`Unknown command. Available: \`#list\`, \`#config [agent] set [peer] key=value\``)
+    insertSystemMessage(`Unknown command. Available: \`#list\`, \`#config [agent]\`, \`#config [agent] [peer]\`, \`#config [agent] set [peer] key=value\``)
   } catch (e) {
     insertSystemMessage(`Error: ${e?.message || String(e)}`)
   }
@@ -750,6 +786,7 @@ const approveGroupRequest = async (msg) => {
 }
 
 const fetchMessages = async () => {
+  if (props.chat.isOpenclaw) return
   if (!props.meshName || !props.chat.name) return
   
   try {
@@ -772,6 +809,7 @@ const fetchMessages = async () => {
 }
 
 const pollMessages = async () => {
+  if (props.chat.isOpenclaw) return
   if (!props.meshName || !props.chat.name) return
   
   const sinceTimestamp = Date.now() - (30 * 1000)
@@ -876,9 +914,11 @@ async function handlePeerModeChange(mode) {
 watch(() => props.chat.name, () => {
   if (props.chat.name) {
     loadPeerMode()
-    fetchMessages().then(() => {
-      startPolling()
-    })
+    if (!props.chat.isOpenclaw) {
+      fetchMessages().then(() => {
+        startPolling()
+      })
+    }
   }
 }, { immediate: true })
 

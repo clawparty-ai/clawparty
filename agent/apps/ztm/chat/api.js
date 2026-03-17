@@ -1,6 +1,12 @@
 // Default filter chain applied to every peer (comma-separated filter names)
 var DEFAULT_FILTER_CHAIN = 'repeat-message,blocked-keywords'
 
+function firstLine(text) {
+  if (typeof text !== 'string') return text
+  var idx = text.indexOf('\n')
+  return idx === -1 ? text : text.slice(0, idx) + '...'
+}
+
 function makeSessionId(peerA, peerB) {
   return peerA < peerB ? peerA + '~' + peerB : peerB + '~' + peerA
 }
@@ -302,7 +308,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             }
             var thinkingTime1 = getPeerConfig(sessionId).thinkingTime || 3
             new Timeout(thinkingTime1).wait().then(function () {
-              console.info('[group auto-reply] agent', member, 'reply to group', gcid || chat.group, ':', replyText)
+              console.info('[group auto-reply] agent', member, 'reply to group', gcid || chat.group, ':', firstLine(replyText))
               addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: member }, true, sessionId)
             })
           },
@@ -352,7 +358,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
           onSend(gcid, replyText, credit).then(function (shouldSend) {
             if (!shouldSend) return
             new Timeout(thinkingTime2).wait().then(function () {
-              console.info('[group auto-reply] self reply to group', gcid, 'via agent', agentName, ':', replyText)
+              console.info('[group auto-reply] self reply to group', gcid, 'via agent', agentName, ':', firstLine(replyText))
               // Use app.username as sender so the EP's own name appears in the group chat
               addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: app.username }, true, sessionId)
             })
@@ -407,7 +413,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
         // muted: log the reply to chat_log but do not send to ztm chat
         if (peerConfig.muted) {
-          console.info('[chat auto-reply] muted, logging reply without sending to', chat.peer, ':', replyText)
+          console.info('[chat auto-reply] muted, logging reply without sending to', chat.peer, ':', firstLine(replyText))
           try {
             db.logChat(mesh.name, 'peer', chat.peer, null, null, app.username, 'message',
               JSON.stringify({ text: replyText, agentName: agentName }), null, sessionId, true)
@@ -419,7 +425,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         onSend(chat.peer, replyText, credit).then(function (shouldSend) {
           if (!shouldSend) return
           new Timeout(thinkingTime).wait().then(function () {
-            console.info('[chat auto-reply] reply to', chat.peer, ':', replyText)
+            console.info('[chat auto-reply] reply to', chat.peer, ':', firstLine(replyText))
             addPeerMessage(chat.peer, { text: replyText, agentName: agentName }, sessionId)
           })
         })
@@ -490,7 +496,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         // Write to chat_log — only for messages from others (own messages are logged in add*Message)
         var msgText = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
           if (sender !== app.username) {
-            console.info('[chat recv]', app.username, '<-', sender, ':', msgText)
+            console.info('[chat recv]', app.username, '<-', sender, ':', firstLine(msgText))
             triggerAutoReply(chat, msg)
             try {
               if (chat.peer) {
@@ -873,7 +879,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   function addPeerMessage(peer, message, sessionId) {
     if (!peer) return Promise.resolve(false)
     var msgText = typeof message === 'string' ? message : (message?.text || JSON.stringify(message))
-    console.info('[chat send]', app.username, '->', peer, ':', msgText)
+    console.info('[chat send]', app.username, '->', peer, ':', firstLine(msgText))
     var dirname = `/shared/${app.username}/publish/peers/${peer}/messages`
     return mesh.acl(dirname, { users: { [peer]: 'readonly' }}).then(
       () => publishMessage(dirname, message)
@@ -995,7 +1001,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       ? { text: message, sender: taggedSender }
       : Object.assign({}, message, { sender: taggedSender })
     var msgText = typeof message === 'string' ? message : (message?.text || JSON.stringify(message))
-    console.info('[chat send]', taggedSender, '-> group', group, ':', msgText)
+    console.info('[chat send]', taggedSender, '-> group', group, ':', firstLine(msgText))
     var dirname = `/shared/${app.username}/publish/groups/${creator}/${group}`
     return mesh.acl(dirname, { users: Object.fromEntries(chat.members.map(name => [name, 'readonly'])) }).then(
       () => publishMessage(os.path.join(dirname, 'messages'), taggedMessage)

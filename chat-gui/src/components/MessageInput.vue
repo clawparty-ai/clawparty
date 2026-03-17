@@ -95,22 +95,35 @@
           </svg>
         </button>
       </div>
-      <div class="editor-content">
+      <div class="editor-content" style="position:relative;">
         <textarea
           ref="textareaRef"
           :value="modelValue"
-          @input="$emit('update:modelValue', $event.target.value)"
+          @input="handleInput"
           @keydown="handleKeydown"
+          @blur="closeMentionList"
           :placeholder="`发送消息到 #${chatName || 'channel'}`"
           rows="3"
         ></textarea>
+        <div
+          v-if="showMentionList && filteredMembers.length > 0"
+          class="mention-dropdown"
+        >
+          <div
+            v-for="(member, i) in filteredMembers"
+            :key="member"
+            class="mention-item"
+            :class="{ active: i === selectedMentionIndex }"
+            @mousedown.prevent="insertMention(member)"
+          >@{{ member }}</div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 const props = defineProps({
   modelValue: {
@@ -144,12 +157,51 @@ const props = defineProps({
   showPeerMode: {
     type: Boolean,
     default: false
+  },
+  members: {
+    type: Array,
+    default: () => []
   }
 })
 
 const emit = defineEmits(['send', 'update:modelValue', 'hash-command', 'update:peerMode'])
 
 const textareaRef = ref(null)
+
+// ── @ mention ────────────────────────────────────────────────────────────────
+const showMentionList = ref(false)
+const mentionFilter = ref('')
+const mentionStartPos = ref(-1)
+const selectedMentionIndex = ref(0)
+
+const filteredMembers = computed(() => {
+  if (!props.members.length) return []
+  const q = mentionFilter.value.toLowerCase()
+  return q ? props.members.filter(m => m.toLowerCase().includes(q)) : props.members
+})
+
+function closeMentionList() {
+  showMentionList.value = false
+  mentionFilter.value = ''
+  mentionStartPos.value = -1
+  selectedMentionIndex.value = 0
+}
+
+function insertMention(member) {
+  const textarea = textareaRef.value
+  if (!textarea) return
+  const text = props.modelValue
+  const before = text.slice(0, mentionStartPos.value)
+  const after = text.slice(textarea.selectionStart)
+  const newText = before + '@' + member + ' ' + after
+  emit('update:modelValue', newText)
+  closeMentionList()
+  const newPos = mentionStartPos.value + member.length + 2
+  setTimeout(() => {
+    textarea.focus()
+    textarea.setSelectionRange(newPos, newPos)
+  }, 0)
+}
 const editorHeight = ref(160)
 const isResizing = ref(false)
 let startY = 0
@@ -202,7 +254,53 @@ const insertFormat = (prefix, suffix) => {
   }, 0)
 }
 
+function handleInput(e) {
+  const val = e.target.value
+  emit('update:modelValue', val)
+
+  if (!props.members.length) return
+
+  const cursor = e.target.selectionStart
+  // Find the nearest '@' before cursor on the same line
+  const textBeforeCursor = val.slice(0, cursor)
+  const atIdx = textBeforeCursor.lastIndexOf('@')
+  if (atIdx === -1) { closeMentionList(); return }
+
+  // No spaces or newlines between '@' and cursor
+  const fragment = textBeforeCursor.slice(atIdx + 1)
+  if (/[\s\n]/.test(fragment)) { closeMentionList(); return }
+
+  mentionStartPos.value = atIdx
+  mentionFilter.value = fragment
+  selectedMentionIndex.value = 0
+  showMentionList.value = true
+}
+
 const handleKeydown = (e) => {
+  // Handle mention list navigation first
+  if (showMentionList.value && filteredMembers.value.length > 0) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      selectedMentionIndex.value = (selectedMentionIndex.value + 1) % filteredMembers.value.length
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      selectedMentionIndex.value = (selectedMentionIndex.value - 1 + filteredMembers.value.length) % filteredMembers.value.length
+      return
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      insertMention(filteredMembers.value[selectedMentionIndex.value])
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      closeMentionList()
+      return
+    }
+  }
+
   if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
     e.preventDefault()
     insertFormat('**', '**')
@@ -403,5 +501,33 @@ const handleKeydown = (e) => {
 
 .editor-content textarea::placeholder {
   color: var(--text-secondary);
+}
+
+.mention-dropdown {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 0;
+  background: #fff;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-height: 180px;
+  overflow-y: auto;
+  z-index: 100;
+  min-width: 160px;
+}
+
+.mention-item {
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.mention-item:hover,
+.mention-item.active {
+  background: #e3f2fd;
+  color: #1565c0;
 }
 </style>
