@@ -916,7 +916,22 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     if (info.members instanceof Array) chat.members = info.members
     // Ensure gcid is registered in chat_peer so auto-reply config can be stored per group
     if (isNew) {
-      db.setChatPeer(mesh.name, chat.gcid, { autoReply: false, autoReplyAgent: 'main' })
+      db.setChatPeer(mesh.name, chat.gcid, { autoReply: false, autoReplyAgent: 'main', peerName: info.name || '' })
+    } else if (info.name) {
+      db.setChatPeer(mesh.name, chat.gcid, { peerName: info.name })
+    }
+    // Create chat_peer records for local agent members (peer = gcid~agentName)
+    if (info.members instanceof Array) {
+      getLocalAgentNames().then(function (localAgents) {
+        info.members.forEach(function (member) {
+          if (member === app.username) return
+          if (localAgents.indexOf(member) === -1) return
+          var key = groupAgentKey(chat.gcid, member)
+          if (!db.getChatPeer(mesh.name, key)) {
+            db.setChatPeer(mesh.name, key, { autoReply: true, autoReplyAgent: member, peerName: (info.name || '') + ' / ' + member })
+          }
+        })
+      })
     }
     var dirname = `/shared/${creator}/publish/groups/${creator}/${group}`
     return mesh.acl(dirname, { users: Object.fromEntries(chat.members.map(name => [name, 'readonly'])) }).then(

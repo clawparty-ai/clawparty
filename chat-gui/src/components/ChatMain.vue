@@ -153,10 +153,12 @@ const FIELD_MAP = {
   peer_profile: 'peerProfile',
   short_context: 'shortContext',
   long_context: 'longContext',
+  peer_name: 'peerName',
 }
 
 const PEER_CONFIG_TABLE_FIELDS = [
   { key: 'peer',           header: 'peer' },
+  { key: 'peerName',       header: 'peer_name' },
   { key: 'autoReply',      header: 'auto_reply' },
   { key: 'autoReplyAgent', header: 'auto_reply_agent' },
   { key: 'peerAgentName',  header: 'peer_agent_name' },
