@@ -63,8 +63,6 @@
       :chatName="chat.name" 
       :loading="sending" 
       :modelValue="modelValue" 
-      :agents="availableAgents"
-      :selectedAgent="selectedAgent"
       :isOpenclaw="chat.isOpenclaw"
       :agentId="chat.agentId"
       :autoFocus="autoFocus"
@@ -73,7 +71,6 @@
       :peerMode="peerMode"
       :showPeerMode="!chat.isOpenclaw && !!chat.name"
       @update:modelValue="$emit('update:modelValue', $event)" 
-      @update:selectedAgent="$emit('update:selectedAgent', $event)"
       @send="$emit('send')"
       @hash-command="handleHashCommand"
       @update:peerMode="handlePeerModeChange"
@@ -117,10 +114,6 @@ const props = defineProps({
   },
   	
   modelValue: String,
-  selectedAgent: {
-    type: String,
-    default: ''
-  },
   showBackButton: {
     type: Boolean,
     default: false
@@ -131,7 +124,7 @@ const props = defineProps({
   }
 })
 
-defineEmits(['send', 'update:modelValue', 'update:selectedAgent', 'switchSession', 'deleteGroup', 'leaveGroup', 'back'])
+defineEmits(['send', 'update:modelValue', 'switchSession', 'deleteGroup', 'leaveGroup', 'back'])
 
 const messagesContainer = ref(null)
 let pollTimer = null

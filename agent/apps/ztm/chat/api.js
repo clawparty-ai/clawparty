@@ -276,7 +276,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         if (localAgents.indexOf(member) === -1) return  // skip remote EP members
 
         // Local openclaw agent: always auto-reply
-        var sessionId = makeSessionId(member, gcid)
+        var sessionId = gcid
         var cmd = ['openclaw', 'agent', '--agent', member, '--message', text, '--session-id', sessionId, '--json', '--no-color']
         console.info('[group auto-reply] calling local agent', member, 'for group', gcid || chat.group)
         spawnOpenclaw(cmd).then(
@@ -325,7 +325,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       }
       var agentName = peerConfig.autoReplyAgent || 'main'
       var credit = onReceive(gcid, senderUsername, text)
-      var sessionId = makeSessionId(app.username, gcid)
+      var sessionId = gcid
       var thinkingTime2 = peerConfig.thinkingTime !== undefined ? peerConfig.thinkingTime : 3
       var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--session-id', sessionId, '--json', '--no-color']
       console.info('[group auto-reply] calling agent', agentName, 'for self in group', gcid)
