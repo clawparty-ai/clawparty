@@ -59,6 +59,7 @@ const props = defineProps({
 
 const columns = [
   { key: 'peer',            header: 'peer' },
+  { key: 'peerName',        header: 'peer_name' },
   { key: 'autoReply',       header: 'auto_reply' },
   { key: 'autoReplyAgent',  header: 'auto_reply_agent' },
   { key: 'peerAgentName',   header: 'peer_agent_name' },

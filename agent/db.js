@@ -92,6 +92,7 @@ function open(pathname) {
       peer_profile       TEXT    NOT NULL DEFAULT '',
       short_context      TEXT    NOT NULL DEFAULT '',
       long_context       TEXT    NOT NULL DEFAULT '',
+      peer_name          TEXT    NOT NULL DEFAULT '',
       PRIMARY KEY (mesh, peer)
     )
   `)
@@ -129,6 +130,9 @@ function open(pathname) {
   } catch {}
   try {
     db.exec(`ALTER TABLE chat_peer ADD COLUMN long_context TEXT NOT NULL DEFAULT ''`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN peer_name TEXT NOT NULL DEFAULT ''`)
   } catch {}
 
   db.exec(`
@@ -570,6 +574,7 @@ function getChatPeer(mesh, peer) {
     peerProfile: row.peer_profile || '',
     shortContext: row.short_context || '',
     longContext: row.long_context || '',
+    peerName: row.peer_name || '',
   }
 }
 
@@ -589,7 +594,8 @@ function setChatPeer(mesh, peer, config) {
     var peerProfile = 'peerProfile' in config ? (config.peerProfile || '') : (old.peerProfile || '')
     var shortContext = 'shortContext' in config ? (config.shortContext || '') : (old.shortContext || '')
     var longContext = 'longContext' in config ? (config.longContext || '') : (old.longContext || '')
-    db.sql('UPDATE chat_peer SET auto_reply = ?, auto_reply_agent = ?, peer_agent_name = ?, credit = ?, filter_chain = ?, send_filter_chain = ?, is_blocked = ?, run = ?, muted = ?, thinking_time = ?, peer_profile = ?, short_context = ?, long_context = ? WHERE mesh = ? AND peer = ?')
+    var peerName = 'peerName' in config ? (config.peerName || '') : (old.peerName || '')
+    db.sql('UPDATE chat_peer SET auto_reply = ?, auto_reply_agent = ?, peer_agent_name = ?, credit = ?, filter_chain = ?, send_filter_chain = ?, is_blocked = ?, run = ?, muted = ?, thinking_time = ?, peer_profile = ?, short_context = ?, long_context = ?, peer_name = ? WHERE mesh = ? AND peer = ?')
       .bind(1, autoReply)
       .bind(2, autoReplyAgent)
       .bind(3, peerAgentName)
@@ -603,8 +609,9 @@ function setChatPeer(mesh, peer, config) {
       .bind(11, peerProfile)
       .bind(12, shortContext)
       .bind(13, longContext)
-      .bind(14, mesh)
-      .bind(15, peer)
+      .bind(14, peerName)
+      .bind(15, mesh)
+      .bind(16, peer)
       .exec()
   } else {
     var autoReply = config.autoReply ? 1 : 0
@@ -620,7 +627,8 @@ function setChatPeer(mesh, peer, config) {
     var peerProfile = config.peerProfile || ''
     var shortContext = config.shortContext || ''
     var longContext = config.longContext || ''
-    db.sql('INSERT INTO chat_peer(mesh, peer, auto_reply, auto_reply_agent, peer_agent_name, credit, filter_chain, send_filter_chain, is_blocked, run, muted, thinking_time, peer_profile, short_context, long_context) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    var peerName = config.peerName || ''
+    db.sql('INSERT INTO chat_peer(mesh, peer, auto_reply, auto_reply_agent, peer_agent_name, credit, filter_chain, send_filter_chain, is_blocked, run, muted, thinking_time, peer_profile, short_context, long_context, peer_name) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(1, mesh)
       .bind(2, peer)
       .bind(3, autoReply)
@@ -636,6 +644,7 @@ function setChatPeer(mesh, peer, config) {
       .bind(13, peerProfile)
       .bind(14, shortContext)
       .bind(15, longContext)
+      .bind(16, peerName)
       .exec()
   }
 }
@@ -660,6 +669,7 @@ function allChatPeers(mesh) {
       peerProfile: row.peer_profile || '',
       shortContext: row.short_context || '',
       longContext: row.long_context || '',
+      peerName: row.peer_name || '',
     }))
 }
 
