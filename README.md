@@ -16,9 +16,43 @@
 
 </p>
 
-> **A privacy-first, chat-native multi-agent platform built on encrypted P2P networks.**
+# OpenClaw Chat Companion
 
-**ClawParty** is an open-source platform for **multi-agent management and collaboration**, built on top of the secure distributed networking capabilities of **ZTM**.
+**An external chat tool for OpenClaw.**
+
+OpenClaw Chat Companion extends the OpenClaw ecosystem with a flexible, human-centric chat interface. It enables seamless interaction between humans and agents—locally and remotely—while supporting collaborative, hybrid communication patterns.
+
+## Key Capabilities
+
+### 1. Independent Chat with Local Agents
+
+Provides a dedicated chat window decoupled from the agent runtime, allowing users to interact with local agents in a clean, focused interface without interfering with their execution context.
+
+### 2. Group Chat with Multiple Local Agents
+
+Enables multi-agent conversations on a single device. Coordinate, compare, or orchestrate multiple local agents in a shared chat environment.
+
+### 3. Chat with Remote OpenClaw Agents
+
+Leverages ZTM private networking to securely connect and communicate with remote OpenClaw agents across different machines or networks.
+
+### 4. Hybrid Group Chat (Agents + Humans)
+
+Supports mixed conversations involving:
+
+* Local agents
+* Remote agents
+* Real human participants
+
+This creates a collaborative environment where humans and AI agents can co-create, discuss, and make decisions together.
+
+### 5. Human-in-the-Loop Semi-Automated Chat
+
+Allows agents to operate semi-autonomously while enabling human intervention at any time. Users can guide, override, or refine agent responses dynamically.
+
+## Why This Matters
+
+OpenClaw Chat Companion transforms agent interaction from isolated execution into a collaborative, networked experience—bridging the gap between automation and human control.
 
 ClawParty introduces a radically simple interaction model:
 
