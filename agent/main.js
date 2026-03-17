@@ -765,7 +765,7 @@ function main(listen, apiToken, noAuth) {
       'POST': function ({ agent }, req) {
         agent = URL.decodeComponent(agent)
         var message = req.body.toString()
-        var sessionId = new URL(req.head.path).searchParams.get('session-id') || ''
+        var sessionId = new URL(req.head.path).searchParams.get('session-id') || agent
         var messageMd5 = md5(message)
         console.info('[chat send] user ->', agent, ':', message)
         if (db.hasCliLog(agent, sessionId, messageMd5)) {
@@ -773,30 +773,7 @@ function main(listen, apiToken, noAuth) {
           return response(200, JSON.stringify({ warning: 'duplicated cli call' }))
         }
         db.addCliLog(agent, sessionId, messageMd5)
-        var cmd = ['openclaw', 'agent', '--agent', agent, '--message', message, '--json', '--no-color']
-        console.info('[openclaw cli]', cmd.join(' ').slice(0, 200))
-        return openclawAgentMessage.spawn(cmd).then(
-          output => response(200, output.split('\n').join('')),
-          output => response(500, output.split('\n').join(''))
-        )
-      }
-    },
-
-    '/api/openclaw/bot-chat/{sender}/{receiver}': {
-      'POST': function ({ sender, receiver }, req) {
-        sender = URL.decodeComponent(sender)
-        receiver = URL.decodeComponent(receiver)
-        var message = req.body?.toString?.() || 'Hello, let us connect!'
-        var sessionId = new URL(req.head.path).searchParams.get('session-id') || ''
-        var prompt = `let ${sender} send message to ${receiver}, message is "${message}"`
-        var messageMd5 = md5(prompt)
-        console.info('[chat send]', sender, '->', receiver, ':', message)
-        if (db.hasCliLog('main', sessionId, messageMd5)) {
-          console.info('[openclaw cli] duplicate call, skipping. agent: main session:', sessionId)
-          return response(200, JSON.stringify({ warning: 'duplicated cli call' }))
-        }
-        db.addCliLog('main', sessionId, messageMd5)
-        var cmd = ['openclaw', 'agent', '--agent', 'main', '--message', prompt, '--json', '--no-color']
+        var cmd = ['openclaw', 'agent', '--agent', agent, '--message', message, '--session-id', sessionId, '--json', '--no-color']
         console.info('[openclaw cli]', cmd.join(' ').slice(0, 200))
         return openclawAgentMessage.spawn(cmd).then(
           output => response(200, output.split('\n').join('')),

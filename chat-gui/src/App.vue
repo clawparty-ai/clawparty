@@ -88,7 +88,6 @@
       :showBackButton="isMobile"
       :autoFocus="!isMobile"
       v-model="newMessage"
-      v-model:selectedAgent="selectedAgent"
       @send="sendMessage"
       @switchSession="(sessionId) => switchOpenclawSession(chats[activeChat], sessionId)"
       @deleteGroup="handleDeleteGroup"
@@ -121,7 +120,6 @@ const currentMeshAgentUsername = ref('')
 const chats = ref([])
 const activeChat = ref(null)
 const newMessage = ref('')
-const selectedAgent = ref('')
 const sending = ref(false)
 const showTokenDialog = ref(false)
 const tokenInput = ref('')
@@ -326,15 +324,11 @@ const sendMessage = async () => {
       const now = new Date()
       const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
       
-      const isBotChat = !!selectedAgent.value
-      const typingSender = isBotChat ? 'A to ' + selectedAgent.value : chat.name
-      const responseSender = isBotChat ? selectedAgent.value : chat.name
-      
       setTimeout(()=>{
         chat.messages.push({
           text: '',
           time: time,
-          sender: typingSender,
+          sender: chat.name,
           timestamp: now.getTime(),
           isTyping: true
         })
@@ -353,11 +347,7 @@ const sendMessage = async () => {
         }
       }
 
-      const sendPromise = isBotChat 
-        ? openclawService.botChat(chat.agentId, selectedAgent.value, text)
-        : openclawService.sendMessage(chat.agentId, text)
-      
-      sendPromise.then((response)=>{
+      openclawService.sendMessage(chat.agentId, text).then((response)=>{
         let replyText = response.data?.payloads?.[0]?.text || response.data?.result?.payloads?.[0]?.text;
         
         const typingIndex = chat.messages.findIndex(m => m.isTyping)
@@ -369,7 +359,7 @@ const sendMessage = async () => {
           chat.messages.push({
             text: replyText,
             time: replyTime,
-            sender: responseSender,
+            sender: chat.name,
             timestamp: new Date().getTime(),
             isTemp: false
           })
@@ -391,7 +381,7 @@ const sendMessage = async () => {
           chat.messages.push({
             text: replyText,
             time: replyTime,
-            sender: responseSender,
+            sender: chat.name,
             timestamp: new Date().getTime(),
             isTemp: false
           })
