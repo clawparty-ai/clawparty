@@ -190,6 +190,7 @@ const parseChatData = (data) => {
       lastMessage: firstLine,
       updated: item.updated || 0,
       isGroup: isGroup,
+      gcid: item.gcid || '',
       creator: item.creator || '',
       groupId: item.group || '',
       members: item.members || [],

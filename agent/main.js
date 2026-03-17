@@ -4,6 +4,12 @@ import api from './api.js'
 import db from './db.js'
 import cmdline from './cmdline.js'
 
+function firstLine(text) {
+  if (typeof text !== 'string') return text
+  var idx = text.indexOf('\n')
+  return idx === -1 ? text : text.slice(0, idx) + '...'
+}
+
 try {
   cmdline(pipy.argv, {
     commands: [{
@@ -767,7 +773,7 @@ function main(listen, apiToken, noAuth) {
         var message = req.body.toString()
         var sessionId = new URL(req.head.path).searchParams.get('session-id') || agent
         var messageMd5 = md5(message)
-        console.info('[chat send] user ->', agent, ':', message)
+        console.info('[chat send] user ->', agent, ':', firstLine(message))
         if (db.hasCliLog(agent, sessionId, messageMd5)) {
           console.info('[openclaw cli] duplicate call, skipping. agent:', agent, 'session:', sessionId)
           return response(200, JSON.stringify({ warning: 'duplicated cli call' }))
