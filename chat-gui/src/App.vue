@@ -652,8 +652,11 @@ provide('localOpenclawAvailable', localOpenclawAvailable)
 const resolveEpDisplayName = (username) => {
   if (!username) return username
   const ep = users.value.find(u => u.username === username)
-  if (!ep) return username
-  return ep.username + '/' + ep.name
+  if (ep) return ep.username + '/' + ep.name
+  // Fallback: check if it's a local openclaw agent, show identityName
+  const agent = openclawAgents.value.find(a => a.id === username)
+  if (agent) return agent.name
+  return username
 }
 provide('resolveEpDisplayName', resolveEpDisplayName)
 
