@@ -11,6 +11,7 @@
       @back="$emit('back')"
       @download="handleDownload"
       @download-md="handleDownloadMd"
+      @download-pdf="handleDownloadPdf"
     />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
@@ -338,7 +339,7 @@ const currentDate = computed(() => {
 
 
 
-const handleDownload = () => {
+const buildChatHtml = () => {
   const messages = props.chat.messages || []
   const chatName = props.chat.name || 'chat'
   const exportTime = new Date().toLocaleString('zh-CN')
@@ -635,6 +636,11 @@ const handleDownload = () => {
 </body>
 </html>`
 
+  return { html, chatName }
+}
+
+const handleDownload = () => {
+  const { html, chatName } = buildChatHtml()
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -691,6 +697,35 @@ const handleDownloadMd = () => {
   a.download = `${chatName}-chat-history.md`
   a.click()
   URL.revokeObjectURL(url)
+}
+
+const handleDownloadPdf = () => {
+  const { html } = buildChatHtml()
+  // Inject @media print styles for better PDF output
+  const printHtml = html.replace('</style>', `
+    @media print {
+      body { background: #ffffff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .chat-header { position: static; }
+      .message-bubble { break-inside: avoid; }
+      .message { break-inside: avoid; }
+    }
+  </style>`)
+  const iframe = document.createElement('iframe')
+  iframe.style.position = 'fixed'
+  iframe.style.left = '-9999px'
+  iframe.style.top = '-9999px'
+  iframe.style.width = '0'
+  iframe.style.height = '0'
+  document.body.appendChild(iframe)
+  iframe.contentDocument.open()
+  iframe.contentDocument.write(printHtml)
+  iframe.contentDocument.close()
+  iframe.contentWindow.onafterprint = () => {
+    document.body.removeChild(iframe)
+  }
+  setTimeout(() => {
+    iframe.contentWindow.print()
+  }, 300)
 }
 
 const filteredMessages = computed(() => {

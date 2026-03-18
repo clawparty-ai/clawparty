@@ -117,13 +117,13 @@
         class="mention-item"
         :class="{ active: i === selectedMentionIndex }"
         @mousedown.prevent="insertMention(member)"
-      >@{{ member }}</div>
+      >@{{ resolveEpDisplayName(member) }}</div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, inject } from 'vue'
 
 const props = defineProps({
   modelValue: {
@@ -166,6 +166,8 @@ const props = defineProps({
 
 const emit = defineEmits(['send', 'update:modelValue', 'hash-command', 'update:peerMode'])
 
+const resolveEpDisplayName = inject('resolveEpDisplayName', (u) => u)
+
 const textareaRef = ref(null)
 
 // ── @ mention ────────────────────────────────────────────────────────────────
@@ -177,7 +179,8 @@ const selectedMentionIndex = ref(0)
 const filteredMembers = computed(() => {
   if (!props.members.length) return []
   const q = mentionFilter.value.toLowerCase()
-  return q ? props.members.filter(m => m.toLowerCase().includes(q)) : props.members
+  if (!q) return props.members
+  return props.members.filter(m => m.toLowerCase().includes(q) || resolveEpDisplayName(m).toLowerCase().includes(q))
 })
 
 function closeMentionList() {

@@ -78,6 +78,9 @@
       <button class="header-btn" title="Download chat history (MD)" @click="emit('download-md')">
         <span style="font-size: 12px; font-weight: 600;">MD</span>
       </button>
+      <button class="header-btn" title="Download chat history (PDF)" @click="emit('download-pdf')">
+        <span style="font-size: 12px; font-weight: 600;">PDF</span>
+      </button>
     </div>
   </header>
 </template>
@@ -104,7 +107,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md'])
+const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf'])
 </script>
 
 <style scoped>
