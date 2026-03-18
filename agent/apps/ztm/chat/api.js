@@ -273,7 +273,31 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     // Derive the plain username from a possibly-tagged sender (gcid/username)
     var senderUsername = senderField.indexOf('/') !== -1 ? senderField.split('/')[1] : senderField
 
-    console.info('[group auto-reply] triggered | gcid:', gcid, 'members:', JSON.stringify(chat.members), 'sender:', senderUsername, 'self:', app.username)
+    // ── Parse @ mentions ──
+    var mentionedMembers = []
+    text.split(' ').forEach(function (token) {
+      if (token.length > 1 && token.charAt(0) === '@') {
+        mentionedMembers.push(token.substring(1))
+      }
+    })
+    var hasMentions = mentionedMembers.length > 0
+
+    // Clean message text: remove all @name tokens and trim
+    var cleanedText = hasMentions
+      ? text.split(' ').filter(function (token) { return !(token.length > 1 && token.charAt(0) === '@') }).join(' ').trim()
+      : text
+    var groupName = chat.name || chat.group
+
+    // Build rewritten message for the openclaw agent CLI
+    function buildAgentMessage(isMentioned) {
+      if (isMentioned) {
+        return '在group chat ' + groupName + '里，' + senderUsername + ' 给你发送了信息，给他回复一下，发送的内容是"' + cleanedText + '"'
+      } else {
+        return '在group chat ' + groupName + '里，' + senderUsername + ' 说话了看看如何回复，说的内容是"' + text + '"'
+      }
+    }
+
+    console.info('[group auto-reply] triggered | gcid:', gcid, 'members:', JSON.stringify(chat.members), 'sender:', senderUsername, 'self:', app.username, 'mentions:', JSON.stringify(mentionedMembers))
     getLocalAgentNames().then(function (localAgents) {
       // ── 1. Trigger local openclaw agents that are members of this group ──
       chat.members.forEach(function (member) {
@@ -281,9 +305,15 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         if (member === app.username) return     // skip self (handled below)
         if (localAgents.indexOf(member) === -1) return  // skip remote EP members
 
-        // Local openclaw agent: always auto-reply
+        // @ filter: if mentions exist, only trigger mentioned members
+        if (hasMentions && mentionedMembers.indexOf(member) === -1) return
+
+        // Build the rewritten message for this agent
+        var agentMsg = buildAgentMessage(hasMentions && mentionedMembers.indexOf(member) !== -1)
+
+        // Local openclaw agent: auto-reply
         var sessionId = gcid
-        var cmd = ['openclaw', 'agent', '--agent', member, '--message', text, '--session-id', sessionId, '--json', '--no-color']
+        var cmd = ['openclaw', 'agent', '--agent', member, '--message', agentMsg, '--session-id', sessionId, '--json', '--no-color']
         console.info('[group auto-reply] calling local agent', member, 'for group', gcid || chat.group)
         spawnOpenclaw(cmd).then(
           function (output) {
@@ -323,6 +353,8 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       if (senderUsername === app.username) return
       if (localAgents.indexOf(senderUsername) !== -1) return
       if (!gcid) return
+      // @ filter: if mentions exist and self is not mentioned, skip EP-level auto-reply
+      if (hasMentions && mentionedMembers.indexOf(app.username) === -1) return
       var peerConfig = getPeerConfig(gcid)
       if (!peerConfig.autoReply) {
         // Show approve hint in this group's message flow so the user can enable auto-reply
@@ -330,10 +362,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         return
       }
       var agentName = peerConfig.autoReplyAgent || 'main'
-      var credit = onReceive(gcid, senderUsername, text)
+      var agentMsg2 = buildAgentMessage(hasMentions && mentionedMembers.indexOf(app.username) !== -1)
+      var credit = onReceive(gcid, senderUsername, agentMsg2)
       var sessionId = gcid
       var thinkingTime2 = peerConfig.thinkingTime !== undefined ? peerConfig.thinkingTime : 3
-      var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--session-id', sessionId, '--json', '--no-color']
+      var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', agentMsg2, '--session-id', sessionId, '--json', '--no-color']
       console.info('[group auto-reply] calling agent', agentName, 'for self in group', gcid)
       spawnOpenclaw(cmd).then(
         function (output) {

@@ -1,5 +1,5 @@
 <template>
-  <div class="input-area">
+  <div class="input-area" style="position:relative;">
     <div class="resize-handle" @mousedown="startResize"></div>
     <div class="editor-wrapper" :style="{ height: editorHeight + 'px' }">
       <div class="editor-toolbar">
@@ -95,7 +95,7 @@
           </svg>
         </button>
       </div>
-      <div class="editor-content" style="position:relative;">
+      <div class="editor-content">
         <textarea
           ref="textareaRef"
           :value="modelValue"
@@ -105,19 +105,19 @@
           :placeholder="`发送消息到 #${chatName || 'channel'}`"
           rows="3"
         ></textarea>
-        <div
-          v-if="showMentionList && filteredMembers.length > 0"
-          class="mention-dropdown"
-        >
-          <div
-            v-for="(member, i) in filteredMembers"
-            :key="member"
-            class="mention-item"
-            :class="{ active: i === selectedMentionIndex }"
-            @mousedown.prevent="insertMention(member)"
-          >@{{ member }}</div>
-        </div>
       </div>
+    </div>
+    <div
+      v-if="showMentionList && filteredMembers.length > 0"
+      class="mention-dropdown"
+    >
+      <div
+        v-for="(member, i) in filteredMembers"
+        :key="member"
+        class="mention-item"
+        :class="{ active: i === selectedMentionIndex }"
+        @mousedown.prevent="insertMention(member)"
+      >@{{ member }}</div>
     </div>
   </div>
 </template>
@@ -505,8 +505,8 @@ const handleKeydown = (e) => {
 
 .mention-dropdown {
   position: absolute;
-  bottom: calc(100% + 2px);
-  left: 0;
+  bottom: 100%;
+  left: 20px;
   background: #fff;
   border: 1px solid var(--border-light);
   border-radius: 6px;
