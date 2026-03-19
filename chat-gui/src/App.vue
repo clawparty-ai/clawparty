@@ -595,6 +595,8 @@ const handleSendFiles = async (files) => {
         uploadedFiles.push({
           hash: data.hash,
           name: data.name || fileName,
+          path: data.path || '',
+          type: file.type || 'application/octet-stream',
           sessionId: sessionId
         })
       }

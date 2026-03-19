@@ -48,15 +48,20 @@
             <div class="message-bubble" :class="{ 'system-hint': msg.isSystemHint }">
               <ConfigTable v-if="msg.isConfigTable" :rows="msg.configRows" :meshName="msg.meshName || meshName" />
               <template v-else>
-                <div v-if="msg.files && msg.files.length > 0" class="message-images">
-                  <img v-for="file in msg.files" :key="file.hash"
-                    :src="file.url"
-                    :alt="file.name || 'image'"
-                    class="chat-image"
-                    loading="lazy"
-                    @click="openImagePreview(file.url)"
-                  />
-                </div>
+<div v-if="msg.files && msg.files.length > 0" class="message-images">
+  <div v-for="file in msg.files" :key="file.hash" class="attachment-item">
+    <img v-if="file.type && file.type.startsWith('image/')"
+         :src="file.url"
+         :alt="file.name || 'image'"
+         class="chat-image"
+         loading="lazy"
+         @click="openImagePreview(file.url)"
+    />
+    <span v-else class="file-text">
+      文件上传成功，保存在：{{ file.path }}
+    </span>
+  </div>
+</div>
                 <div v-if="msg.text" class="message-content" v-html="msg.isHtml ? msg.text : renderMarkdown(msg.text)"></div>
               </template>
               <div v-if="msg.isGroupRequest || msg.isPeerRequest" class="group-request-actions">
@@ -802,14 +807,15 @@ const parseMessages = (data) => {
           } else if (owner && hash) {
             url = chatService.getFileUrl(props.meshName, owner, hash)
           }
-          return {
-            hash: hash,
-            name: f.name || '',
-            type: f.type || '',
-            size: f.size || 0,
-            owner: owner,
-            url: url
-          }
+return {
+  hash: hash,
+  name: f.name || '',
+  path: f.path || '',
+  type: f.type || '',
+  size: f.size || 0,
+  owner: owner,
+  url: url
+}
         })
       : null
     return {
@@ -1234,6 +1240,31 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 4px;
+}
+
+.chat-image {
+  max-width: 320px;
+  max-height: 240px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 320px;
+}
+
+.file-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  padding: 8px 0;
+  word-break: break-all;
+  background: var(--bg-hover);
+  border-radius: 4px;
+  padding: 6px 10px;
+  flex-grow: 1;
 }
 
 .chat-image {
