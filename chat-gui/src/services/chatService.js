@@ -87,6 +87,18 @@ export const openclawService = {
     return api.get(`/openclaw/session-history/${agentId}/${sessionId}`, {
       responseType: 'text'
     })
+  },
+
+  uploadPicture(agentId, fileData, fileName) {
+    return api.post(`/openclaw/agents/${agentId}/pictures?name=${encodeURIComponent(fileName)}`, fileData, {
+      headers: { 'Content-Type': 'application/octet-stream' },
+      transformRequest: [data => data]
+    })
+  },
+
+  getPictureUrl(agentId, fileName) {
+    const token = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
+    return `/api/openclaw/agents/${agentId}/pictures/${encodeURIComponent(fileName)}${token}`
   }
 }
 
@@ -115,12 +127,28 @@ export const chatService = {
     return api.get(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}/messages?since=${since}`)
   },
   
-  sendMessage(meshName, peer, text, sessionId) {
-    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${peer}/messages`, { text, sessionId: sessionId || null })
+  sendMessage(meshName, peer, text, sessionId, files) {
+    const body = { text, sessionId: sessionId || null }
+    if (files && files.length > 0) body.files = files
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${peer}/messages`, body)
   },
   
-  sendGroupMessage(meshName, creator, groupId, text, sessionId) {
-    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}/messages`, { text, sessionId: sessionId || null })
+  sendGroupMessage(meshName, creator, groupId, text, sessionId, files) {
+    const body = { text, sessionId: sessionId || null }
+    if (files && files.length > 0) body.files = files
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}/messages`, body)
+  },
+
+  uploadFile(meshName, fileData) {
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/files`, fileData, {
+      headers: { 'Content-Type': 'application/octet-stream' },
+      transformRequest: [data => data]
+    })
+  },
+
+  getFileUrl(meshName, owner, hash) {
+    const token = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
+    return `/api/meshes/${meshName}/apps/ztm/chat/api/files/${owner}/${hash}${token}`
   },
   
   createGroup(meshName, creator, groupId, data) {

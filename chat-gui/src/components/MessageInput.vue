@@ -3,56 +3,65 @@
     <div class="resize-handle" @mousedown="startResize"></div>
     <div class="editor-wrapper" :style="{ height: editorHeight + 'px' }">
       <div class="editor-toolbar">
-        <button class="toolbar-btn" @click="insertFormat('**', '**')" title="粗体 (Ctrl+B)">
+        <!-- Format buttons (hidden, kept for future use) -->
+        <div style="display:none">
+          <button class="toolbar-btn" @click="insertFormat('**', '**')" title="粗体 (Ctrl+B)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8.21 13c2.106 0 3.412-1.087 3.412-2.823 0-1.306-.984-2.283-2.324-2.386v-.055a2.176 2.176 0 0 0 1.852-2.14c0-1.51-1.162-2.46-3.014-2.46H3.843V13H8.21zM5.908 4.674h1.696c.963 0 1.517.451 1.517 1.244 0 .834-.629 1.32-1.73 1.32H5.908V4.673zm0 6.788V8.598h1.73c1.216 0 1.88.492 1.88 1.415 0 .943-.643 1.449-1.832 1.449H5.907z"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn" @click="insertFormat('*', '*')" title="斜体 (Ctrl+I)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M7.991 11.674 9.53 4.455c.123-.595.246-.71 1.347-.807l.11-.52H7.211l-.11.52c1.06.096 1.128.212 1.005.807L6.57 11.674c-.123.595-.246.71-1.346.806l-.11.52h3.774l.11-.52c-1.06-.095-1.129-.211-1.006-.806z"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn" @click="insertFormat('`', '`')" title="行内代码">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M5.854 4.854a.5.5 0 1 0-.708-.708l-3.5 3.5a.5.5 0 0 0 0 .708l3.5 3.5a.5.5 0 0 0 .708-.708L2.707 8l3.147-3.146zm4.292 0a.5.5 0 0 1 .708-.708l3.5 3.5a.5.5 0 0 1 0 .708l-3.5 3.5a.5.5 0 0 1-.708-.708L13.293 8l-3.147-3.146z"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn" @click="insertFormat('```\n', '\n```')" title="代码块">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h12zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2z"/>
+              <path d="M6.354 5.5H4a3 3 0 0 0 0 6h3a3 3 0 0 0 2.83-4H9c-.086 0-.17.01-.25.031A2 2 0 0 1 7 9.5H5a1 1 0 0 0 0 2h1.354a.5.5 0 0 0 .354-.854l-.854-.854z"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn" @click="insertFormat('[', '](url)')" title="链接">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 8.586 5.5L8 6.086a1.002 1.002 0 0 0-.154.199 2 2 0 0 1 .861 3.337L6.88 11.45a2 2 0 1 1-2.83-2.83l.793-.792a4.018 4.018 0 0 1-.128-1.287z"/>
+              <path d="M6.586 4.672A3 3 0 0 0 7.414 9.5l.775-.776a2 2 0 0 1-.896-3.346L9.12 3.55a2 2 0 1 1 2.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 1 0-4.243-4.243L6.586 4.672z"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn" @click="insertFormat('\n- ', '')" title="无序列表">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path fill-rule="evenodd" d="M5 11.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zm-3 1a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0 4a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0 4a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn" @click="insertFormat('\n1. ', '')" title="有序列表">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path fill-rule="evenodd" d="M5 11.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5z"/>
+              <path d="M1.713 11.865v-.474H2c.217 0 .363-.137.363-.317 0-.185-.158-.31-.361-.31-.223 0-.367.152-.373.31h-.59c.016-.467.373-.787.986-.787.588-.002.954.291.957.703a.595.595 0 0 1-.492.594v.033a.615.615 0 0 1 .569.631c.003.533-.502.8-1.051.8-.656 0-1-.37-1.008-.794h.582c.008.178.312.382.738.327.648-.062 1.129-.533 1.11-1.23-.005-.272.245-.435.76-.532.255-.048.492-.152.687-.2a.626.626 0 0 1 .226-.103.507.507 0 0 1 .339.14c.14.172.224.394.224.646 0 .197-.064.345-.224.461-.18.11-.414.165-.687.159H1.969c-.52 0-.82-.225-.848-.567-.03-.38-.196-.694-.437-.859-.247-.17-.566-.263-.863-.263-.478 0-.87.147-1.16.438-.287.29-.432.7-.432 1.14v.474h2.145z"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn" @click="insertFormat('\n> ', '')" title="引用">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M2.5 3a.5.5 0 0 0 0 1h11a.5.5 0 0 0 0-1h-11zm0 3a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1h-6zm0 3a.5.5 0 0 0 0 1h11a.5.5 0 0 0 0-1h-11zm0 3a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1h-6z"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn" @click="insertFormat('~~', '~~')" title="删除线">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8.527 13.164c-2.153 0-3.589-1.107-3.705-2.81h1.23c.144 1.06 1.254 1.562 2.49 1.562 1.41 0 2.39-.751 2.39-1.961 0-.964-.697-1.541-1.841-1.844H9.88c.093.593.468 1.025 1.303 1.025.86 0 1.536-.468 1.697-1.306H11.5c-.11.625-.564.961-1.482.961-.943 0-1.694-.593-1.694-1.598 0-1.193.751-1.905 2.207-1.905 1.454 0 2.248.752 2.248 2.058 0 .768-.421 1.296-.984 1.296l-1.627-.016z"/>
+              <path d="M1.5 8.5a.5.5 0 0 1 .5-.5h12a.5.5 0 0 1 0 1h-12a.5.5 0 0 1-.5-.5z"/>
+            </svg>
+          </button>
+        </div>
+        <button class="toolbar-btn" @click="triggerImagePicker" title="发送图片">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M8.21 13c2.106 0 3.412-1.087 3.412-2.823 0-1.306-.984-2.283-2.324-2.386v-.055a2.176 2.176 0 0 0 1.852-2.14c0-1.51-1.162-2.46-3.014-2.46H3.843V13H8.21zM5.908 4.674h1.696c.963 0 1.517.451 1.517 1.244 0 .834-.629 1.32-1.73 1.32H5.908V4.673zm0 6.788V8.598h1.73c1.216 0 1.88.492 1.88 1.415 0 .943-.643 1.449-1.832 1.449H5.907z"/>
+            <path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
+            <path d="M2.002 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2h-12zm12 1a1 1 0 0 1 1 1v6.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12V3a1 1 0 0 1 1-1h12z"/>
           </svg>
         </button>
-        <button class="toolbar-btn" @click="insertFormat('*', '*')" title="斜体 (Ctrl+I)">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M7.991 11.674 9.53 4.455c.123-.595.246-.71 1.347-.807l.11-.52H7.211l-.11.52c1.06.096 1.128.212 1.005.807L6.57 11.674c-.123.595-.246.71-1.346.806l-.11.52h3.774l.11-.52c-1.06-.095-1.129-.211-1.006-.806z"/>
-          </svg>
-        </button>
-        <button class="toolbar-btn" @click="insertFormat('`', '`')" title="行内代码">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M5.854 4.854a.5.5 0 1 0-.708-.708l-3.5 3.5a.5.5 0 0 0 0 .708l3.5 3.5a.5.5 0 0 0 .708-.708L2.707 8l3.147-3.146zm4.292 0a.5.5 0 0 1 .708-.708l3.5 3.5a.5.5 0 0 1 0 .708l-3.5 3.5a.5.5 0 0 1-.708-.708L13.293 8l-3.147-3.146z"/>
-          </svg>
-        </button>
-        <button class="toolbar-btn" @click="insertFormat('```\n', '\n```')" title="代码块">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h12zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2z"/>
-            <path d="M6.354 5.5H4a3 3 0 0 0 0 6h3a3 3 0 0 0 2.83-4H9c-.086 0-.17.01-.25.031A2 2 0 0 1 7 9.5H5a1 1 0 0 0 0 2h1.354a.5.5 0 0 0 .354-.854l-.854-.854z"/>
-          </svg>
-        </button>
-        <button class="toolbar-btn" @click="insertFormat('[', '](url)')" title="链接">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 8.586 5.5L8 6.086a1.002 1.002 0 0 0-.154.199 2 2 0 0 1 .861 3.337L6.88 11.45a2 2 0 1 1-2.83-2.83l.793-.792a4.018 4.018 0 0 1-.128-1.287z"/>
-            <path d="M6.586 4.672A3 3 0 0 0 7.414 9.5l.775-.776a2 2 0 0 1-.896-3.346L9.12 3.55a2 2 0 1 1 2.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 1 0-4.243-4.243L6.586 4.672z"/>
-          </svg>
-        </button>
-        <button class="toolbar-btn" @click="insertFormat('\n- ', '')" title="无序列表">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path fill-rule="evenodd" d="M5 11.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zm-3 1a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0 4a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0 4a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>
-          </svg>
-        </button>
-        <button class="toolbar-btn" @click="insertFormat('\n1. ', '')" title="有序列表">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path fill-rule="evenodd" d="M5 11.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5z"/>
-            <path d="M1.713 11.865v-.474H2c.217 0 .363-.137.363-.317 0-.185-.158-.31-.361-.31-.223 0-.367.152-.373.31h-.59c.016-.467.373-.787.986-.787.588-.002.954.291.957.703a.595.595 0 0 1-.492.594v.033a.615.615 0 0 1 .569.631c.003.533-.502.8-1.051.8-.656 0-1-.37-1.008-.794h.582c.008.178.312.382.738.327.648-.062 1.129-.533 1.11-1.23-.005-.272.245-.435.76-.532.255-.048.492-.152.687-.2a.626.626 0 0 1 .226-.103.507.507 0 0 1 .339.14c.14.172.224.394.224.646 0 .197-.064.345-.224.461-.18.11-.414.165-.687.159H1.969c-.52 0-.82-.225-.848-.567-.03-.38-.196-.694-.437-.859-.247-.17-.566-.263-.863-.263-.478 0-.87.147-1.16.438-.287.29-.432.7-.432 1.14v.474h2.145z"/>
-          </svg>
-        </button>
-        <button class="toolbar-btn" @click="insertFormat('\n> ', '')" title="引用">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M2.5 3a.5.5 0 0 0 0 1h11a.5.5 0 0 0 0-1h-11zm0 3a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1h-6zm0 3a.5.5 0 0 0 0 1h11a.5.5 0 0 0 0-1h-11zm0 3a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1h-6z"/>
-          </svg>
-        </button>
-        <button class="toolbar-btn" @click="insertFormat('~~', '~~')" title="删除线">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M8.527 13.164c-2.153 0-3.589-1.107-3.705-2.81h1.23c.144 1.06 1.254 1.562 2.49 1.562 1.41 0 2.39-.751 2.39-1.961 0-.964-.697-1.541-1.841-1.844H9.88c.093.593.468 1.025 1.303 1.025.86 0 1.536-.468 1.697-1.306H11.5c-.11.625-.564.961-1.482.961-.943 0-1.694-.593-1.694-1.598 0-1.193.751-1.905 2.207-1.905 1.454 0 2.248.752 2.248 2.058 0 .768-.421 1.296-.984 1.296l-1.627-.016z"/>
-            <path d="M1.5 8.5a.5.5 0 0 1 .5-.5h12a.5.5 0 0 1 0 1h-12a.5.5 0 0 1-.5-.5z"/>
-          </svg>
-        </button>
-        <span class="toolbar-divider"></span>
+        <input ref="imageInputRef" type="file" accept="image/*" multiple style="display:none" @change="handleImageSelect" />
         <span class="toolbar-spacer"></span>
         <div v-if="showPeerMode" class="peer-mode-group">
           <button
@@ -101,6 +110,7 @@
           :value="modelValue"
           @input="handleInput"
           @keydown="handleKeydown"
+          @paste="handlePaste"
           @blur="closeMentionList"
           :placeholder="`发送消息到 #${chatName || 'channel'}`"
           rows="3"
@@ -164,7 +174,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['send', 'update:modelValue', 'hash-command', 'update:peerMode'])
+const emit = defineEmits(['send', 'update:modelValue', 'hash-command', 'update:peerMode', 'send-images'])
 
 const resolveEpDisplayName = inject('resolveEpDisplayName', (u) => u)
 
@@ -205,6 +215,45 @@ function insertMention(member) {
     textarea.setSelectionRange(newPos, newPos)
   }, 0)
 }
+// ── Image upload ─────────────────────────────────────────────────────────────
+const imageInputRef = ref(null)
+
+function triggerImagePicker() {
+  if (imageInputRef.value) imageInputRef.value.click()
+}
+
+function handleImageSelect(e) {
+  const files = e.target.files
+  if (!files || files.length === 0) return
+  emitImageFiles(files)
+  // Reset so the same file can be selected again
+  if (imageInputRef.value) imageInputRef.value.value = ''
+}
+
+function handlePaste(e) {
+  const items = e.clipboardData && e.clipboardData.items
+  if (!items) return
+  const imageFiles = []
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type.indexOf('image') !== -1) {
+      const file = items[i].getAsFile()
+      if (file) imageFiles.push(file)
+    }
+  }
+  if (imageFiles.length > 0) {
+    e.preventDefault()
+    emitImageFiles(imageFiles)
+  }
+}
+
+function emitImageFiles(fileList) {
+  const files = []
+  for (let i = 0; i < fileList.length; i++) {
+    files.push(fileList[i])
+  }
+  emit('send-images', files)
+}
+
 const editorHeight = ref(160)
 const isResizing = ref(false)
 let startY = 0

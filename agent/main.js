@@ -788,6 +788,40 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
+    '/api/openclaw/agents/{agent}/pictures': {
+      'POST': function ({ agent }, req) {
+        agent = URL.decodeComponent(agent)
+        var url = new URL(req.head.path, 'http://localhost')
+        var filename = url.searchParams.get('name') || ('img_' + Date.now() + '.png')
+        var dir = os.path.join(os.home(), '.openclaw', 'agents', agent, 'clawparty', 'pictures')
+        try { os.mkdir(dir, { recursive: true }) } catch {}
+        var filepath = os.path.join(dir, filename)
+        try {
+          os.write(filepath, req.body)
+          return response(200, JSON.stringify({ path: filepath, name: filename }))
+        } catch (e) {
+          return response(500, JSON.stringify({ error: e?.toString?.() || 'write failed' }))
+        }
+      }
+    },
+
+    '/api/openclaw/agents/{agent}/pictures/{filename}': {
+      'GET': function ({ agent, filename }) {
+        agent = URL.decodeComponent(agent)
+        filename = URL.decodeComponent(filename)
+        var filepath = os.path.join(os.home(), '.openclaw', 'agents', agent, 'clawparty', 'pictures', filename)
+        try {
+          var data = os.read(filepath)
+          if (data) {
+            return new Message({ status: 200 }, data)
+          }
+          return response(404)
+        } catch {
+          return response(404)
+        }
+      }
+    },
+
     '/api/join-party': {
       'POST': function (_, req) {
         var body
@@ -991,9 +1025,16 @@ function main(listen, apiToken, noAuth) {
     var directToken = getHeader(head, 'x-ztm-token')
     if (directToken && directToken === apiToken) return true
     var authorization = getHeader(head, 'authorization')
-    if (typeof authorization !== 'string') return false
-    if (!authorization.startsWith(authSchemePrefix)) return false
-    return authorization.substring(authSchemePrefix.length) === apiToken
+    if (typeof authorization === 'string' && authorization.startsWith(authSchemePrefix)) {
+      if (authorization.substring(authSchemePrefix.length) === apiToken) return true
+    }
+    // Allow token as query parameter (for <img src> and other browser-native requests)
+    try {
+      var url = new URL(head.path, 'http://localhost')
+      var qtoken = url.searchParams.get('token')
+      if (qtoken && qtoken === apiToken) return true
+    } catch {}
+    return false
   }
 
   var appSessionPools = new algo.Cache(

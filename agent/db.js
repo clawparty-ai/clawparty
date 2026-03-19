@@ -730,15 +730,11 @@ function getCache(key) {
     .bind(1, key)
     .exec()
   if (!rows[0]) {
-    console.info('[db cache] get', key, '-> (miss)')
     return null
   }
   try {
-    var parsed = JSON.parse(rows[0].value)
-    console.info('[db cache] get', key, '->', JSON.stringify(parsed).substring(0, 100))
-    return parsed
+    return JSON.parse(rows[0].value)
   } catch {
-    console.info('[db cache] get', key, '->', rows[0].value.substring(0, 100))
     return rows[0].value
   }
 }

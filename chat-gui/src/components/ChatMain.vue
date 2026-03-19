@@ -47,7 +47,18 @@
             </div>
             <div class="message-bubble" :class="{ 'system-hint': msg.isSystemHint }">
               <ConfigTable v-if="msg.isConfigTable" :rows="msg.configRows" :meshName="msg.meshName || meshName" />
-              <div v-else class="message-content" v-html="msg.isHtml ? msg.text : renderMarkdown(msg.text)"></div>
+              <template v-else>
+                <div v-if="msg.files && msg.files.length > 0" class="message-images">
+                  <img v-for="file in msg.files" :key="file.hash"
+                    :src="file.url"
+                    :alt="file.name || 'image'"
+                    class="chat-image"
+                    loading="lazy"
+                    @click="openImagePreview(file.url)"
+                  />
+                </div>
+                <div v-if="msg.text" class="message-content" v-html="msg.isHtml ? msg.text : renderMarkdown(msg.text)"></div>
+              </template>
               <div v-if="msg.isGroupRequest || msg.isPeerRequest" class="group-request-actions">
                 <template v-if="(msg.isPeerRequest || msg.isGroupEpRequest) && msg.availableAgents && msg.availableAgents.length > 0">
                   <select v-model="msg.selectedAgent" class="agent-select">
@@ -74,6 +85,7 @@
       :showPeerMode="!chat.isOpenclaw && !!chat.name"
       @update:modelValue="$emit('update:modelValue', $event)" 
       @send="$emit('send')"
+      @send-images="$emit('send-images', $event)"
       @hash-command="handleHashCommand"
       @update:peerMode="handlePeerModeChange"
     />
@@ -127,7 +139,7 @@ const props = defineProps({
   }
 })
 
-defineEmits(['send', 'update:modelValue', 'switchSession', 'deleteGroup', 'leaveGroup', 'back'])
+defineEmits(['send', 'update:modelValue', 'switchSession', 'deleteGroup', 'leaveGroup', 'back', 'send-images'])
 
 const messagesContainer = ref(null)
 let pollTimer = null
@@ -766,6 +778,10 @@ const isMessageSent = (msg) => {
   return msg.isSent || msg.sender === props.currentUserName
 }
 
+const openImagePreview = (url) => {
+  window.open(url, '_blank')
+}
+
 const parseMessages = (data) => {
   return data.map(item => {
     // sender may be "gcid/username" for group chat messages; strip the gcid prefix for display
@@ -773,8 +789,21 @@ const parseMessages = (data) => {
     const displaySender = rawSender.indexOf('/') !== -1 ? rawSender.split('/')[1] : rawSender
     const isSent = displaySender === props.currentUserName
     const senderDisplay = props.chat?.isGroup ? resolveEpDisplayName(displaySender) : displaySender
+    // Resolve file URLs for image messages
+    const rawFiles = item.message?.files || null
+    const resolvedFiles = rawFiles && rawFiles.length > 0 && props.meshName
+      ? rawFiles.map(f => ({
+          hash: f.hash,
+          name: f.name || '',
+          type: f.type || '',
+          size: f.size || 0,
+          owner: f.owner || '',
+          url: chatService.getFileUrl(props.meshName, f.owner, f.hash)
+        }))
+      : null
     return {
       text: item.message?.text || '',
+      files: resolvedFiles,
       time: formatTime(item.time),
       sender: senderDisplay,
       isSent,
@@ -861,15 +890,24 @@ const pollMessages = async () => {
     if (response.data?.length > 0) {
       const newMessages = parseMessages(response.data)
       newMessages.forEach(newMsg => {
+        // Deduplicate by timestamp only — sender display names may change between polls
         const existingIndex = props.chat.messages.findIndex(m => 
-          m.sender === newMsg.sender && m.text === newMsg.text
+          !m.isTemp && m.timestamp === newMsg.timestamp
         )
         if (existingIndex !== -1) {
-          if (props.chat.messages[existingIndex].isTemp) {
-            props.chat.messages[existingIndex] = newMsg
-          }
+          // Already have this message (from a previous poll), skip
         } else {
-          props.chat.messages.push(newMsg)
+          // Check if there's a temp message with matching content
+          const fileHashes = JSON.stringify(newMsg.files?.map(f => f.hash) || [])
+          const tempIndex = props.chat.messages.findIndex(m =>
+            m.isTemp && m.text === newMsg.text &&
+            JSON.stringify(m.files?.map(f => f.hash) || []) === fileHashes
+          )
+          if (tempIndex !== -1) {
+            props.chat.messages[tempIndex] = newMsg
+          } else {
+            props.chat.messages.push(newMsg)
+          }
         }
       })
       // scrollToBottom()
@@ -1178,6 +1216,26 @@ onUnmounted(() => {
   top: 12px;
   border: 8px solid transparent;
   border-left-color: #f2f0f0;
+}
+
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.chat-image {
+  max-width: 320px;
+  max-height: 240px;
+  border-radius: 8px;
+  cursor: pointer;
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.chat-image:hover {
+  opacity: 0.85;
 }
 
 .message-content {
