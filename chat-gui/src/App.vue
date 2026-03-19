@@ -572,40 +572,86 @@ const handleSendFiles = async (files) => {
   if (activeChat.value === null) return
   const chat = chats.value[activeChat.value]
 
-  // OpenCLaw agent: save files to agent workspace (images only via this endpoint)
+  // OpenCLaw agent: save files to agent workspace
   if (chat.isOpenclaw) {
-    // For OpenCLaw local agents, we only accept image files via uploadPicture
-    // Generic files should use the mesh file upload pathway instead
-    // But since this is handleSendFiles (generic file button), we'll treat them as documents
-    const savedPaths = []
+    const imageFiles = []
+    const otherFiles = []
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
-      const fileName = file.name || ('file_' + Date.now() + '_' + i)
-      const arrayBuffer = await file.arrayBuffer()
-      try {
-        const res = await openclawService.uploadPicture(chat.agentId, arrayBuffer, fileName)
-        const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
-        if (data && data.path) {
-          savedPaths.push(data.path)
-        }
-      } catch (error) {
-        console.error('Failed to save file:', error)
+      if (file.type && file.type.startsWith('image/')) {
+        imageFiles.push(file)
+      } else {
+        otherFiles.push(file)
       }
     }
-    
-    // Show notification about saved paths
-    if (savedPaths.length > 0) {
-      const now = new Date()
-      const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
-      if (!chat.messages) chat.messages = []
-      chat.messages.push({
-        text: `文件已保存，保存在：\n${savedPaths.join('\n')}`,
-        time: time,
-        sender: '系统',
-        timestamp: now.getTime(),
-        isSent: true,
-        isSystemHint: true
-      })
+
+    // Handle images: show preview in chat
+    if (imageFiles.length > 0) {
+      const picturePaths = []
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i]
+        const fileName = file.name || ('img_' + Date.now() + '_' + i + '.png')
+        const arrayBuffer = await file.arrayBuffer()
+        try {
+          const res = await openclawService.uploadPicture(chat.agentId, arrayBuffer, fileName)
+          const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+          if (data && data.name) {
+            picturePaths.push({
+              name: data.name,
+              path: data.path,
+              url: openclawService.getPictureUrl(chat.agentId, data.name),
+              type: file.type || 'image/png'
+            })
+          }
+        } catch (error) {
+          console.error('Failed to upload image:', error)
+        }
+      }
+      if (picturePaths.length > 0) {
+        const now = new Date()
+        const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+        if (!chat.messages) chat.messages = []
+        chat.messages.push({
+          text: '',
+          files: picturePaths.map(p => ({ name: p.name, url: p.url, type: p.type })),
+          time: time,
+          sender: 'You',
+          timestamp: now.getTime(),
+          isSent: true
+        })
+      }
+    }
+
+    // Handle other files: show text notification
+    if (otherFiles.length > 0) {
+      const savedPaths = []
+      for (let i = 0; i < otherFiles.length; i++) {
+        const file = otherFiles[i]
+        const fileName = file.name || ('file_' + Date.now() + '_' + i)
+        const arrayBuffer = await file.arrayBuffer()
+        try {
+          const res = await openclawService.uploadPicture(chat.agentId, arrayBuffer, fileName)
+          const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+          if (data && data.path) {
+            savedPaths.push(data.path)
+          }
+        } catch (error) {
+          console.error('Failed to upload file:', error)
+        }
+      }
+      if (savedPaths.length > 0) {
+        const now = new Date()
+        const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+        if (!chat.messages) chat.messages = []
+        chat.messages.push({
+          text: `文件已保存，保存在：\n${savedPaths.join('\n')}`,
+          time: time,
+          sender: '系统',
+          timestamp: now.getTime(),
+          isSent: true,
+          isSystemHint: true
+        })
+      }
     }
     return
   }
@@ -631,7 +677,8 @@ const handleSendFiles = async (files) => {
             name: fileName,
             type: file.type || 'application/octet-stream',
             size: file.size || 0,
-            owner: currentMeshAgentUsername.value
+            owner: currentMeshAgentUsername.value,
+            path: '/shared/' + currentMeshAgentUsername.value + '/publish/files/' + hash
           })
         }
       } catch (error) {
