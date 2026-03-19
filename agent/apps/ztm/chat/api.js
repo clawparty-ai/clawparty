@@ -507,6 +507,10 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   }
 
   function newGroupChat(creator, group, existingGcid) {
+    if (isGroupDismissed(creator, group)) {
+      console.info('[newGroupChat] skip dismissed group:', creator, group)
+      return null
+    }
     var chat = {
       creator,
       group,
@@ -681,7 +685,10 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
           if (sender !== creator) return
           if (isGroupDismissed(creator, group)) return
           var chat = findGroupChat(creator, group)
-          if (!chat) chat = newGroupChat(creator, group)
+          if (!chat) {
+            chat = newGroupChat(creator, group)
+            if (!chat) return
+          }
           try {
             var info = JSON.decode(data)
             if (info.name) chat.name = info.name
@@ -718,13 +725,16 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
               }
             } catch {}
             chat = newGroupChat(creator, group, existingGcid)
-            if (existingMembers) chat.members = existingMembers
-            if (existingName) chat.name = existingName
+            if (chat) {
+              if (existingMembers) chat.members = existingMembers
+              if (existingName) chat.name = existingName
+            }
           })
         } else {
           infoPromise = Promise.resolve()
         }
         return infoPromise.then(function () {
+          if (!chat) return
           var gcid = chat.gcid
           var groupCfg = gcid ? db.getChatPeer(mesh.name, gcid) : null
           // run=0: discard messages entirely, do not store
@@ -838,7 +848,14 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
   function allChats() {
     return Promise.resolve(chats.filter(
-      chat => chat.peer || (chat.group && chat.name)
+      chat => {
+        if (chat.peer) return true
+        if (chat.group && chat.name) {
+          if (isGroupDismissed(chat.creator, chat.group)) return false
+          return true
+        }
+        return false
+      }
     ).map(
       chat => {
         var updated = chat.newCount
@@ -948,7 +965,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     if (creator !== app.username) return Promise.resolve(false)
     var chat = findGroupChat(creator, group)
     var isNew = !chat
-    if (!chat) chat = newGroupChat(creator, group)
+    if (!chat) {
+      chat = newGroupChat(creator, group)
+      if (!chat) return Promise.resolve(false)
+      isNew = true
+    }
     if (info.name) chat.name = info.name
     if (info.members instanceof Array) chat.members = info.members
     // Ensure gcid is registered in chat_peer so auto-reply config can be stored per group
