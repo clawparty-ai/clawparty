@@ -1091,6 +1091,37 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     )
   }
 
+  function computeHash(data) {
+    var h = new crypto.Hash('sha256')
+    h.update(data)
+    h.update(data.size.toString())
+    return h.digest().toString('hex')
+  }
+
+  function addFileToSession(data, sessionId, fileName) {
+    var hash = computeHash(data)
+    var dir = os.path.join(os.home(), '.openclaw', 'workspace', 'clawparty', 'files', sessionId)
+    try { os.mkdir(dir, { recursive: true }) } catch {}
+    var filepath = os.path.join(dir, hash)
+    try {
+      os.write(filepath, data)
+      return Promise.resolve({ hash, path: filepath, name: fileName })
+    } catch (e) {
+      return Promise.reject(new Error(e?.toString?.() || 'write failed'))
+    }
+  }
+
+  function getFileFromSession(sessionId, hash) {
+    var filepath = os.path.join(os.home(), '.openclaw', 'workspace', 'clawparty', 'files', sessionId, hash)
+    try {
+      var data = os.read(filepath)
+      if (data) return Promise.resolve(data)
+      return Promise.resolve(null)
+    } catch {
+      return Promise.resolve(null)
+    }
+  }
+
   function getFile(owner, hash) {
     return mesh.read(`/shared/${owner}/publish/files/${hash}`)
   }

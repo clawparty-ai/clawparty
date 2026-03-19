@@ -146,9 +146,21 @@ export const chatService = {
     })
   },
 
+  uploadFileToSession(meshName, fileData, sessionId, fileName) {
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/files/upload?sessionId=${encodeURIComponent(sessionId)}&name=${encodeURIComponent(fileName)}`, fileData, {
+      headers: { 'Content-Type': 'application/octet-stream' },
+      transformRequest: [data => data]
+    })
+  },
+
   getFileUrl(meshName, owner, hash) {
     const token = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
     return `/api/meshes/${meshName}/apps/ztm/chat/api/files/${owner}/${hash}${token}`
+  },
+
+  getFileFromSessionUrl(meshName, sessionId, hash) {
+    const token = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
+    return `/api/meshes/${meshName}/apps/ztm/chat/api/files/upload/${encodeURIComponent(sessionId)}/${hash}${token}`
   },
   
   createGroup(meshName, creator, groupId, data) {

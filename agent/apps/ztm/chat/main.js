@@ -245,6 +245,30 @@ export default function ({ app, mesh, utils }) {
       }),
     },
 
+    '/api/files/upload': {
+      'POST': responder((_, req) => {
+        var url = new URL(req.head.path, 'http://localhost')
+        var sessionId = url.searchParams.get('sessionId') || ''
+        var fileName = url.searchParams.get('name') || 'file'
+        if (!sessionId) return Promise.resolve(response(400, JSON.stringify({ error: 'sessionId required' })))
+        return api.addFileToSession(req.body, sessionId, fileName).then(
+          ret => ret ? response(200, JSON.stringify(ret)) : response(404)
+        ).catch(
+          e => response(500, JSON.stringify({ error: e?.toString?.() || 'upload failed' }))
+        )
+      }),
+    },
+
+    '/api/files/upload/{sessionId}/{hash}': {
+      'GET': responder((params) => {
+        var sessionId = params.sessionId
+        var hash = params.hash
+        return api.getFileFromSession(sessionId, hash).then(
+          ret => ret ? new Message({ status: 200 }, ret) : response(404)
+        )
+      }),
+    },
+
     '/api/files/{owner}/{hash}': {
       'GET': responder((params) => {
         var owner = params.owner

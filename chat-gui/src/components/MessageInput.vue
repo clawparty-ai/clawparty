@@ -62,6 +62,13 @@
           </svg>
         </button>
         <input ref="imageInputRef" type="file" accept="image/*" multiple style="display:none" @change="handleImageSelect" />
+        <button class="toolbar-btn" @click="triggerFilePicker" title="发送文件">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5h-2z"/>
+            <path d="M4.5 8a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zm0-2a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zm0-2a.5.5 0 0 0 0 1h4a.5.5 0 0 0 0-1h-4z"/>
+          </svg>
+        </button>
+        <input ref="fileInputRef" type="file" accept="*/*" multiple style="display:none" @change="handleFileSelect" />
         <span class="toolbar-spacer"></span>
         <div v-if="showPeerMode" class="peer-mode-group">
           <button
@@ -174,7 +181,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['send', 'update:modelValue', 'hash-command', 'update:peerMode', 'send-images'])
+const emit = defineEmits(['send', 'update:modelValue', 'hash-command', 'update:peerMode', 'send-images', 'send-files'])
 
 const resolveEpDisplayName = inject('resolveEpDisplayName', (u) => u)
 
@@ -252,6 +259,27 @@ function emitImageFiles(fileList) {
     files.push(fileList[i])
   }
   emit('send-images', files)
+}
+
+const fileInputRef = ref(null)
+
+function triggerFilePicker() {
+  if (fileInputRef.value) fileInputRef.value.click()
+}
+
+function handleFileSelect(e) {
+  const files = e.target.files
+  if (!files || files.length === 0) return
+  emitGenericFiles(files)
+  if (fileInputRef.value) fileInputRef.value.value = ''
+}
+
+function emitGenericFiles(fileList) {
+  const files = []
+  for (let i = 0; i < fileList.length; i++) {
+    files.push(fileList[i])
+  }
+  emit('send-files', files)
 }
 
 const editorHeight = ref(160)

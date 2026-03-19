@@ -86,6 +86,7 @@
       @update:modelValue="$emit('update:modelValue', $event)" 
       @send="$emit('send')"
       @send-images="$emit('send-images', $event)"
+      @send-files="$emit('send-files', $event)"
       @hash-command="handleHashCommand"
       @update:peerMode="handlePeerModeChange"
     />
@@ -139,7 +140,7 @@ const props = defineProps({
   }
 })
 
-defineEmits(['send', 'update:modelValue', 'switchSession', 'deleteGroup', 'leaveGroup', 'back', 'send-images'])
+defineEmits(['send', 'update:modelValue', 'switchSession', 'deleteGroup', 'leaveGroup', 'back', 'send-images', 'send-files'])
 
 const messagesContainer = ref(null)
 let pollTimer = null
@@ -792,14 +793,24 @@ const parseMessages = (data) => {
     // Resolve file URLs for image messages
     const rawFiles = item.message?.files || null
     const resolvedFiles = rawFiles && rawFiles.length > 0 && props.meshName
-      ? rawFiles.map(f => ({
-          hash: f.hash,
-          name: f.name || '',
-          type: f.type || '',
-          size: f.size || 0,
-          owner: f.owner || '',
-          url: chatService.getFileUrl(props.meshName, f.owner, f.hash)
-        }))
+      ? rawFiles.map(f => {
+          var url = ''
+          var owner = f.owner || ''
+          var hash = f.hash || ''
+          if (owner && owner.indexOf('~') !== -1 && hash) {
+            url = chatService.getFileFromSessionUrl(props.meshName, owner, hash)
+          } else if (owner && hash) {
+            url = chatService.getFileUrl(props.meshName, owner, hash)
+          }
+          return {
+            hash: hash,
+            name: f.name || '',
+            type: f.type || '',
+            size: f.size || 0,
+            owner: owner,
+            url: url
+          }
+        })
       : null
     return {
       text: item.message?.text || '',
