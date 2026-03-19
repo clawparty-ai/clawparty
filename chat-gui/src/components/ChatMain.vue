@@ -521,7 +521,7 @@ const buildChatHtml = () => {
     .message-body {
       display: flex;
       flex-direction: column;
-      max-width: 600px;
+      max-width: 80%;
     }
     .message.sent .message-body {
       align-items: flex-end;
@@ -1163,7 +1163,7 @@ onUnmounted(() => {
   border-radius: 12px;
   padding: 11px 15px;
   position: relative;
-  max-width: 600px;
+  max-width: 80%;
   width: fit-content;
 }
 
