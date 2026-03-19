@@ -90,6 +90,7 @@
       v-model="newMessage"
       @send="sendMessage"
       @send-images="handleSendImages"
+      @send-files="handleSendFiles"
       @switchSession="(sessionId) => switchOpenclawSession(chats[activeChat], sessionId)"
       @deleteGroup="handleDeleteGroup"
       @leaveGroup="handleLeaveGroup"
@@ -176,7 +177,10 @@ const formatTime = (timestamp) => {
 const parseChatData = (data) => {
   return data.map(item => {
     const name = item.peer || item.name || 'Unknown'
-    const latestMsg = item.latest?.message?.text || ''
+    var latestMsg = item.latest?.message?.text || ''
+    if (!latestMsg && Array.isArray(item.latest?.message?.files) && item.latest.message.files.length > 0) {
+      latestMsg = '[图片/文件]'
+    }
     const firstLine = latestMsg.split('\n')[0].substring(0, 30)
     const isGroup = !!item.group
     const peerAgentName = item.peerAgentName || ''
@@ -531,6 +535,81 @@ const handleSendImages = async (imageFiles) => {
     newMessage.value = ''
   } catch (error) {
     console.error('Failed to send images:', error)
+  }
+}
+
+const handleSendFiles = async (files) => {
+  if (!files || files.length === 0) return
+  if (activeChat.value === null) return
+  const chat = chats.value[activeChat.value]
+
+  if (chat.isOpenclaw) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const fileName = file.name || ('file_' + Date.now() + '_' + i)
+      const arrayBuffer = await file.arrayBuffer()
+      try {
+        const res = await openclawService.uploadPicture(chat.agentId, arrayBuffer, fileName)
+        const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+        if (data && data.name) {
+          const now = new Date()
+          const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+          if (!chat.messages) chat.messages = []
+          chat.messages.push({
+            text: `[文件已保存: ${data.name}]`,
+            files: [{ name: data.name, url: openclawService.getPictureUrl(chat.agentId, data.name) }],
+            time: time,
+            sender: 'You',
+            timestamp: now.getTime(),
+            isSent: true
+          })
+          chat.lastMessage = `[文件: ${data.name}]`
+          chat.time = time
+        }
+      } catch (error) {
+        console.error('Failed to save file:', error)
+      }
+    }
+    return
+  }
+
+  if (!currentMesh.value) return
+  try {
+    const uploadedFiles = []
+    var sessionId = ''
+    if (chat.isGroup) {
+      const groupParts = [currentMeshAgentUsername.value, chat.gcid].sort()
+      sessionId = groupParts[0] + '~' + groupParts[1]
+    } else {
+      const peerParts = [currentMeshAgentUsername.value, chat.name].sort()
+      sessionId = peerParts[0] + '~' + peerParts[1]
+    }
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const fileName = file.name || ('file_' + Date.now() + '_' + i)
+      const arrayBuffer = await file.arrayBuffer()
+      const response = await chatService.uploadFileToSession(currentMesh.value, arrayBuffer, sessionId, fileName)
+      const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
+      if (data && data.hash) {
+        uploadedFiles.push({
+          hash: data.hash,
+          name: data.name || fileName,
+          sessionId: sessionId
+        })
+      }
+    }
+    if (uploadedFiles.length === 0) return
+
+    const text = newMessage.value.trim()
+    if (chat.isGroup) {
+      await chatService.sendGroupMessage(currentMesh.value, chat.creator, chat.groupId, text, sessionId, uploadedFiles)
+    } else {
+      await chatService.sendMessage(currentMesh.value, chat.name, text, sessionId, uploadedFiles)
+    }
+    newMessage.value = ''
+  } catch (error) {
+    console.error('Failed to send files:', error)
   }
 }
 
