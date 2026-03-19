@@ -480,11 +480,10 @@ const handleSendImages = async (imageFiles) => {
       })
 
       // Send the file paths as message to the agent
-      const pathList = picturePaths.map(p => p.path).join('\n')
       const userText = newMessage.value.trim()
       const agentMessage = userText
-        ? userText + '\n\n[图片已保存到以下路径]\n' + pathList
-        : '[图片已保存到以下路径]\n' + pathList
+        ? userText + '\n\n对方发送了一个图片，保存在：' + picturePaths.map(p => p.path).join('，')
+        : '对方发送了一个图片，保存在：' + picturePaths.map(p => p.path).join('，')
 
       sending.value = true
       newMessage.value = ''
@@ -612,45 +611,67 @@ const handleSendFiles = async (files) => {
   }
 
   if (!currentMesh.value) return
-  try {
+
+    // Use mesh filesystem (same as image upload) - save to /shared/{owner}/publish/files/{hash}
     const uploadedFiles = []
-    var sessionId = ''
-    if (chat.isGroup) {
-      const groupParts = [currentMeshAgentUsername.value, chat.gcid].sort()
-      sessionId = groupParts[0] + '~' + groupParts[1]
-    } else {
-      const peerParts = [currentMeshAgentUsername.value, chat.name].sort()
-      sessionId = peerParts[0] + '~' + peerParts[1]
-    }
+    const sessionId = chat.isGroup
+      ? [currentMeshAgentUsername.value, chat.gcid].sort().join('~')
+      : [currentMeshAgentUsername.value, chat.name].sort().join('~')
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       const fileName = file.name || ('file_' + Date.now() + '_' + i)
-      const arrayBuffer = await file.arrayBuffer()
-      const response = await chatService.uploadFileToSession(currentMesh.value, arrayBuffer, sessionId, fileName)
-      const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
-      if (data && data.hash) {
-        uploadedFiles.push({
-          hash: data.hash,
-          name: data.name || fileName,
-          path: data.path || '',
-          type: file.type || 'application/octet-stream',
-          sessionId: sessionId
-        })
+      try {
+        const arrayBuffer = await file.arrayBuffer()
+        const response = await chatService.uploadFile(currentMesh.value, arrayBuffer)
+        const hash = typeof response.data === 'string' ? response.data : ''
+        if (hash) {
+          uploadedFiles.push({
+            hash: hash,
+            name: fileName,
+            type: file.type || 'application/octet-stream',
+            size: file.size || 0,
+            owner: currentMeshAgentUsername.value
+          })
+        }
+      } catch (error) {
+        console.error('Failed to upload file:', fileName, error)
       }
     }
-    if (uploadedFiles.length === 0) return
 
     const text = newMessage.value.trim()
-    if (chat.isGroup) {
-      await chatService.sendGroupMessage(currentMesh.value, chat.creator, chat.groupId, text, sessionId, uploadedFiles)
-    } else {
-      await chatService.sendMessage(currentMesh.value, chat.name, text, sessionId, uploadedFiles)
+    if (uploadedFiles.length > 0) {
+      if (chat.isGroup) {
+        await chatService.sendGroupMessage(currentMesh.value, chat.creator, chat.groupId, text, sessionId, uploadedFiles)
+      } else {
+        await chatService.sendMessage(currentMesh.value, chat.name, text, sessionId, uploadedFiles)
+      }
+      newMessage.value = ''
     }
-    newMessage.value = ''
-  } catch (error) {
-    console.error('Failed to send files:', error)
-  }
+
+    // Show feedback
+    const now = new Date()
+    const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+    if (!chat.messages) chat.messages = []
+    if (uploadedFiles.length > 0) {
+      chat.messages.push({
+        text: '[文件已发送] ' + uploadedFiles.map(f => f.name).join('，'),
+        time: time,
+        sender: '系统',
+        timestamp: now.getTime(),
+        isSent: true,
+        isSystemHint: true
+      })
+    } else {
+      chat.messages.push({
+        text: '[文件上传失败] 请重试',
+        time: time,
+        sender: '系统',
+        timestamp: now.getTime(),
+        isSent: true,
+        isSystemHint: true
+      })
+    }
 }
 
 const switchMesh = async (meshName) => {
