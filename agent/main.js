@@ -136,6 +136,7 @@ function main(listen, apiToken, noAuth) {
     return pipeline($=>$
       .onStart(new Data)
       .exec(() => cmd, {
+        stderr: true,
         onExit: (code, err) => {
           if (err) err.toString().split('\n').filter(Boolean).forEach(
             line => console.error('[openclaw cli]', line)
@@ -143,7 +144,7 @@ function main(listen, apiToken, noAuth) {
           return new StreamEnd
         }
       })
-      .replaceStreamStart(evt => [new MessageStart, evt])
+      .replaceStreamStart(evt => { $output = ''; return [new MessageStart, evt] })
       .replaceStreamEnd(() => new MessageEnd)
       .replaceMessage(msg => {
         $output = msg?.body?.toString?.() || ''
@@ -693,6 +694,7 @@ function main(listen, apiToken, noAuth) {
               var list = JSON.parse(cleaned)
               if (Array.isArray(list)) {
                 var ids = list.map(a => a.id || a.name).filter(Boolean)
+                console.info('[openclaw cli] openclaw agents list --json output:', JSON.stringify(ids))
                 if (ids.length > 0) db.setCache('local_agent_ids', ids)
               }
             } catch {}
