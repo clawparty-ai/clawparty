@@ -194,6 +194,15 @@ function open(pathname) {
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS cli_log_lookup ON cli_log(agent_name, session_id, message_md5, timestamp)`)
   } catch {}
+
+  // Migrations: add new columns to cli_log for detailed CLI call logging
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN command TEXT NOT NULL DEFAULT ''`) } catch {}
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN arguments TEXT NOT NULL DEFAULT ''`) } catch {}
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN output TEXT NOT NULL DEFAULT ''`) } catch {}
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN exit_code INTEGER NOT NULL DEFAULT 0`) } catch {}
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN success INTEGER NOT NULL DEFAULT 0`) } catch {}
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0`) } catch {}
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN error_message TEXT NOT NULL DEFAULT ''`) } catch {}
 }
 
 function allZones() {
@@ -771,6 +780,23 @@ function addCliLog(agentName, sessionId, messageMd5) {
     .exec()
 }
 
+function logCliCall(command, args, output, exitCode, success, durationMs, errorMessage, agentName, sessionId, messageMd5) {
+  db.sql(`INSERT INTO cli_log(timestamp, agent_name, session_id, message_md5, command, arguments, output, exit_code, success, duration_ms, error_message)
+          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(1, Date.now() / 1000)
+    .bind(2, agentName || '')
+    .bind(3, sessionId || '')
+    .bind(4, messageMd5 || '')
+    .bind(5, command || '')
+    .bind(6, args !== null && typeof args === 'object' ? JSON.stringify(args) : (args || ''))
+    .bind(7, output || '')
+    .bind(8, exitCode || 0)
+    .bind(9, success ? 1 : 0)
+    .bind(10, durationMs || 0)
+    .bind(11, errorMessage || '')
+    .exec()
+}
+
 // chat_type: 'peer' | 'group'
 function logChat(mesh, chatType, chatId, chatName, creator, sender, event, content, members, sessionId, muted) {
   var t = Date.now() / 1000
@@ -872,4 +898,5 @@ export default {
   setCache,
   hasCliLog,
   addCliLog,
+  logCliCall,
 }

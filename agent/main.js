@@ -133,14 +133,21 @@ function main(listen, apiToken, noAuth) {
 
   function makeOpenclawPipeline(cmd) {
     var $output
+    var $startTime
+    var $exitCode = 0
+    var $errorMessage = ''
     return pipeline($=>$
-      .onStart(new Data)
+      .onStart(() => { $startTime = Date.now(); return new Data })
       .exec(() => cmd, {
         stderr: true,
         onExit: (code, err) => {
-          if (err) err.toString().split('\n').filter(Boolean).forEach(
-            line => console.error('[openclaw cli]', line)
-          )
+          $exitCode = code
+          if (err) {
+            $errorMessage = err.toString()
+            $errorMessage.split('\n').filter(Boolean).forEach(
+              line => console.error('[openclaw cli]', line)
+            )
+          }
           return new StreamEnd
         }
       })
@@ -150,7 +157,13 @@ function main(listen, apiToken, noAuth) {
         $output = msg?.body?.toString?.() || ''
         return new StreamEnd
       })
-      .onEnd(() => $output)
+      .onEnd(() => {
+        var durationMs = Date.now() - $startTime
+        var success = $exitCode === 0 && !$errorMessage
+        db.logCliCall(cmd[0], cmd.slice(1), $output, $exitCode, success, durationMs, $errorMessage)
+        $errorMessage = ''
+        return $output
+      })
     )
   }
 
@@ -159,13 +172,20 @@ function main(listen, apiToken, noAuth) {
 
   var $openclawAgentCmd
   var $openclawAgentOutput
+  var $openclawAgentStartTime
+  var $openclawAgentExitCode = 0
+  var $openclawAgentErrorMessage = ''
   var openclawAgentMessage = pipeline($=>$
-    .onStart(cmd => { $openclawAgentCmd = cmd; return new Data })
+    .onStart(cmd => { $openclawAgentCmd = cmd; $openclawAgentStartTime = Date.now(); return new Data })
     .exec(() => $openclawAgentCmd, {
       onExit: (code, err) => {
-        if (err) err.toString().split('\n').filter(Boolean).forEach(
-          line => console.error('[openclaw cli]', line)
-        )
+        $openclawAgentExitCode = code
+        if (err) {
+          $openclawAgentErrorMessage = err.toString()
+          $openclawAgentErrorMessage.split('\n').filter(Boolean).forEach(
+            line => console.error('[openclaw cli]', line)
+          )
+        }
         return new StreamEnd
       }
     })
@@ -175,20 +195,47 @@ function main(listen, apiToken, noAuth) {
       $openclawAgentOutput = msg?.body?.toString?.() || ''
       return new StreamEnd
     })
-    .onEnd(() => $openclawAgentOutput)
+    .onEnd(() => {
+      var durationMs = Date.now() - $openclawAgentStartTime
+      var success = $openclawAgentExitCode === 0 && !$openclawAgentErrorMessage
+      db.logCliCall($openclawAgentCmd[0], $openclawAgentCmd.slice(1), $openclawAgentOutput, $openclawAgentExitCode, success, durationMs, $openclawAgentErrorMessage)
+      $openclawAgentErrorMessage = ''
+      return $openclawAgentOutput
+    })
   )
 
   var $ztmVersionOutput
+  var $ztmVersionStartTime
+  var $ztmVersionExitCode = 0
+  var $ztmVersionErrorMessage = ''
   var ztmVersion = pipeline($=>$
-    .onStart(new Data)
-    .exec(() => ['ztm', 'version'], { stderr: true })
+    .onStart(() => { $ztmVersionStartTime = Date.now(); return new Data })
+    .exec(() => ['ztm', 'version'], {
+      stderr: true,
+      onExit: (code, err) => {
+        $ztmVersionExitCode = code
+        if (err) {
+          $ztmVersionErrorMessage = err.toString()
+          $ztmVersionErrorMessage.split('\n').filter(Boolean).forEach(
+            line => console.error('[openclaw cli]', line)
+          )
+        }
+        return new StreamEnd
+      }
+    })
     .replaceStreamStart(evt => [new MessageStart, evt])
     .replaceStreamEnd(() => new MessageEnd)
     .replaceMessage(msg => {
       $ztmVersionOutput = msg?.body?.toString?.() || ''
       return new StreamEnd
     })
-    .onEnd(() => $ztmVersionOutput)
+    .onEnd(() => {
+      var durationMs = Date.now() - $ztmVersionStartTime
+      var success = $ztmVersionExitCode === 0 && !$ztmVersionErrorMessage
+      db.logCliCall('ztm', ['version'], $ztmVersionOutput, $ztmVersionExitCode, success, durationMs, $ztmVersionErrorMessage)
+      $ztmVersionErrorMessage = ''
+      return $ztmVersionOutput
+    })
   )
 
   var routes = Object.entries({

@@ -5,13 +5,20 @@ import db from '../../../db.js'
 // Module-level static pipeline for running openclaw commands — must be defined at top level in Pipy
 var $openclawCmd
 var $openclawOutput
+var $openclawStartTime
+var $openclawExitCode = 0
+var $openclawErrorMessage = ''
 var openclawExec = pipeline($=>$
-  .onStart(cmd => { $openclawCmd = cmd; return new Data })
+  .onStart(cmd => { $openclawCmd = cmd; $openclawStartTime = Date.now(); return new Data })
   .exec(() => $openclawCmd, {
     onExit: (code, err) => {
-      if (err) err.toString().split('\n').filter(Boolean).forEach(
-        line => console.error('[openclaw]', line)
-      )
+      $openclawExitCode = code
+      if (err) {
+        $openclawErrorMessage = err.toString()
+        $openclawErrorMessage.split('\n').filter(Boolean).forEach(
+          line => console.error('[openclaw]', line)
+        )
+      }
       return new StreamEnd
     }
   })
@@ -21,7 +28,13 @@ var openclawExec = pipeline($=>$
     $openclawOutput = msg?.body?.toString?.() || ''
     return new StreamEnd
   })
-  .onEnd(() => $openclawOutput)
+  .onEnd(() => {
+    var durationMs = Date.now() - $openclawStartTime
+    var success = $openclawExitCode === 0 && !$openclawErrorMessage
+    db.logCliCall($openclawCmd[0], $openclawCmd.slice(1), $openclawOutput, $openclawExitCode, success, durationMs, $openclawErrorMessage)
+    $openclawErrorMessage = ''
+    return $openclawOutput
+  })
 )
 
 export default function ({ app, mesh, utils }) {
