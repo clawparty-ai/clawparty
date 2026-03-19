@@ -268,7 +268,9 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     if (!spawnOpenclaw) { console.info('[group auto-reply] skip: no spawnOpenclaw'); return }
     if (!chat.group) { console.info('[group auto-reply] skip: no chat.group'); return }
     var gcid = chat.gcid || ''
-    var text = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
+    var text = typeof msg.message === 'string' ? msg.message : (msg.message?.text || '')
+    // Skip auto-reply for image-only messages with no text
+    if (!text) { console.info('[group auto-reply] skip: empty text (possibly image-only)'); return }
     var senderField = msg.sender || ''
     // Derive the plain username from a possibly-tagged sender (gcid/username)
     var senderUsername = senderField.indexOf('/') !== -1 ? senderField.split('/')[1] : senderField
@@ -410,7 +412,9 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var peerConfig = getPeerConfig(chat.peer)
     if (!peerConfig.autoReply) return
     var agentName = peerConfig.autoReplyAgent || 'main'
-    var text = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
+    var text = typeof msg.message === 'string' ? msg.message : (msg.message?.text || '')
+    // Skip auto-reply for image-only messages with no text
+    if (!text) { console.info('[auto-reply] skip: empty text (possibly image-only)'); return }
     var sender = msg.sender
 
     // Run onReceive filters, adjust credit, get updated credit value
@@ -978,45 +982,59 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     })
   }
 
+  var dismissedGroupsCache = {}
+
   function groupDismissedKey(creator, group) {
     return 'group_dismissed:' + creator + ':' + group
   }
 
   function isGroupDismissed(creator, group) {
-    try { return !!db.getCache(groupDismissedKey(creator, group)) } catch { return false }
+    var key = groupDismissedKey(creator, group)
+    if (dismissedGroupsCache[key]) return true
+    try {
+      var val = !!db.getCache(key)
+      if (val) dismissedGroupsCache[key] = true
+      return val
+    } catch { return false }
   }
 
   function markGroupDismissed(creator, group) {
-    try { db.setCache(groupDismissedKey(creator, group), true) } catch {}
+    var key = groupDismissedKey(creator, group)
+    dismissedGroupsCache[key] = true
+    try {
+      db.setCache(key, true)
+      console.info('[group dismiss] marked dismissed:', creator, group)
+    } catch (e) {
+      console.error('[group dismiss] failed to persist dismissed flag:', creator, group, e?.toString?.() || e)
+    }
   }
 
   function delGroup(creator, group) {
     if (creator !== app.username) return Promise.resolve(false)
     var chat = findGroupChat(creator, group)
     if (!chat) return Promise.resolve(false)
+
+    // Mark dismissed and remove from memory FIRST (synchronously), before async mesh ops
+    var idx = chats.indexOf(chat)
+    if (idx >= 0) chats.splice(idx, 1)
+    markGroupDismissed(creator, group)
+    try {
+      db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
+        'group_delete', null, chat.members)
+    } catch {}
+
+    // Then try to clean up mesh filesystem (best-effort)
     var dirname = `/shared/${creator}/publish/groups/${creator}/${group}`
-    // Remove from mesh filesystem
-    return mesh.dir(dirname).then(files => {
-      return Promise.all(files.map(f => mesh.unlink(os.path.join(dirname, f))))
-    }).then(() => mesh.unlink(os.path.join(dirname, 'info.json'))).then(() => {
-      // Remove from in-memory list and mark dismissed in db
-      var idx = chats.indexOf(chat)
-      if (idx >= 0) chats.splice(idx, 1)
-      markGroupDismissed(creator, group)
-      try {
-        db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
-          'group_delete', null, chat.members)
-      } catch {}
-      return true
-    }).catch(() => {
-      // Even if unlink fails, remove from memory and mark dismissed
-      var idx = chats.indexOf(chat)
-      if (idx >= 0) chats.splice(idx, 1)
-      markGroupDismissed(creator, group)
-      try {
-        db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
-          'group_delete', null, chat.members)
-      } catch {}
+    var msgDir = os.path.join(dirname, 'messages')
+    // Delete message files inside messages/ subdirectory first
+    return mesh.dir(msgDir).then(function (msgFiles) {
+      return Promise.all((msgFiles || []).map(function (f) { return mesh.unlink(os.path.join(msgDir, f)) }))
+    }).catch(function () {}).then(function () {
+      // Then delete top-level files (info.json, messages/ dir itself, etc.)
+      return mesh.dir(dirname).then(function (files) {
+        return Promise.all((files || []).map(function (f) { return mesh.unlink(os.path.join(dirname, f)) }))
+      })
+    }).catch(function () {}).then(function () {
       return true
     })
   }

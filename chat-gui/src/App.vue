@@ -89,6 +89,7 @@
       :autoFocus="!isMobile"
       v-model="newMessage"
       @send="sendMessage"
+      @send-images="handleSendImages"
       @switchSession="(sessionId) => switchOpenclawSession(chats[activeChat], sessionId)"
       @deleteGroup="handleDeleteGroup"
       @leaveGroup="handleLeaveGroup"
@@ -427,6 +428,112 @@ const sendMessage = async () => {
   newMessage.value = ''
 }
 
+const handleSendImages = async (imageFiles) => {
+  if (!imageFiles || imageFiles.length === 0) return
+  if (activeChat.value === null) return
+  const chat = chats.value[activeChat.value]
+
+  if (chat.isOpenclaw) {
+    // Local openclaw agent: save pictures to agent workspace and show in chat
+    try {
+      const picturePaths = []
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i]
+        const fileName = file.name || ('img_' + Date.now() + '_' + i + '.png')
+        const arrayBuffer = await file.arrayBuffer()
+        const res = await openclawService.uploadPicture(chat.agentId, arrayBuffer, fileName)
+        const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+        if (data && data.name) {
+          picturePaths.push({ name: data.name, path: data.path, url: openclawService.getPictureUrl(chat.agentId, data.name) })
+        }
+      }
+      if (picturePaths.length === 0) return
+
+      // Display pictures in local chat
+      const now = new Date()
+      const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+      if (!chat.messages) chat.messages = []
+      chat.messages.push({
+        text: '',
+        files: picturePaths.map(p => ({ name: p.name, url: p.url })),
+        time: time,
+        sender: 'You',
+        timestamp: now.getTime(),
+        isSent: true
+      })
+
+      // Send the file paths as message to the agent
+      const pathList = picturePaths.map(p => p.path).join('\n')
+      const userText = newMessage.value.trim()
+      const agentMessage = userText
+        ? userText + '\n\n[图片已保存到以下路径]\n' + pathList
+        : '[图片已保存到以下路径]\n' + pathList
+
+      sending.value = true
+      newMessage.value = ''
+      setTimeout(() => {
+        chat.messages.push({ text: '', time: time, sender: chat.name, timestamp: now.getTime() + 1, isTyping: true })
+      }, 300)
+
+      openclawService.sendMessage(chat.agentId, agentMessage).then((resp) => {
+        const replyText = resp.data?.payloads?.[0]?.text || resp.data?.result?.payloads?.[0]?.text
+        const typingIndex = chat.messages.findIndex(m => m.isTyping)
+        if (typingIndex !== -1) chat.messages.splice(typingIndex, 1)
+        if (replyText) {
+          const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
+          chat.messages.push({ text: replyText, time: replyTime, sender: chat.name, timestamp: new Date().getTime() })
+          chat.lastMessage = replyText
+          chat.time = replyTime
+        }
+        sending.value = false
+      }).catch(() => {
+        const typingIndex = chat.messages.findIndex(m => m.isTyping)
+        if (typingIndex !== -1) chat.messages.splice(typingIndex, 1)
+        sending.value = false
+      })
+    } catch (error) {
+      console.error('Failed to send images to openclaw agent:', error)
+    }
+    return
+  }
+
+  // Mesh chat: upload to mesh filesystem
+  if (!currentMesh.value) return
+  try {
+    const uploadedFiles = []
+    for (let i = 0; i < imageFiles.length; i++) {
+      const file = imageFiles[i]
+      const arrayBuffer = await file.arrayBuffer()
+      const response = await chatService.uploadFile(currentMesh.value, arrayBuffer)
+      const hash = typeof response.data === 'string' ? response.data : ''
+      if (hash) {
+        uploadedFiles.push({
+          hash,
+          name: file.name || 'image',
+          type: file.type || 'image/png',
+          size: file.size || 0,
+          owner: currentMeshAgentUsername.value
+        })
+      }
+    }
+    if (uploadedFiles.length === 0) return
+
+    const text = newMessage.value.trim()
+    if (chat.isGroup) {
+      const groupParts = [currentMeshAgentUsername.value, chat.gcid].sort()
+      const groupSessionId = groupParts[0] + '~' + groupParts[1]
+      await chatService.sendGroupMessage(currentMesh.value, chat.creator, chat.groupId, text, groupSessionId, uploadedFiles)
+    } else {
+      const peerParts = [currentMeshAgentUsername.value, chat.name].sort()
+      const peerSessionId = peerParts[0] + '~' + peerParts[1]
+      await chatService.sendMessage(currentMesh.value, chat.name, text, peerSessionId, uploadedFiles)
+    }
+    newMessage.value = ''
+  } catch (error) {
+    console.error('Failed to send images:', error)
+  }
+}
+
 const switchMesh = async (meshName) => {
   currentMesh.value = meshName
   const mesh = meshes.value.find(m => m.name === meshName)
@@ -586,22 +693,28 @@ const handleDeleteGroup = async (chat) => {
   if (!confirm(`Delete group "${chat.name}"? This cannot be undone.`)) return
   try {
     await chatService.deleteGroup(currentMesh.value, chat.creator, chat.groupId)
-    await fetchChats()
-    activeChat.value = null
   } catch (error) {
     console.error('Failed to delete group:', error)
   }
+  // Remove from local list immediately regardless of API result
+  const idx = chats.value.indexOf(chat)
+  if (idx >= 0) chats.value.splice(idx, 1)
+  activeChat.value = null
+  await fetchChats()
 }
 
 const handleLeaveGroup = async (chat) => {
   if (!confirm(`Leave group "${chat.name}"?`)) return
   try {
     await chatService.leaveGroup(currentMesh.value, chat.creator, chat.groupId)
-    await fetchChats()
-    activeChat.value = null
   } catch (error) {
     console.error('Failed to leave group:', error)
   }
+  // Remove from local list immediately regardless of API result
+  const idx = chats.value.indexOf(chat)
+  if (idx >= 0) chats.value.splice(idx, 1)
+  activeChat.value = null
+  await fetchChats()
 }
 
 const joinParty = async (regUrl) => {
