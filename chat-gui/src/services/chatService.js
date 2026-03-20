@@ -213,6 +213,14 @@ export const chatService = {
   updatePeerConfig(meshName, peer, config) {
     return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${encodeURIComponent(peer)}/auto-reply`, config)
   },
+
+  halfAutomationRewrite(meshName, peer, draftText, humanHint, sessionId) {
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${encodeURIComponent(peer)}/half-rewrite`, {
+      draftText,
+      humanHint,
+      sessionId
+    })
+  },
 }
 
 export default api
