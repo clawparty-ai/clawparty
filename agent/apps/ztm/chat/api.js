@@ -40,7 +40,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   var chats = []
 
   function getPeerConfig(peer) {
-    return db.getChatPeer(mesh.name, peer) || { peer, autoReply: false, autoReplyAgent: 'main', credit: BASE_CREDIT, filterChain: '', sendFilterChain: '', isBlocked: false, run: 1, muted: false, thinkingTime: 3 }
+    return db.getChatPeer(mesh.name, peer) || { peer, autoReply: false, autoReplyAgent: 'main', credit: BASE_CREDIT, filterChain: '', sendFilterChain: '', isBlocked: false, run: 1, muted: false, thinkingTime: 3, halfAutomation: false }
   }
 
   function setPeerConfig(peer, config) {
@@ -428,6 +428,15 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     console.info('[openclaw cli]', cmd.join(' ').slice(0, 40))
     spawnOpenclaw(cmd).then(
       output => {
+        // Re-read config in case it changed while openclaw was running
+        var currentConfig = getPeerConfig(chat.peer)
+        
+        // If auto-reply was disabled while running, abort
+        if (!currentConfig.autoReply) {
+          console.info('[chat auto-reply] auto-reply disabled during execution, aborting for', chat.peer)
+          return
+        }
+        
         // Log full output to api_log, show abbreviated version in console
         try {
           var parsed = JSON.parse(output.split('\n').join(''))
@@ -448,8 +457,33 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         if (!replyText) replyText = output.split('\n').join('').trim()
         if (!replyText) return
 
+        // half automation: store reply for human review, do not send
+        if (currentConfig.halfAutomation) {
+          console.info('[chat auto-reply] half automation, storing draft for review:', chat.peer, ':', firstLine(replyText))
+          try {
+            // Store draft in chat messages with pending flag
+            var now = Date.now()
+            var draftMsg = {
+              time: now,
+              sender: app.username,
+              message: { text: replyText, agentName: agentName },
+              isHalfDraft: true,
+              sessionId: sessionId,
+              originalMessage: text,
+            }
+            chat.messages.push(draftMsg)
+            console.info('[chat auto-reply] half automation, draft stored successfully, NOT sending to', chat.peer)
+            // Also log to chat_log
+            db.logChat(mesh.name, 'peer', chat.peer, null, null, app.username, 'half_draft',
+              JSON.stringify({ text: replyText, agentName: agentName, originalMessage: text }), null, sessionId)
+          } catch (e) {
+            console.error('[chat auto-reply] half automation error:', e?.toString?.() || e)
+          }
+          return
+        }
+
         // muted: log the reply to chat_log but do not send to ztm chat
-        if (peerConfig.muted) {
+        if (currentConfig.muted) {
           console.info('[chat auto-reply] muted, logging reply without sending to', chat.peer, ':', firstLine(replyText))
           try {
             db.logChat(mesh.name, 'peer', chat.peer, null, null, app.username, 'message',
@@ -462,6 +496,12 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         onSend(chat.peer, replyText, credit).then(function (shouldSend) {
           if (!shouldSend) return
           new Timeout(thinkingTime).wait().then(function () {
+            // Re-check config one more time before sending
+            var finalConfig = getPeerConfig(chat.peer)
+            if (!finalConfig.autoReply || finalConfig.halfAutomation || finalConfig.muted) {
+              console.info('[chat auto-reply] config changed before send, aborting for', chat.peer)
+              return
+            }
             console.info('[chat auto-reply] reply to', chat.peer, ':', firstLine(replyText))
             addPeerMessage(chat.peer, { text: replyText, agentName: agentName }, sessionId)
           })
@@ -469,6 +509,42 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       },
       err => {
         console.error('[chat auto-reply] openclaw error:', err?.toString?.() || err)
+      }
+    )
+  }
+
+  function halfAutomationRewrite(peer, draftText, humanHint, sessionId) {
+    if (!spawnOpenclaw) return Promise.reject(new Error('openclaw not available'))
+    if (!peer) return Promise.reject(new Error('peer is required'))
+    var peerConfig = getPeerConfig(peer)
+    var agentName = peerConfig.autoReplyAgent || 'main'
+    
+    // Build message for agent: include original draft and human hint
+    var message = `I have drafted the following reply:\n\n${draftText}\n\nPlease rewrite it based on this guidance:\n\n${humanHint}`
+    
+    var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', message, '--session-id', sessionId, '--json', '--no-color']
+    
+    console.info('[half-automation rewrite]', cmd.join(' ').slice(0, 40))
+    return spawnOpenclaw(cmd).then(
+      output => {
+        try {
+          var parsed = JSON.parse(output.split('\n').join(''))
+          var brief = JSON.stringify(parsed).substring(0, 120) + ' ...'
+          console.info('[half-automation rewrite] openclaw output:', brief)
+          db.logApi('half-rewrite', cmd.join(' '), {}, message, {}, output)
+        } catch {
+          console.info('[half-automation rewrite] openclaw output:', output.substring(0, 120) + ' ...')
+          db.logApi('half-rewrite', cmd.join(' '), {}, message, {}, output)
+        }
+        var replyText
+        try {
+          var parsed = JSON.parse(output.split('\n').join(''))
+          replyText = parsed?.payloads?.[0]?.text ||
+                      parsed?.result?.payloads?.[0]?.text ||
+                      parsed?.message || parsed?.content || parsed?.text
+        } catch {}
+        if (!replyText) replyText = output.split('\n').join('').trim()
+        return replyText
       }
     )
   }
@@ -1186,5 +1262,6 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     allPeerConfigs,
     clearGroupEpRequestHint,
     clearPeerRequestHint,
+    halfAutomationRewrite,
   }
 }

@@ -246,6 +246,23 @@ export default function ({ app, mesh, utils }) {
       }),
     },
 
+    '/api/peers/{peer}/half-rewrite': {
+      'POST': responder((params, req) => {
+        var peer = URL.decodeComponent(params.peer)
+        var body
+        try { body = JSON.decode(req.body) } catch { body = {} }
+        var draftText = body.draftText || ''
+        var humanHint = body.humanHint || ''
+        var sessionId = body.sessionId || ''
+        if (!draftText) return Promise.resolve(response(400, JSON.stringify({ error: 'draftText required' })))
+        return api.halfAutomationRewrite(peer, draftText, humanHint, sessionId).then(
+          replyText => response(200, JSON.stringify({ text: replyText }))
+        ).catch(
+          e => response(500, JSON.stringify({ error: e?.toString?.() || 'rewrite failed' }))
+        )
+      }),
+    },
+
     '/api/auto-reply': {
       'GET': responder(() => Promise.resolve(response(200, api.allPeerConfigs()))),
     },

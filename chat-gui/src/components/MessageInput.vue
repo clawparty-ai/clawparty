@@ -95,6 +95,12 @@
             title="Auto Reply — 自动回复"
             @click="$emit('update:peerMode', 'auto')"
           >A</button>
+          <button
+            class="mode-btn"
+            :class="{ active: peerMode === 'half', 'mode-half': peerMode === 'half' }"
+            title="Half Automation — AI生成回复，人工审核后发送"
+            @click="$emit('update:peerMode', 'half')"
+          >H</button>
         </div>
         <button 
           class="toolbar-btn send-btn" 
@@ -557,6 +563,11 @@ const handleKeydown = (e) => {
 
 .mode-btn.active.mode-auto {
   background: #16a34a;
+  color: #fff;
+}
+
+.mode-btn.active.mode-half {
+  background: #8b5cf6;
   color: #fff;
 }
 

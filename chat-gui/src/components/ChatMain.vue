@@ -77,7 +77,20 @@
         </div>
       </div>
     </div>
+    <HalfAutomationInput
+      v-if="peerMode === 'half' && !chat.isOpenclaw"
+      ref="halfInputRef"
+      :meshName="meshName"
+      :peerName="chat.name"
+      :sessionId="currentSessionId"
+      :initialDraft="halfDraftText"
+      :currentMode="peerMode"
+      @send="handleHalfSend"
+      @draft-updated="handleDraftUpdated"
+      @update:peerMode="handlePeerModeChange"
+    />
     <MessageInput 
+      v-else
       :chatName="chat.name" 
       :loading="sending" 
       :modelValue="modelValue" 
@@ -103,6 +116,7 @@ import { ref, watch, nextTick, computed, onUnmounted, inject } from 'vue'
 import { marked } from 'marked'
 import ChatHeader from './ChatHeader.vue'
 import MessageInput from './MessageInput.vue'
+import HalfAutomationInput from './HalfAutomationInput.vue'
 import ConfigTable from './ConfigTable.vue'
 import { chatService } from '../services/chatService'
 import { getAvatarColor } from '../utils/avatar'
@@ -152,7 +166,10 @@ let pollTimer = null
 const openclawAgents = inject('openclawAgents', ref([]))
 const allGroupChats = inject('groupChats', ref([]))
 const resolveEpDisplayName = inject('resolveEpDisplayName', (u) => u)
-const peerMode = ref('')  // 'blocked' | 'muted' | 'manual' | 'auto' | ''
+const peerMode = ref('')  // 'blocked' | 'muted' | 'manual' | 'auto' | 'half'
+const halfInputRef = ref(null)
+const halfDraftText = ref('')
+const currentSessionId = ref('')
 
 defineExpose({})
 
@@ -748,15 +765,18 @@ const handleDownloadPdf = () => {
 
 const filteredMessages = computed(() => {
   const msgs = props.chat.messages || []
-  msgs.forEach((m) => {
+  return msgs.filter(m => {
+    // Filter out half automation drafts - they are shown in the HalfAutomationInput component
+    if (m.isHalfDraft) return false
+    // Process other messages
     if (!!m.text && m.text.indexOf(' GMT') >= 0) {
       m.text = m.text.split(/[^[]*] /).slice(1)[0]
     }
     if (!m.text) {
       m.text = '[Empty]'
     }
+    return true
   })
-  return msgs
 })
 
 const formatTime = (timestamp) => {
@@ -829,6 +849,7 @@ return {
       isGroupRequest: item.isGroupRequest || false,
       isGroupEpRequest: item.isGroupEpRequest || false,
       isPeerRequest: item.isPeerRequest || false,
+      isHalfDraft: item.isHalfDraft || false,
       gcid: item.gcid || '',
       peer: item.peer || '',
       agentName: item.agentName || '',
@@ -962,6 +983,7 @@ function derivePeerMode(cfg) {
   if (!cfg) return 'manual'
   if (cfg.isBlocked) return 'blocked'
   if (cfg.muted) return 'muted'
+  if (cfg.halfAutomation) return 'half'
   if (cfg.autoReply) return 'auto'
   return 'manual'
 }
@@ -988,18 +1010,108 @@ async function handlePeerModeChange(mode) {
   const key = getPeerKey()
   if (!key || !props.meshName) return
   const configMap = {
-    blocked: { isBlocked: true,  muted: false, autoReply: false },
-    muted:   { isBlocked: false, muted: true,  autoReply: true  },
-    manual:  { isBlocked: false, muted: false, autoReply: false },
-    auto:    { isBlocked: false, muted: false, autoReply: true  },
+    blocked: { isBlocked: true,  muted: false, autoReply: false, halfAutomation: false },
+    muted:   { isBlocked: false, muted: true,  autoReply: true,  halfAutomation: false },
+    manual:  { isBlocked: false, muted: false, autoReply: false, halfAutomation: false },
+    auto:    { isBlocked: false, muted: false, autoReply: true,  halfAutomation: false },
+    half:    { isBlocked: false, muted: false, autoReply: true,  halfAutomation: true },
   }
   try {
     await chatService.updatePeerConfig(props.meshName, key, configMap[mode])
     peerMode.value = mode
+    
+    // When switching to half mode, check for existing drafts
+    if (mode === 'half' && props.chat.messages) {
+      const halfDrafts = props.chat.messages.filter(m => m.isHalfDraft)
+      if (halfDrafts.length > 0) {
+        const latestDraft = halfDrafts[halfDrafts.length - 1]
+        if (latestDraft.text) {
+          halfDraftText.value = latestDraft.text
+          nextTick(() => {
+            if (halfInputRef.value) {
+              halfInputRef.value.setDraft(latestDraft.text)
+            }
+          })
+        }
+      }
+    }
   } catch (e) {
     console.error('Failed to update peer mode:', e)
   }
 }
+
+// ── half automation handlers ────────────────────────────────────────────────────
+
+async function handleHalfSend(text) {
+  if (!text.trim()) return
+  if (!props.meshName || !props.chat.name) return
+  
+  try {
+    const sessionId = makeSessionId(props.currentUserName, props.chat.name)
+    await chatService.sendMessage(props.meshName, props.chat.name, text, sessionId)
+    
+    // Add sent message to local messages
+    const now = new Date()
+    const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+    if (!props.chat.messages) props.chat.messages = []
+    props.chat.messages.push({
+      text: text,
+      time: time,
+      sender: props.currentUserName,
+      timestamp: now.getTime(),
+      isSent: true,
+      isTemp: true,
+    })
+    
+    // Clear the draft
+    halfDraftText.value = ''
+    if (halfInputRef.value) {
+      halfInputRef.value.setDraft('')
+    }
+    
+    // Remove the half draft messages
+    props.chat.messages = props.chat.messages.filter(m => !m.isHalfDraft)
+  } catch (e) {
+    console.error('Failed to send half automation message:', e)
+  }
+}
+
+function handleDraftUpdated(text) {
+  halfDraftText.value = text
+}
+
+function makeSessionId(peerA, peerB) {
+  return peerA < peerB ? peerA + '~' + peerB : peerB + '~' + peerA
+}
+
+// Watch for new half automation drafts in messages
+watch(() => props.chat.messages?.length, () => {
+  if (peerMode.value !== 'half') return
+  if (!props.chat.messages || props.chat.messages.length === 0) return
+  
+  // Find the latest half draft message
+  const halfDrafts = props.chat.messages.filter(m => m.isHalfDraft)
+  if (halfDrafts.length > 0) {
+    const latestDraft = halfDrafts[halfDrafts.length - 1]
+    // isHalfDraft messages have text directly in the message object, not in message.text
+    const draftText = latestDraft.text || latestDraft.message?.text || ''
+    if (draftText && draftText !== halfDraftText.value) {
+      halfDraftText.value = draftText
+      nextTick(() => {
+        if (halfInputRef.value) {
+          halfInputRef.value.setDraft(draftText)
+        }
+      })
+    }
+  }
+})
+
+// Update session ID when peer changes
+watch(() => props.chat.name, (name) => {
+  if (name && props.currentUserName) {
+    currentSessionId.value = makeSessionId(props.currentUserName, name)
+  }
+}, { immediate: true })
 
 // ── end peer mode ────────────────────────────────────────────────────────────────
 
