@@ -194,8 +194,7 @@ const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 
 }
 
 .session-select-wrapper {
-  display: flex;
-  align-items: center;
+  display: none;
 }
 
 .session-select {
