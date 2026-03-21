@@ -167,6 +167,7 @@ const openclawAgents = inject('openclawAgents', ref([]))
 const allGroupChats = inject('groupChats', ref([]))
 const resolveEpDisplayName = inject('resolveEpDisplayName', (u) => u)
 const peerMode = ref('')  // 'blocked' | 'muted' | 'manual' | 'auto' | 'half'
+const currentPeerConfig = ref(null)  // 存储当前 peer 的配置数据（含 autoReplyAgent）
 const halfInputRef = ref(null)
 const halfDraftText = ref('')
 const currentSessionId = ref('')
@@ -808,13 +809,21 @@ const openImagePreview = (url) => {
   window.open(url, '_blank')
 }
 
-const parseMessages = (data) => {
+const parseMessages = (data, autoReplyAgentName) => {
   return data.map(item => {
     // sender may be "gcid/username" for group chat messages; strip the gcid prefix for display
     const rawSender = item.sender || ''
     const displaySender = rawSender.indexOf('/') !== -1 ? rawSender.split('/')[1] : rawSender
     const isSent = displaySender === props.currentUserName
-    const senderDisplay = props.chat?.isGroup ? resolveEpDisplayName(displaySender) : displaySender
+    // Determine sender display name
+    let senderDisplay
+    if (props.chat?.isGroup) {
+      senderDisplay = resolveEpDisplayName(displaySender)
+    } else if (autoReplyAgentName) {
+      senderDisplay = displaySender + '/' + autoReplyAgentName
+    } else {
+      senderDisplay = displaySender
+    }
     // Resolve file URLs for image messages
     const rawFiles = item.message?.files || null
     const resolvedFiles = rawFiles && rawFiles.length > 0 && props.meshName
@@ -900,7 +909,8 @@ const fetchMessages = async () => {
     } else {
       response = await chatService.getMessages(props.meshName, props.chat.name)
     }
-    const messages = parseMessages(response.data || [])
+    const autoReplyAgentName = getAutoReplyAgentName()
+    const messages = parseMessages(response.data || [], autoReplyAgentName)
     props.chat.messages = messages
     scrollToBottom()
   } catch (error) {
@@ -926,7 +936,8 @@ const pollMessages = async () => {
       response = await chatService.getMessagesSince(props.meshName, props.chat.name, sinceTimestamp)
     }
     if (response.data?.length > 0) {
-      const newMessages = parseMessages(response.data)
+      const autoReplyAgentName = getAutoReplyAgentName()
+      const newMessages = parseMessages(response.data, autoReplyAgentName)
       newMessages.forEach(newMsg => {
         // Deduplicate by timestamp only — sender display names may change between polls
         const existingIndex = props.chat.messages.findIndex(m => 
@@ -996,13 +1007,27 @@ function getPeerKey() {
 
 async function loadPeerMode() {
   const key = getPeerKey()
-  if (!key || !props.meshName) { peerMode.value = ''; return }
+  if (!key || !props.meshName) { 
+    peerMode.value = ''
+    currentPeerConfig.value = null
+    return 
+  }
   try {
     const res = await chatService.getPeerConfig(props.meshName, key)
     peerMode.value = derivePeerMode(res.data)
+    currentPeerConfig.value = res.data  // 存储完整的 peerConfig 数据
   } catch {
     peerMode.value = 'manual'
+    currentPeerConfig.value = null
   }
+}
+
+// 获取当前 peer 使用的 auto_reply agent 的显示名称
+const getAutoReplyAgentName = () => {
+  if (!currentPeerConfig.value?.autoReplyAgent) return null
+  const agentId = currentPeerConfig.value.autoReplyAgent
+  const agent = openclawAgents.value.find(a => a.id === agentId)
+  return agent ? agent.name : agentId
 }
 
 async function handlePeerModeChange(mode) {
@@ -1115,9 +1140,9 @@ watch(() => props.chat.name, (name) => {
 
 // ── end peer mode ────────────────────────────────────────────────────────────────
 
-watch(() => props.chat.name, () => {
+watch(() => props.chat.name, async () => {
   if (props.chat.name) {
-    loadPeerMode()
+    await loadPeerMode()  // 先加载 peerConfig，确保 autoReplyAgentName 可用
     if (!props.chat.isOpenclaw) {
       fetchMessages().then(() => {
         startPolling()
