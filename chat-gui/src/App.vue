@@ -358,7 +358,8 @@ const sendMessage = async () => {
       }
 
       openclawService.sendMessage(chat.agentId, text).then((response)=>{
-        let replyText = response.data?.payloads?.[0]?.text || response.data?.result?.payloads?.[0]?.text;
+        const payloads = response.data?.payloads || response.data?.result?.payloads || [];
+        const replyText = payloads.map(p => p?.text).filter(Boolean).join('\n\n');
         
         const typingIndex = chat.messages.findIndex(m => m.isTyping)
         if (typingIndex !== -1) {
@@ -492,7 +493,8 @@ const handleSendImages = async (imageFiles) => {
       }, 300)
 
       openclawService.sendMessage(chat.agentId, agentMessage).then((resp) => {
-        const replyText = resp.data?.payloads?.[0]?.text || resp.data?.result?.payloads?.[0]?.text
+        const payloads = resp.data?.payloads || resp.data?.result?.payloads || [];
+        const replyText = payloads.map(p => p?.text).filter(Boolean).join('\n\n')
         const typingIndex = chat.messages.findIndex(m => m.isTyping)
         if (typingIndex !== -1) chat.messages.splice(typingIndex, 1)
         if (replyText) {
