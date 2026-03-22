@@ -817,10 +817,10 @@ const parseMessages = (data, autoReplyAgentName) => {
     const isSent = displaySender === props.currentUserName
     // Determine sender display name
     let senderDisplay
-    if (props.chat?.isGroup) {
+    if (autoReplyAgentName) {
+      senderDisplay = displaySender + "/" + autoReplyAgentName
+    } else if (props.chat?.isGroup) {
       senderDisplay = resolveEpDisplayName(displaySender)
-    } else if (autoReplyAgentName) {
-      senderDisplay = displaySender + '/' + autoReplyAgentName
     } else {
       senderDisplay = displaySender
     }
