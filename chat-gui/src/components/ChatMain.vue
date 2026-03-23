@@ -12,6 +12,7 @@
       @download="handleDownload"
       @download-md="handleDownloadMd"
       @download-pdf="handleDownloadPdf"
+      @reload="fetchMessages"
     />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
