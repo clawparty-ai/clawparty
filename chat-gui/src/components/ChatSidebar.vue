@@ -1250,6 +1250,8 @@ const handleCreateGroup = async () => {
     top: 0;
     left: 0;
     z-index: 100;
+    padding-top: env(safe-area-inset-top, 0);
+    background: var(--slack-aubergine);
   }
   .org-rail { 
     flex-direction: row; 

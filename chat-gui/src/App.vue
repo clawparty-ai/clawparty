@@ -53,8 +53,11 @@
           class="mobile-agent-item"
           @click="selectChat(getChatIndex(chat.id))"
         >
-          <div class="item-avatar">#</div>
+          <div class="item-avatar" >#</div>
           <span class="item-name">{{ chat.name }}</span>
+        </div>
+        <div v-if="!groupChats || groupChats.length === 0" class="mobile-empty">
+          No group chats yet
         </div>
       </div>
     </div>
@@ -68,7 +71,7 @@
           class="mobile-agent-item"
           @click="selectUser(user)"
         >
-          <div class="item-avatar">{{ user.name[0].toUpperCase() }}</div>
+          <div class="item-avatar" :style="{ background: getAvatarColor(user.username || user.name) }">{{ user.username[0].toUpperCase() }}</div>
           <span class="item-name">{{ user.name }}</span>
         </div>
         <div
@@ -77,7 +80,7 @@
           class="mobile-agent-item"
           @click="selectChat(getChatIndex(chat.id))"
         >
-          <div class="item-avatar">{{ chat.name[0].toUpperCase() }}</div>
+          <div class="item-avatar" :style="{ background: getAvatarColor(chat.name) }">{{ chat.name[0].toUpperCase() }}</div>
           <span class="item-name">{{ chat.name }}</span>
         </div>
       </div>
@@ -118,6 +121,7 @@ import ChatMain from './components/ChatMain.vue'
 import { meshService, chatService, openclawService, setApiToken, getApiToken } from './services/chatService'
 import ShellService from './services/ShellService'
 import { platform } from '@tauri-apps/plugin-os';
+import { getAvatarColor } from './utils/avatar'
 
 const shellService = new ShellService();
 const meshes = ref([])
@@ -688,11 +692,15 @@ const stopChatsPolling = () => {
 }
 
 onMounted(async () => {
-	await shellService.startPipy(()=>{});
 	if(window.__TAURI_OS_PLUGIN_INTERNALS__ && !!platform()){
+		const saved = getApiToken()
+		if (!saved) {
+			showTokenDialog.value = true
+		}
 		setTimeout(()=>{
 			initAuth()
 		},3000)
+		await shellService.startPipy(()=>{});
 	} else {
 		initAuth()
 	}
@@ -731,6 +739,7 @@ const initAuth = async () => {
 
   try {
     const ok = await verifyToken(saved)
+		
     if (ok) {
       showTokenDialog.value = false
       startApp()
@@ -874,17 +883,17 @@ const submitToken = async () => {
     position: relative;
     width: 100%;
     height: 100vh;
-    padding-top: 48px;
+    padding-top: calc(48px + env(safe-area-inset-top, 0));
     box-sizing: border-box;
   }
   
   .empty-state {
-    height: calc(100vh - 48px);
+    height: calc(100vh - 48px - env(safe-area-inset-top, 0));
   }
   
   .mobile-agents-view {
     position: absolute;
-    top: 48px;
+    top: calc(48px + env(safe-area-inset-top, 0));
     left: 0;
     right: 0;
     bottom: 0;
@@ -925,6 +934,7 @@ const submitToken = async () => {
     justify-content: center;
     margin-right: 12px;
     flex-shrink: 0;
+		color: #fff;
   }
   
   .mobile-agent-item .openclaw-avatar {
