@@ -42,7 +42,7 @@
           </div>
           <template v-else>
             <div class="message-header">
-              <span class="message-author">{{ isMessageSent(msg) ? (currentUserName || 'You') : (msg.sender || chat.name) }}</span>
+              <span class="message-author">{{ isMessageSent(msg) ? myDisplayNameWithAgent : (msg.sender || chat.name) }}</span>
               <span class="message-time">{{ msg.time }}</span>
             </div>
             <div class="message-bubble" :class="{ 'system-hint': msg.isSystemHint }">
@@ -172,6 +172,17 @@ const allPeerConfigs = ref([])  // 存储所有 peer 的配置数据
 const halfInputRef = ref(null)
 const halfDraftText = ref('')
 const currentSessionId = ref('')
+
+// 我的显示名，带 autoReplyAgent 名称后缀（如 "lord-argyll-8384/龙闺蜜"）
+const myDisplayNameWithAgent = computed(() => {
+  const myName = props.currentUserName || 'Me'
+  if (!currentPeerConfig.value?.autoReplyAgent || !openclawAgents.value?.length) {
+    return myName
+  }
+  const agent = openclawAgents.value.find(a => a.id === currentPeerConfig.value.autoReplyAgent)
+  const agentName = agent ? agent.name : currentPeerConfig.value.autoReplyAgent
+  return myName + '/' + agentName
+})
 
 defineExpose({})
 
@@ -409,7 +420,7 @@ const buildChatHtml = () => {
     .map(msg => {
       const isSent = isMessageSent(msg)
       const senderName = isSent
-        ? (props.currentUserName || 'Me')
+        ? myDisplayNameWithAgent.value
         : (msg.sender || chatName)
       const time = escapeHtml(msg.time || '')
       const isOpenclaw = props.chat.isOpenclaw && !isSent
@@ -705,7 +716,7 @@ const handleDownloadMd = () => {
     .forEach(msg => {
       const isSent = isMessageSent(msg)
       const senderName = isSent
-        ? (props.currentUserName || 'Me')
+        ? myDisplayNameWithAgent.value
         : (msg.sender || chatName)
       const time = msg.time || ''
       const text = msg.text || ''
@@ -817,21 +828,15 @@ const parseMessages = (data) => {
     const displaySender = rawSender.indexOf('/') !== -1 ? rawSender.split('/')[1] : rawSender
     const isSent = displaySender === props.currentUserName
     
-    // 查找发送者的 autoReplyAgent
-    const peerConfig = allPeerConfigs.value.find(p => p.peer === displaySender)
-    let agentName = null
-    if (peerConfig?.autoReplyAgent) {
-      const agent = openclawAgents.value.find(a => a.id === peerConfig.autoReplyAgent)
-      agentName = agent ? agent.name : peerConfig.autoReplyAgent
-    }
-    
     // Determine sender display name
     let senderDisplay
-    if (agentName) {
-      senderDisplay = displaySender + '/' + agentName
+    if (isSent) {
+      // 我的消息：显示 ep-name/autoReplyAgentName
+      senderDisplay = myDisplayNameWithAgent.value
     } else if (props.chat?.isGroup) {
       senderDisplay = resolveEpDisplayName(displaySender)
     } else {
+      // 对方的消息：直接用 peer 名称（来自左侧 peer list）
       senderDisplay = displaySender
     }
     // Resolve file URLs for image messages
