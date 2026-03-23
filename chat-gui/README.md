@@ -18,3 +18,8 @@ or
 ```sh
 yarn build
 ```
+
+### About macOS "can’t be opened" Error
+```sh
+sudo xattr -rd com.apple.quarantine /Applications/clawparty.app
+```

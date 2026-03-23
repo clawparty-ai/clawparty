@@ -11,3 +11,20 @@ android.md
 # dependencies
 /node_modules
 /dist
+# Logs
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+/src-tauri/agent
+/src-tauri/target

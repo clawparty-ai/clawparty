@@ -1,19 +1,37 @@
 {
-  "name": "chat-app",
+  "name": "clawparty",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build --emptyOutDir --outDir ../agent/gui",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "android-init": "tauri android init && cp -rf ./src-android/app ./src-tauri/gen/android",
+    "android-dev": "cp -rf ./src-android/app ./src-tauri/gen/android && tauri android dev",
+    "android-build": "vite build --emptyOutDir --outDir ../agent/gui && tauri android build",
+    "ios-init": "tauri ios init && cp -rf ./src-ios/apple ./src-tauri/gen",
+    "ios-dev": "cp -rf ./src-ios/apple ./src-tauri/gen && tauri ios dev",
+    "ios-build": "vite build --emptyOutDir --outDir ../agent/gui && cp -rf ./src-ios/apple ./src-tauri/gen && tauri ios build",
+    "build-ztm-macos": "../build.sh && cp -f ../bin/ztm ../chat-gui/src-tauri/bin/ztm-aarch64-apple-darwin",
+    "build-ztm-windows": "../build.cmd && copy ../bin/ztm.exe '../chat-gui/src-tauri/bin/ztm-x86_64-pc-windows-msvc.exe'",
+    "build-ztm-linux": "../build.sh && cp -f ../bin/ztm ../chat-gui/src-tauri/bin/ztm-x86_64-unknown-linux-gnu",
+    "build-ztm-android": "BUILD_ZTM_SHARED=1 ../build.sh && cp -f ../usr/local/lib/libztm.so ./src-android/app/src/main/assets/libztm.so && cp -f ../usr/local/lib/libc++_shared.so ./src-android/app/src/main/assets/libc++_shared.so",
+    "build-ztm-ios": "../build/IOS.sh && cp -Rf ../usr/local/lib/* ../chat-gui/src-ios/apple/Externals/arm64/release"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-os": "~2",
+    "@tauri-apps/plugin-shell": "2.3.4",
+		"@tauri-apps/plugin-http": "^2",
     "axios": "^1.13.6",
     "marked": "^17.0.3",
     "vue": "^3.4.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2",
     "@vitejs/plugin-vue": "^5.0.0",
     "vite": "^5.0.0"
   }

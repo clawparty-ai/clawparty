@@ -37,6 +37,10 @@
           <div class="item-avatar openclaw-avatar">{{ agent.emoji }}</div>
           <span class="item-name">{{ agent.name }}</span>
         </div>
+        <div v-if="!openclawAgents || openclawAgents.length === 0" class="mobile-empty">
+          <div>No local agents</div>
+          <div class="mobile-empty-hint">openclaw is not installed locally. You can still interact with remote openclaw agents via group chat.</div>
+        </div>
       </div>
     </div>
     <!-- Mobile groups list view -->
@@ -113,7 +117,10 @@ import { ref, onMounted, onUnmounted, provide, computed } from 'vue'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
 import { meshService, chatService, openclawService, setApiToken, getApiToken } from './services/chatService'
+import ShellService from './services/ShellService'
+import { platform } from '@tauri-apps/plugin-os';
 
+const shellService = new ShellService();
 const meshes = ref([])
 const openclawAgents = ref([])
 const openclawSessions = ref([])
@@ -138,6 +145,7 @@ let usersPollTimer = null
 const handleResize = () => {
   isMobile.value = window.innerWidth <= 768
 }
+
 
 window.addEventListener('resize', handleResize)
 
@@ -980,8 +988,15 @@ const stopChatsPolling = () => {
   }
 }
 
-onMounted(() => {
-  initAuth()
+onMounted(async () => {
+	await shellService.startPipy(()=>{});
+	if(window.__TAURI_OS_PLUGIN_INTERNALS__ && !!platform()){
+		setTimeout(()=>{
+			initAuth()
+		},3000)
+	} else {
+		initAuth()
+	}
 })
 
 onUnmounted(() => {
@@ -1222,6 +1237,19 @@ const submitToken = async () => {
     color: #fff;
     font-size: 15px;
     font-weight: 500;
+  }
+  
+  .mobile-empty {
+    padding: 32px 16px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 14px;
+  }
+  
+  .mobile-empty-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.35);
   }
 }
 </style>
