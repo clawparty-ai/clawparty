@@ -5,12 +5,14 @@
       :openclawSessions="openclawSessions"
       :currentUserName="currentUserName"
       :showBackButton="showBackButton"
-      @search="handleSearch"
       @switchSession="$emit('switchSession', $event)"
       @deleteGroup="$emit('deleteGroup', $event)"
       @leaveGroup="$emit('leaveGroup', $event)"
       @back="$emit('back')"
       @download="handleDownload"
+      @download-md="handleDownloadMd"
+      @download-pdf="handleDownloadPdf"
+      @reload="fetchMessages"
     />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
@@ -41,11 +43,28 @@
           </div>
           <template v-else>
             <div class="message-header">
-              <span class="message-author">{{ isMessageSent(msg) ? (currentUserName || 'You') : (msg.sender || chat.name) }}</span>
+              <span class="message-author">{{ isMessageSent(msg) ? myDisplayNameWithAgent : (msg.sender || chat.name) }}</span>
               <span class="message-time">{{ msg.time }}</span>
             </div>
             <div class="message-bubble" :class="{ 'system-hint': msg.isSystemHint }">
-              <div class="message-content" v-html="renderMarkdown(msg.text)"></div>
+              <ConfigTable v-if="msg.isConfigTable" :rows="msg.configRows" :meshName="msg.meshName || meshName" />
+              <template v-else>
+<div v-if="msg.files && msg.files.length > 0" class="message-images">
+  <div v-for="file in msg.files" :key="file.hash" class="attachment-item">
+    <img v-if="file.type && file.type.startsWith('image/')"
+         :src="file.url"
+         :alt="file.name || 'image'"
+         class="chat-image"
+         loading="lazy"
+         @click="openImagePreview(file.url)"
+    />
+    <span v-else class="file-text">
+      文件上传成功，保存在：{{ file.path }}
+    </span>
+  </div>
+</div>
+                <div v-if="msg.text" class="message-content" v-html="msg.isHtml ? msg.text : renderMarkdown(msg.text)"></div>
+              </template>
               <div v-if="msg.isGroupRequest || msg.isPeerRequest" class="group-request-actions">
                 <template v-if="(msg.isPeerRequest || msg.isGroupEpRequest) && msg.availableAgents && msg.availableAgents.length > 0">
                   <select v-model="msg.selectedAgent" class="agent-select">
@@ -59,19 +78,36 @@
         </div>
       </div>
     </div>
+    <HalfAutomationInput
+      v-if="peerMode === 'half' && !chat.isOpenclaw"
+      ref="halfInputRef"
+      :meshName="meshName"
+      :peerName="chat.name"
+      :sessionId="currentSessionId"
+      :initialDraft="halfDraftText"
+      :currentMode="peerMode"
+      @send="handleHalfSend"
+      @draft-updated="handleDraftUpdated"
+      @update:peerMode="handlePeerModeChange"
+    />
     <MessageInput 
+      v-else
       :chatName="chat.name" 
       :loading="sending" 
       :modelValue="modelValue" 
-      :agents="availableAgents"
-      :selectedAgent="selectedAgent"
       :isOpenclaw="chat.isOpenclaw"
+      :agentId="chat.agentId"
       :autoFocus="autoFocus"
       :members="chat.isGroup ? (chat.members || []).filter(m => m !== currentUserName) : []"
       :agentGroups="agentGroupChats"
+      :peerMode="peerMode"
+      :showPeerMode="!chat.isOpenclaw && !!chat.name"
       @update:modelValue="$emit('update:modelValue', $event)" 
-      @update:selectedAgent="$emit('update:selectedAgent', $event)"
-      @send="$emit('send')" 
+      @send="$emit('send')"
+      @send-images="$emit('send-images', $event)"
+      @send-files="$emit('send-files', $event)"
+      @hash-command="handleHashCommand"
+      @update:peerMode="handlePeerModeChange"
     />
   </main>
 </template>
@@ -81,6 +117,8 @@ import { ref, watch, nextTick, computed, onUnmounted, inject } from 'vue'
 import { marked } from 'marked'
 import ChatHeader from './ChatHeader.vue'
 import MessageInput from './MessageInput.vue'
+import HalfAutomationInput from './HalfAutomationInput.vue'
+import ConfigTable from './ConfigTable.vue'
 import { chatService } from '../services/chatService'
 import { getAvatarColor } from '../utils/avatar'
 
@@ -112,10 +150,6 @@ const props = defineProps({
   },
   	
   modelValue: String,
-  selectedAgent: {
-    type: String,
-    default: ''
-  },
   showBackButton: {
     type: Boolean,
     default: false
@@ -126,16 +160,212 @@ const props = defineProps({
   }
 })
 
-defineEmits(['send', 'update:modelValue', 'update:selectedAgent', 'switchSession', 'deleteGroup', 'leaveGroup', 'back'])
+defineEmits(['send', 'update:modelValue', 'switchSession', 'deleteGroup', 'leaveGroup', 'back', 'send-images', 'send-files'])
 
 const messagesContainer = ref(null)
 let pollTimer = null
-const searchQuery = ref('')
 const openclawAgents = inject('openclawAgents', ref([]))
 const allGroupChats = inject('groupChats', ref([]))
 const resolveEpDisplayName = inject('resolveEpDisplayName', (u) => u)
+const peerMode = ref('')  // 'blocked' | 'muted' | 'manual' | 'auto' | 'half'
+const currentPeerConfig = ref(null)  // 存储当前 peer 的配置数据（含 autoReplyAgent）
+const allPeerConfigs = ref([])  // 存储所有 peer 的配置数据
+const halfInputRef = ref(null)
+const halfDraftText = ref('')
+const currentSessionId = ref('')
+
+// 我的显示名，带 autoReplyAgent 名称后缀（如 "lord-argyll-8384/龙闺蜜"）
+const myDisplayNameWithAgent = computed(() => {
+  const myName = props.currentUserName || 'Me'
+  if (!currentPeerConfig.value?.autoReplyAgent || !openclawAgents.value?.length) {
+    return myName
+  }
+  const agent = openclawAgents.value.find(a => a.id === currentPeerConfig.value.autoReplyAgent)
+  const agentName = agent ? agent.name : currentPeerConfig.value.autoReplyAgent
+  return myName + '/' + agentName
+})
 
 defineExpose({})
+
+// ── # command handlers ───────────────────────────────────────────────────────────
+
+const FIELD_MAP = {
+  auto_reply: 'autoReply',
+  auto_reply_agent: 'autoReplyAgent',
+  peer_agent_name: 'peerAgentName',
+  credit: 'credit',
+  filter_chain: 'filterChain',
+  send_filter_chain: 'sendFilterChain',
+  is_blocked: 'isBlocked',
+  run: 'run',
+  muted: 'muted',
+  thinking_time: 'thinkingTime',
+  peer_profile: 'peerProfile',
+  short_context: 'shortContext',
+  long_context: 'longContext',
+  peer_name: 'peerName',
+}
+
+const PEER_CONFIG_TABLE_FIELDS = [
+  { key: 'peer',           header: 'peer' },
+  { key: 'peerName',       header: 'peer_name' },
+  { key: 'autoReply',      header: 'auto_reply' },
+  { key: 'autoReplyAgent', header: 'auto_reply_agent' },
+  { key: 'peerAgentName',  header: 'peer_agent_name' },
+  { key: 'credit',         header: 'credit' },
+  { key: 'isBlocked',      header: 'is_blocked' },
+  { key: 'run',            header: 'run' },
+  { key: 'muted',          header: 'muted' },
+  { key: 'thinkingTime',   header: 'thinking_time' },
+  { key: 'peerProfile',    header: 'peer_profile' },
+  { key: 'shortContext',   header: 'short_context' },
+  { key: 'longContext',    header: 'long_context' },
+]
+
+const LONG_TEXT_FIELDS = new Set(['peerProfile', 'shortContext', 'longContext'])
+
+function formatPeerConfigsTable(configs) {
+  if (!configs || configs.length === 0) return 'No peer configs found.'
+  const fields = PEER_CONFIG_TABLE_FIELDS
+  let html = '<table class="peer-config-table"><thead><tr>'
+  fields.forEach(f => { html += `<th>${f.header}</th>` })
+  html += '</tr></thead><tbody>'
+  configs.forEach(cfg => {
+    html += '<tr>'
+    fields.forEach(f => {
+      let val = cfg[f.key]
+      if (val === undefined || val === null) val = ''
+      if (typeof val === 'boolean') val = val ? 1 : 0
+      val = String(val)
+      if (LONG_TEXT_FIELDS.has(f.key) && val.length > 100) {
+        val = val.slice(0, 100) + '...'
+      }
+      const style = LONG_TEXT_FIELDS.has(f.key) ? ' style="max-width:20ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"' : ''
+      html += `<td${style}>${val}</td>`
+    })
+    html += '</tr>'
+  })
+  html += '</tbody></table>'
+  return html
+}
+
+function parseConfigValue(str) {
+  if (str === 'true') return true
+  if (str === 'false') return false
+  const n = Number(str)
+  if (!isNaN(n) && str !== '') return n
+  return str
+}
+
+function insertSystemMessage(text, options = {}) {
+  const now = new Date()
+  const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+  if (!props.chat.messages) props.chat.messages = []
+  props.chat.messages.push({
+    text,
+    time,
+    sender: 'system',
+    timestamp: now.getTime(),
+    isSystemHint: true,
+    isHtml: options.isHtml || false,
+    isTemp: false,
+  })
+}
+
+function insertConfigTableMessage(rows) {
+  const now = new Date()
+  const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+  if (!props.chat.messages) props.chat.messages = []
+  props.chat.messages.push({
+    text: '',
+    time,
+    sender: 'system',
+    timestamp: now.getTime(),
+    isSystemHint: true,
+    isConfigTable: true,
+    configRows: rows,
+    meshName: props.meshName,
+    isTemp: false,
+  })
+}
+
+const handleHashCommand = async (cmdString) => {
+  const trimmed = cmdString.trim()
+  
+  // Insert command echo
+  insertSystemMessage('> ' + trimmed)
+  
+  try {
+    // #list-all
+    if (trimmed === '#list') {
+      const res = await chatService.getAllPeerConfigs(props.meshName)
+      const data = Array.isArray(res.data) ? res.data : []
+      insertSystemMessage(formatPeerConfigsTable(data), { isHtml: true })
+      return
+    }
+    
+    // #config [agent] [peer]  — two args (second arg is not 'set')
+    const configTwoArgs = trimmed.match(/^#config\s+(\S+)\s+(\S+)$/)
+    if (configTwoArgs && configTwoArgs[2] !== 'set') {
+      const agentName = configTwoArgs[1]
+      const peerName = configTwoArgs[2]
+      const res = await chatService.getAllPeerConfigs(props.meshName)
+      const data = (Array.isArray(res.data) ? res.data : [])
+        .filter(c => c.autoReplyAgent === agentName && c.peer === peerName)
+      if (data.length) {
+        insertConfigTableMessage(data)
+      } else {
+        insertSystemMessage(`No config found for agent: ${agentName}, peer: ${peerName}`)
+      }
+      return
+    }
+
+    // #config [agent-name] — one arg: list all peers for this agent
+    const agentMatch = trimmed.match(/^#config\s+(\S+)$/)
+    if (agentMatch) {
+      const agentName = agentMatch[1]
+      const res = await chatService.getAllPeerConfigs(props.meshName)
+      const data = (Array.isArray(res.data) ? res.data : [])
+        .filter(c => c.autoReplyAgent === agentName)
+      if (data.length) {
+        insertConfigTableMessage(data)
+      } else {
+        insertSystemMessage(`No peers found for agent: ${agentName}`)
+      }
+      return
+    }
+
+    // #config [agent] set [peer] key=value
+    const configMatch = trimmed.match(/^#config\s+(\S+)\s+set\s+(\S+)\s+(\S+)=(.+)$/)
+    if (configMatch) {
+      const agentName = configMatch[1]
+      const peerName = configMatch[2]
+      const key = configMatch[3]
+      const rawValue = configMatch[4]
+      
+      const mappedKey = FIELD_MAP[key]
+      if (!mappedKey) {
+        insertSystemMessage(`Unknown field: ${key}`)
+        return
+      }
+      
+      const value = parseConfigValue(rawValue)
+      
+      // First update auto_reply_agent, then the target key
+      await chatService.updatePeerConfig(props.meshName, peerName, { autoReplyAgent: agentName })
+      await chatService.updatePeerConfig(props.meshName, peerName, { [mappedKey]: value })
+      
+      insertSystemMessage(`✓ Updated **${peerName}**: ${key} = ${rawValue}`)
+      return
+    }
+    
+    insertSystemMessage(`Unknown command. Available: \`#list\`, \`#config [agent]\`, \`#config [agent] [peer]\`, \`#config [agent] set [peer] key=value\``)
+  } catch (e) {
+    insertSystemMessage(`Error: ${e?.message || String(e)}`)
+  }
+}
+
+// ── end # command handlers ───────────────────────────────────────────────────────
 
 const availableAgents = computed(() => {
   const currentAgentId = props.chat.agentId
@@ -156,50 +386,411 @@ const currentDate = computed(() => {
   return now.toLocaleDateString('zh-CN', options)
 })
 
-const handleSearch = (query) => {
-  searchQuery.value = query
+
+
+const buildChatHtml = () => {
+  const messages = props.chat.messages || []
+  const chatName = props.chat.name || 'chat'
+  const exportTime = new Date().toLocaleString('zh-CN')
+
+  // Inline avatar color logic (mirrors avatar.js)
+  const avatarColors = [
+    '#e01e5a', '#2eb67d', '#ecb22e', '#1d9bd1', '#611f69',
+    '#36c5f0', '#f2c744', '#ff6b6b', '#4ecdc4', '#9b59b6',
+    '#e67e22', '#1abc9c',
+  ]
+  const getColor = (name) => {
+    if (!name) return avatarColors[0]
+    let hash = 0
+    for (let i = 0; i < name.length; i++) {
+      hash = name.charCodeAt(i) + ((hash << 5) - hash)
+    }
+    return avatarColors[Math.abs(hash) % avatarColors.length]
+  }
+
+  const escapeHtml = (str) => {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+  }
+
+  const msgRows = messages
+    .filter(msg => !msg.isTyping)
+    .map(msg => {
+      const isSent = isMessageSent(msg)
+      const senderName = isSent
+        ? myDisplayNameWithAgent.value
+        : (msg.sender || chatName)
+      const time = escapeHtml(msg.time || '')
+      const isOpenclaw = props.chat.isOpenclaw && !isSent
+      const emoji = props.chat.emoji || ''
+
+      // Avatar HTML
+      let avatarHtml
+      if (isOpenclaw) {
+        avatarHtml = `<div class="avatar-emoji">${escapeHtml(emoji)}</div>`
+      } else {
+        const color = getColor(senderName)
+        const initial = escapeHtml(senderName[0].toUpperCase())
+        avatarHtml = `<div class="avatar-placeholder" style="background:${color}">${initial}</div>`
+      }
+
+      // Message bubble content
+      const bubbleClass = msg.isSystemHint ? 'message-bubble system-hint' : 'message-bubble'
+      const renderedText = marked.parse(msg.text || '')
+
+      return `
+    <div class="message${isSent ? ' sent' : ''}">
+      <div class="message-avatar">${avatarHtml}</div>
+      <div class="message-body">
+        <div class="message-header">
+          <span class="message-author">${escapeHtml(senderName)}</span>
+          <span class="message-time">${time}</span>
+        </div>
+        <div class="${bubbleClass}">
+          <div class="message-content">${renderedText}</div>
+        </div>
+      </div>
+    </div>`
+    })
+    .join('\n')
+
+  const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(chatName)} - 聊天记录</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+        Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+      font-size: 15px;
+      background: #f8f8f8;
+      color: #1d1c1d;
+    }
+    .chat-header {
+      position: sticky;
+      top: 0;
+      background: #ffffff;
+      border-bottom: 1px solid rgba(0,0,0,0.07);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 10;
+    }
+    .chat-header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1d1c1d;
+    }
+    .chat-header .export-time {
+      font-size: 12px;
+      color: #616061;
+      margin-left: auto;
+    }
+    .messages {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 20px 16px 40px;
+    }
+    .date-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 16px 0;
+      color: #616061;
+      font-size: 12px;
+    }
+    .date-divider::before,
+    .date-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: rgba(0,0,0,0.1);
+    }
+    .message {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 4px 0;
+      margin-bottom: 4px;
+    }
+    .message.sent {
+      flex-direction: row-reverse;
+    }
+    .message-avatar {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+    }
+    .avatar-placeholder {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .avatar-emoji {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      background: rgba(0,0,0,0.04);
+    }
+    .message-body {
+      display: flex;
+      flex-direction: column;
+      max-width: 80%;
+    }
+    .message.sent .message-body {
+      align-items: flex-end;
+    }
+    .message-header {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .message.sent .message-header {
+      flex-direction: row-reverse;
+    }
+    .message-author {
+      font-size: 15px;
+      font-weight: 700;
+      color: #1d1c1d;
+    }
+    .message-time {
+      font-size: 11px;
+      color: #616061;
+    }
+    .message-bubble {
+      position: relative;
+      background: #f2f0f0;
+      border-radius: 12px;
+      padding: 11px 15px;
+      line-height: 1.4667;
+      word-break: break-word;
+    }
+    .message-bubble::before {
+      content: '';
+      position: absolute;
+      top: 12px;
+      left: -6px;
+      border: 6px solid transparent;
+      border-right-color: #f2f0f0;
+      border-left: none;
+    }
+    .message.sent .message-bubble {
+      background: #4a154b;
+      color: #ffffff;
+    }
+    .message.sent .message-bubble::before {
+      left: auto;
+      right: -6px;
+      border-right: none;
+      border-left: 6px solid #4a154b;
+      border-right-color: transparent;
+    }
+    .message-bubble.system-hint {
+      background: transparent;
+      border: none;
+      color: #333;
+      box-shadow: none;
+    }
+    .message-bubble.system-hint::before {
+      display: none;
+    }
+    /* Markdown content styles */
+    .message-content p { margin: 0 0 4px; }
+    .message-content p:last-child { margin-bottom: 0; }
+    .message-content code {
+      background: rgba(0,0,0,0.08);
+      border-radius: 3px;
+      padding: 1px 4px;
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 13px;
+    }
+    .message.sent .message-content code {
+      background: rgba(255,255,255,0.15);
+    }
+    .message-content pre {
+      background: rgba(0,0,0,0.05);
+      border-radius: 6px;
+      padding: 10px 12px;
+      overflow-x: auto;
+      margin: 6px 0;
+    }
+    .message-content pre code {
+      background: none;
+      padding: 0;
+    }
+    .message.sent .message-content pre {
+      background: rgba(255,255,255,0.1);
+    }
+    .message-content blockquote {
+      border-left: 3px solid #616061;
+      padding-left: 10px;
+      margin: 6px 0;
+      color: #616061;
+    }
+    .message.sent .message-content blockquote {
+      border-left-color: rgba(255,255,255,0.5);
+      color: rgba(255,255,255,0.75);
+    }
+    .message-content a {
+      color: #1d9bd1;
+    }
+    .message.sent .message-content a {
+      color: #a8d8ea;
+    }
+    .message-content ul, .message-content ol {
+      padding-left: 20px;
+      margin: 4px 0;
+    }
+    .message-content h1, .message-content h2, .message-content h3 {
+      margin: 6px 0 4px;
+    }
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #616061;
+      padding: 20px;
+      border-top: 1px solid rgba(0,0,0,0.07);
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-header">
+    <h1>${escapeHtml(chatName)}</h1>
+    <span class="export-time">导出于 ${escapeHtml(exportTime)}</span>
+  </div>
+  <div class="messages">
+    <div class="date-divider"><span>${escapeHtml(exportTime)}</span></div>
+    ${msgRows}
+  </div>
+  <div class="footer">— 聊天记录导出自 ClawParty —</div>
+</body>
+</html>`
+
+  return { html, chatName }
 }
 
 const handleDownload = () => {
-  const messages = props.chat.messages || []
-  const chatName = props.chat.name || 'chat'
-  const lines = messages
-    .filter(msg => !msg.isTyping)
-    .map(msg => {
-      const time = msg.time || ''
-      const sender = msg.sender || (msg.isSent ? (props.currentUserName || 'Me') : chatName)
-      const text = msg.text || ''
-      return `[${time}] ${sender}: ${text}`
-    })
-  const content = lines.join('\n')
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+  const { html, chatName } = buildChatHtml()
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${chatName}-chat-history.txt`
+  a.download = `${chatName}-chat-history.html`
   a.click()
   URL.revokeObjectURL(url)
 }
 
+const handleDownloadMd = () => {
+  const messages = props.chat.messages || []
+  const chatName = props.chat.name || 'chat'
+  const exportTime = new Date().toLocaleString('zh-CN')
+
+  const mdLines = [
+    `# ${chatName}`,
+    `> 导出于 ${exportTime}`,
+    '',
+    '---',
+    ''
+  ]
+
+  messages
+    .filter(msg => !msg.isTyping)
+    .forEach(msg => {
+      const isSent = isMessageSent(msg)
+      const senderName = isSent
+        ? myDisplayNameWithAgent.value
+        : (msg.sender || chatName)
+      const time = msg.time || ''
+      const text = msg.text || ''
+
+      const rendered = marked.parse(text)
+      const plainText = rendered
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+
+      mdLines.push(`**${senderName}** <${time}>`)
+      mdLines.push(plainText)
+      mdLines.push('')
+    })
+
+  mdLines.push('---')
+  mdLines.push(`*聊天记录导出自 ClawParty*`)
+
+  const md = mdLines.join('\n')
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${chatName}-chat-history.md`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+const handleDownloadPdf = () => {
+  const { html } = buildChatHtml()
+  // Inject @media print styles for better PDF output
+  const printHtml = html.replace('</style>', `
+    @media print {
+      body { background: #ffffff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .chat-header { position: static; }
+      .message-bubble { break-inside: avoid; }
+      .message { break-inside: avoid; }
+    }
+  </style>`)
+  const iframe = document.createElement('iframe')
+  iframe.style.position = 'fixed'
+  iframe.style.left = '-9999px'
+  iframe.style.top = '-9999px'
+  iframe.style.width = '0'
+  iframe.style.height = '0'
+  document.body.appendChild(iframe)
+  iframe.contentDocument.open()
+  iframe.contentDocument.write(printHtml)
+  iframe.contentDocument.close()
+  iframe.contentWindow.onafterprint = () => {
+    document.body.removeChild(iframe)
+  }
+  setTimeout(() => {
+    iframe.contentWindow.print()
+  }, 300)
+}
+
 const filteredMessages = computed(() => {
-	let msgs = [];
-  if (!searchQuery.value.trim()) {
-    msgs = props.chat.messages || []
-  } else {
-		const query = searchQuery.value.toLowerCase()
-		msgs = (props.chat.messages || []).filter(msg => 
-			msg.text && msg.text.toLowerCase().includes(query)
-		);
-	}
-	msgs.forEach((m)=>{
-		if(!!m.text && m.text.indexOf(' GMT')>=0){
-			m.text = m.text.split(/[^[]*] /).slice(1)[0]
-		}
-		if(!m.text){
-			m.text = '[Empty]'
-		}
-	})
-	return msgs
+  const msgs = props.chat.messages || []
+  return msgs.filter(m => {
+    // Filter out half automation drafts - they are shown in the HalfAutomationInput component
+    if (m.isHalfDraft) return false
+    // Process other messages
+    if (!!m.text && m.text.indexOf(' GMT') >= 0) {
+      m.text = m.text.split(/[^[]*] /).slice(1)[0]
+    }
+    if (!m.text) {
+      m.text = '[Empty]'
+    }
+    return true
+  })
 })
 
 const formatTime = (timestamp) => {
@@ -227,15 +818,54 @@ const isMessageSent = (msg) => {
   return msg.isSent || msg.sender === props.currentUserName
 }
 
+const openImagePreview = (url) => {
+  window.open(url, '_blank')
+}
+
 const parseMessages = (data) => {
   return data.map(item => {
     // sender may be "gcid/username" for group chat messages; strip the gcid prefix for display
     const rawSender = item.sender || ''
     const displaySender = rawSender.indexOf('/') !== -1 ? rawSender.split('/')[1] : rawSender
     const isSent = displaySender === props.currentUserName
-    const senderDisplay = props.chat?.isGroup ? resolveEpDisplayName(displaySender) : displaySender
+    
+    // Determine sender display name
+    let senderDisplay
+    if (isSent) {
+      // 我的消息：显示 ep-name/autoReplyAgentName
+      senderDisplay = myDisplayNameWithAgent.value
+    } else if (props.chat?.isGroup) {
+      senderDisplay = resolveEpDisplayName(displaySender)
+    } else {
+      // 对方的消息：直接用 peer 名称（来自左侧 peer list）
+      senderDisplay = displaySender
+    }
+    // Resolve file URLs for image messages
+    const rawFiles = item.message?.files || null
+    const resolvedFiles = rawFiles && rawFiles.length > 0 && props.meshName
+      ? rawFiles.map(f => {
+          var url = ''
+          var owner = f.owner || ''
+          var hash = f.hash || ''
+          if (owner && owner.indexOf('~') !== -1 && hash) {
+            url = chatService.getFileFromSessionUrl(props.meshName, owner, hash)
+          } else if (owner && hash) {
+            url = chatService.getFileUrl(props.meshName, owner, hash)
+          }
+return {
+  hash: hash,
+  name: f.name || '',
+  path: f.path || '',
+  type: f.type || '',
+  size: f.size || 0,
+  owner: owner,
+  url: url
+}
+        })
+      : null
     return {
       text: item.message?.text || '',
+      files: resolvedFiles,
       time: formatTime(item.time),
       sender: senderDisplay,
       isSent,
@@ -244,6 +874,7 @@ const parseMessages = (data) => {
       isGroupRequest: item.isGroupRequest || false,
       isGroupEpRequest: item.isGroupEpRequest || false,
       isPeerRequest: item.isPeerRequest || false,
+      isHalfDraft: item.isHalfDraft || false,
       gcid: item.gcid || '',
       peer: item.peer || '',
       agentName: item.agentName || '',
@@ -284,6 +915,7 @@ const approveGroupRequest = async (msg) => {
 }
 
 const fetchMessages = async () => {
+  if (props.chat.isOpenclaw) return
   if (!props.meshName || !props.chat.name) return
   
   try {
@@ -306,6 +938,7 @@ const fetchMessages = async () => {
 }
 
 const pollMessages = async () => {
+  if (props.chat.isOpenclaw) return
   if (!props.meshName || !props.chat.name) return
   
   const sinceTimestamp = Date.now() - (30 * 1000)
@@ -320,15 +953,24 @@ const pollMessages = async () => {
     if (response.data?.length > 0) {
       const newMessages = parseMessages(response.data)
       newMessages.forEach(newMsg => {
+        // Deduplicate by timestamp only — sender display names may change between polls
         const existingIndex = props.chat.messages.findIndex(m => 
-          m.sender === newMsg.sender && m.text === newMsg.text
+          !m.isTemp && m.timestamp === newMsg.timestamp
         )
         if (existingIndex !== -1) {
-          if (props.chat.messages[existingIndex].isTemp) {
-            props.chat.messages[existingIndex] = newMsg
-          }
+          // Already have this message (from a previous poll), skip
         } else {
-          props.chat.messages.push(newMsg)
+          // Check if there's a temp message with matching content
+          const fileHashes = JSON.stringify(newMsg.files?.map(f => f.hash) || [])
+          const tempIndex = props.chat.messages.findIndex(m =>
+            m.isTemp && m.text === newMsg.text &&
+            JSON.stringify(m.files?.map(f => f.hash) || []) === fileHashes
+          )
+          if (tempIndex !== -1) {
+            props.chat.messages[tempIndex] = newMsg
+          } else {
+            props.chat.messages.push(newMsg)
+          }
         }
       })
       // scrollToBottom()
@@ -360,11 +1002,164 @@ const scrollToBottom = () => {
   })
 }
 
-watch(() => props.chat.name, () => {
-  if (props.chat.name) {
-    fetchMessages().then(() => {
-      startPolling()
+// ── peer mode (P/N/M/A buttons) ─────────────────────────────────────────────────
+
+function derivePeerMode(cfg) {
+  if (!cfg) return 'manual'
+  if (cfg.isBlocked) return 'blocked'
+  if (cfg.muted) return 'muted'
+  if (cfg.halfAutomation) return 'half'
+  if (cfg.autoReply) return 'auto'
+  return 'manual'
+}
+
+function getPeerKey() {
+  if (!props.chat || props.chat.isOpenclaw) return null
+  if (props.chat.isGroup) return props.chat.gcid || null
+  return props.chat.name || null
+}
+
+async function loadPeerMode() {
+  const key = getPeerKey()
+  if (!key || !props.meshName) { 
+    peerMode.value = ''
+    currentPeerConfig.value = null
+    allPeerConfigs.value = []
+    return 
+  }
+  try {
+    const res = await chatService.getPeerConfig(props.meshName, key)
+    peerMode.value = derivePeerMode(res.data)
+    currentPeerConfig.value = res.data  // 存储完整的 peerConfig 数据
+    
+    // 获取所有 peer 配置，用于消息发送者名称显示
+    const allRes = await chatService.getAllPeerConfigs(props.meshName)
+    allPeerConfigs.value = Array.isArray(allRes.data) ? allRes.data : []
+  } catch {
+    peerMode.value = 'manual'
+    currentPeerConfig.value = null
+    allPeerConfigs.value = []
+  }
+}
+
+async function handlePeerModeChange(mode) {
+  if (mode === peerMode.value) return
+  const key = getPeerKey()
+  if (!key || !props.meshName) return
+  const configMap = {
+    blocked: { isBlocked: true,  muted: false, autoReply: false, halfAutomation: false },
+    muted:   { isBlocked: false, muted: true,  autoReply: true,  halfAutomation: false },
+    manual:  { isBlocked: false, muted: false, autoReply: false, halfAutomation: false },
+    auto:    { isBlocked: false, muted: false, autoReply: true,  halfAutomation: false },
+    half:    { isBlocked: false, muted: false, autoReply: true,  halfAutomation: true },
+  }
+  try {
+    await chatService.updatePeerConfig(props.meshName, key, configMap[mode])
+    peerMode.value = mode
+    
+    // When switching to half mode, check for existing drafts
+    if (mode === 'half' && props.chat.messages) {
+      const halfDrafts = props.chat.messages.filter(m => m.isHalfDraft)
+      if (halfDrafts.length > 0) {
+        const latestDraft = halfDrafts[halfDrafts.length - 1]
+        if (latestDraft.text) {
+          halfDraftText.value = latestDraft.text
+          nextTick(() => {
+            if (halfInputRef.value) {
+              halfInputRef.value.setDraft(latestDraft.text)
+            }
+          })
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Failed to update peer mode:', e)
+  }
+}
+
+// ── half automation handlers ────────────────────────────────────────────────────
+
+async function handleHalfSend(text) {
+  if (!text.trim()) return
+  if (!props.meshName || !props.chat.name) return
+  
+  try {
+    const sessionId = makeSessionId(props.currentUserName, props.chat.name)
+    await chatService.sendMessage(props.meshName, props.chat.name, text, sessionId)
+    
+    // Add sent message to local messages
+    const now = new Date()
+    const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+    if (!props.chat.messages) props.chat.messages = []
+    props.chat.messages.push({
+      text: text,
+      time: time,
+      sender: props.currentUserName,
+      timestamp: now.getTime(),
+      isSent: true,
+      isTemp: true,
     })
+    
+    // Clear the draft
+    halfDraftText.value = ''
+    if (halfInputRef.value) {
+      halfInputRef.value.setDraft('')
+    }
+    
+    // Remove the half draft messages
+    props.chat.messages = props.chat.messages.filter(m => !m.isHalfDraft)
+  } catch (e) {
+    console.error('Failed to send half automation message:', e)
+  }
+}
+
+function handleDraftUpdated(text) {
+  halfDraftText.value = text
+}
+
+function makeSessionId(peerA, peerB) {
+  return peerA < peerB ? peerA + '~' + peerB : peerB + '~' + peerA
+}
+
+// Watch for new half automation drafts in messages
+watch(() => props.chat.messages?.length, () => {
+  if (peerMode.value !== 'half') return
+  if (!props.chat.messages || props.chat.messages.length === 0) return
+  
+  // Find the latest half draft message
+  const halfDrafts = props.chat.messages.filter(m => m.isHalfDraft)
+  if (halfDrafts.length > 0) {
+    const latestDraft = halfDrafts[halfDrafts.length - 1]
+    // isHalfDraft messages have text directly in the message object, not in message.text
+    const draftText = latestDraft.text || latestDraft.message?.text || ''
+    if (draftText && draftText !== halfDraftText.value) {
+      halfDraftText.value = draftText
+      nextTick(() => {
+        if (halfInputRef.value) {
+          halfInputRef.value.setDraft(draftText)
+        }
+      })
+    }
+  }
+})
+
+// Update session ID when peer changes
+watch(() => props.chat.name, (name) => {
+  if (name && props.currentUserName) {
+    currentSessionId.value = makeSessionId(props.currentUserName, name)
+  }
+}, { immediate: true })
+
+// ── end peer mode ────────────────────────────────────────────────────────────────
+
+watch(() => props.chat.name, async () => {
+  if (props.chat.name) {
+    await loadPeerMode()  // 先加载 peerConfig，确保 autoReplyAgentName 可用
+    if (!props.chat.isOpenclaw) {
+      fetchMessages().then(() => {
+        startPolling()
+      })
+    }
   }
 }, { immediate: true })
 
@@ -517,14 +1312,22 @@ onUnmounted(() => {
   border-radius: 12px;
   padding: 11px 15px;
   position: relative;
-  max-width: 600px;
+  max-width: 80%;
   width: fit-content;
 }
 
 .message-bubble.system-hint {
-  background: #2a2a40;
-  border: 1px solid #4a4a6a;
-  color: #c8c8e8;
+  background: transparent;
+  border: none;
+  color: #333;
+  box-shadow: none;
+  padding: 0;
+  max-width: none;
+  width: auto;
+}
+
+.message-bubble.system-hint::before {
+  display: none;
 }
 
 .group-request-actions {
@@ -581,11 +1384,80 @@ onUnmounted(() => {
   border-left-color: #f2f0f0;
 }
 
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.chat-image {
+  max-width: 320px;
+  max-height: 240px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 320px;
+}
+
+.file-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  padding: 8px 0;
+  word-break: break-all;
+  background: var(--bg-hover);
+  border-radius: 4px;
+  padding: 6px 10px;
+  flex-grow: 1;
+}
+
+.chat-image {
+  max-width: 320px;
+  max-height: 240px;
+  border-radius: 8px;
+  cursor: pointer;
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.chat-image:hover {
+  opacity: 0.85;
+}
+
 .message-content {
   color: var(--text-primary);
   font-size: 15px;
   line-height: 1.4667;
   word-wrap: break-word;
+}
+
+.message-content :deep(table.peer-config-table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.message-content :deep(table.peer-config-table th),
+.message-content :deep(table.peer-config-table td) {
+  border: 1px solid #999;
+  padding: 4px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.message-content :deep(table.peer-config-table th) {
+  background: #e0e0e0;
+  font-weight: 600;
+}
+
+.message-content :deep(table.peer-config-table tr:nth-child(even) td) {
+  background: #f5f5f5;
 }
 
 .message.sent .message-content {

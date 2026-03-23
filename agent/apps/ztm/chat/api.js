@@ -1,6 +1,16 @@
 // Default filter chain applied to every peer (comma-separated filter names)
 var DEFAULT_FILTER_CHAIN = 'repeat-message,blocked-keywords'
 
+function firstLine(text) {
+  if (typeof text !== 'string') return text
+  var idx = text.indexOf('\n')
+  return idx === -1 ? text : text.slice(0, idx) + '...'
+}
+
+function makeSessionId(peerA, peerB) {
+  return peerA < peerB ? peerA + '~' + peerB : peerB + '~' + peerA
+}
+
 // Default onSend filter chain (comma-separated filter names)
 var DEFAULT_SEND_FILTER_CHAIN = 'credit-delay,suppress-json'
 
@@ -30,7 +40,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   var chats = []
 
   function getPeerConfig(peer) {
-    return db.getChatPeer(mesh.name, peer) || { peer, autoReply: false, autoReplyAgent: 'main', credit: BASE_CREDIT, filterChain: '', sendFilterChain: '' }
+    return db.getChatPeer(mesh.name, peer) || { peer, autoReply: false, autoReplyAgent: 'main', credit: BASE_CREDIT, filterChain: '', sendFilterChain: '', isBlocked: false, run: 1, muted: false, thinkingTime: 3, halfAutomation: false }
   }
 
   function setPeerConfig(peer, config) {
@@ -175,6 +185,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         console.log('[getLocalAgentNames] Returning fresh array:', fresh)
         return Promise.resolve(fresh)
       }
+
       console.log('[getLocalAgentNames] ids is not array-like, checking if array:', Array.isArray(ids))
       if (Array.isArray(ids)) {
         console.log('[getLocalAgentNames] Converting array, ids =', ids)
@@ -272,12 +283,38 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     if (!spawnOpenclaw) { console.info('[group auto-reply] skip: no spawnOpenclaw'); return }
     if (!chat.group) { console.info('[group auto-reply] skip: no chat.group'); return }
     var gcid = chat.gcid || ''
-    var text = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
+    var text = typeof msg.message === 'string' ? msg.message : (msg.message?.text || '')
+    // Skip auto-reply for image-only messages with no text
+    if (!text) { console.info('[group auto-reply] skip: empty text (possibly image-only)'); return }
     var senderField = msg.sender || ''
     // Derive the plain username from a possibly-tagged sender (gcid/username)
     var senderUsername = senderField.indexOf('/') !== -1 ? senderField.split('/')[1] : senderField
 
-    console.info('[group auto-reply] triggered | gcid:', gcid, 'members:', JSON.stringify(chat.members), 'sender:', senderUsername, 'self:', app.username)
+    // ── Parse @ mentions ──
+    var mentionedMembers = []
+    text.split(' ').forEach(function (token) {
+      if (token.length > 1 && token.charAt(0) === '@') {
+        mentionedMembers.push(token.substring(1))
+      }
+    })
+    var hasMentions = mentionedMembers.length > 0
+
+    // Clean message text: remove all @name tokens and trim
+    var cleanedText = hasMentions
+      ? text.split(' ').filter(function (token) { return !(token.length > 1 && token.charAt(0) === '@') }).join(' ').trim()
+      : text
+    var groupName = chat.name || chat.group
+
+    // Build rewritten message for the openclaw agent CLI
+    function buildAgentMessage(isMentioned) {
+      if (isMentioned) {
+        return '在group chat ' + groupName + '里，' + senderUsername + ' 给你发送了信息，给他回复一下，发送的内容是"' + cleanedText + '"'
+      } else {
+        return '在group chat ' + groupName + '里，' + senderUsername + ' 说话了看看如何回复，说的内容是"' + text + '"'
+      }
+    }
+
+    console.info('[group auto-reply] triggered | gcid:', gcid, 'members:', JSON.stringify(chat.members), 'sender:', senderUsername, 'self:', app.username, 'mentions:', JSON.stringify(mentionedMembers))
     getLocalAgentNames().then(function (localAgents) {
       console.log('[group auto-reply] localAgents =', localAgents)
       // ── 1. Trigger local openclaw agents that are members of this group ──
@@ -286,9 +323,15 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         if (member === app.username) return     // skip self (handled below)
         if (localAgents.indexOf(member) === -1) return  // skip remote EP members
 
-        // Local openclaw agent: always auto-reply
-        var sessionId = gcid + '~' + member
-        var cmd = ['openclaw', 'agent', '--agent', member, '--message', text, '--session-id', sessionId, '--json']
+        // @ filter: if mentions exist, only trigger mentioned members
+        if (hasMentions && mentionedMembers.indexOf(member) === -1) return
+
+        // Build the rewritten message for this agent
+        var agentMsg = buildAgentMessage(hasMentions && mentionedMembers.indexOf(member) !== -1)
+
+        // Local openclaw agent: auto-reply
+        var sessionId = gcid
+        var cmd = ['openclaw', 'agent', '--agent', member, '--message', agentMsg, '--session-id', sessionId, '--json', '--no-color']
         console.info('[group auto-reply] calling local agent', member, 'for group', gcid || chat.group)
         spawnOpenclaw(cmd).then(
           function (output) {
@@ -301,8 +344,21 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             } catch {}
             if (!replyText) replyText = output.split('\n').join('').trim()
             if (!replyText) return
-            console.info('[group auto-reply] agent', member, 'reply to group', gcid || chat.group, ':', replyText)
-            addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: member }, true)
+            // muted: log the reply but do not send to ztm chat
+            var gcidCfg = gcid ? db.getChatPeer(mesh.name, gcid) : null
+            if (gcidCfg && gcidCfg.muted) {
+              console.info('[group auto-reply] muted, logging reply without sending for agent', member, 'in group', gcid || chat.group)
+              try {
+                db.logChat(mesh.name, 'group', chat.group, chat.name, chat.creator, member, 'message',
+                  JSON.stringify({ text: replyText, agentName: member }), null, sessionId, true)
+              } catch {}
+              return
+            }
+            var thinkingTime1 = getPeerConfig(sessionId).thinkingTime || 3
+            new Timeout(thinkingTime1).wait().then(function () {
+              console.info('[group auto-reply] agent', member, 'reply to group', gcid || chat.group, ':', firstLine(replyText))
+              addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: member }, true, sessionId)
+            })
           },
           function (err) {
             console.error('[group auto-reply] openclaw error for agent', member, ':', err?.toString?.() || err)
@@ -315,6 +371,8 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       if (senderUsername === app.username) return
       if (localAgents.indexOf(senderUsername) !== -1) return
       if (!gcid) return
+      // @ filter: if mentions exist and self is not mentioned, skip EP-level auto-reply
+      if (hasMentions && mentionedMembers.indexOf(app.username) === -1) return
       var peerConfig = getPeerConfig(gcid)
       if (!peerConfig.autoReply) {
         // Show approve hint in this group's message flow so the user can enable auto-reply
@@ -322,9 +380,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         return
       }
       var agentName = peerConfig.autoReplyAgent || 'main'
-      var credit = onReceive(gcid, senderUsername, text)
-      var sessionId = gcid + '~' + app.username
-      var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--session-id', sessionId, '--json']
+      var agentMsg2 = buildAgentMessage(hasMentions && mentionedMembers.indexOf(app.username) !== -1)
+      var credit = onReceive(gcid, senderUsername, agentMsg2)
+      var sessionId = gcid
+      var thinkingTime2 = peerConfig.thinkingTime !== undefined ? peerConfig.thinkingTime : 3
+      var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', agentMsg2, '--session-id', sessionId, '--json', '--no-color']
       console.info('[group auto-reply] calling agent', agentName, 'for self in group', gcid)
       spawnOpenclaw(cmd).then(
         function (output) {
@@ -337,11 +397,22 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
           } catch {}
           if (!replyText) replyText = output.split('\n').join('').trim()
           if (!replyText) return
+          // muted: log the reply but do not send to ztm chat
+          if (peerConfig.muted) {
+            console.info('[group auto-reply] muted, logging reply without sending for self in group', gcid)
+            try {
+              db.logChat(mesh.name, 'group', chat.group, chat.name, chat.creator, app.username, 'message',
+                JSON.stringify({ text: replyText, agentName: agentName }), null, sessionId, true)
+            } catch {}
+            return
+          }
           onSend(gcid, replyText, credit).then(function (shouldSend) {
             if (!shouldSend) return
-            console.info('[group auto-reply] self reply to group', gcid, 'via agent', agentName, ':', replyText)
-            // Use app.username as sender so the EP's own name appears in the group chat
-            addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: app.username }, true)
+            new Timeout(thinkingTime2).wait().then(function () {
+              console.info('[group auto-reply] self reply to group', gcid, 'via agent', agentName, ':', firstLine(replyText))
+              // Use app.username as sender so the EP's own name appears in the group chat
+              addGroupMessage(chat.creator, chat.group, { text: replyText, agentName: app.username }, true, sessionId)
+            })
           })
         },
         function (err) {
@@ -357,19 +428,31 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var peerConfig = getPeerConfig(chat.peer)
     if (!peerConfig.autoReply) return
     var agentName = peerConfig.autoReplyAgent || 'main'
-    var text = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
+    var text = typeof msg.message === 'string' ? msg.message : (msg.message?.text || '')
+    // Skip auto-reply for image-only messages with no text
+    if (!text) { console.info('[auto-reply] skip: empty text (possibly image-only)'); return }
     var sender = msg.sender
 
     // Run onReceive filters, adjust credit, get updated credit value
     var credit = onReceive(chat.peer, sender, text)
     console.info('[chat auto-reply] credit after onReceive:', credit)
 
-    var sessionId = chat.peer + '~' + app.username
-    var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--session-id', sessionId, '--json']
+    var sessionId = makeSessionId(app.username, chat.peer)
+    var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--session-id', sessionId, '--json', '--no-color']
+    var thinkingTime = peerConfig.thinkingTime !== undefined ? peerConfig.thinkingTime : 3
 
-    console.info('[chat auto-reply] calling openclaw:', cmd.join(' '))
+    console.info('[openclaw cli]', cmd.join(' ').slice(0, 40))
     spawnOpenclaw(cmd).then(
       output => {
+        // Re-read config in case it changed while openclaw was running
+        var currentConfig = getPeerConfig(chat.peer)
+        
+        // If auto-reply was disabled while running, abort
+        if (!currentConfig.autoReply) {
+          console.info('[chat auto-reply] auto-reply disabled during execution, aborting for', chat.peer)
+          return
+        }
+        
         // Log full output to api_log, show abbreviated version in console
         try {
           var parsed = JSON.parse(output.split('\n').join(''))
@@ -390,15 +473,94 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         if (!replyText) replyText = output.split('\n').join('').trim()
         if (!replyText) return
 
+        // half automation: store reply for human review, do not send
+        if (currentConfig.halfAutomation) {
+          console.info('[chat auto-reply] half automation, storing draft for review:', chat.peer, ':', firstLine(replyText))
+          try {
+            // Store draft in chat messages with pending flag
+            var now = Date.now()
+            var draftMsg = {
+              time: now,
+              sender: app.username,
+              message: { text: replyText, agentName: agentName },
+              isHalfDraft: true,
+              sessionId: sessionId,
+              originalMessage: text,
+            }
+            chat.messages.push(draftMsg)
+            console.info('[chat auto-reply] half automation, draft stored successfully, NOT sending to', chat.peer)
+            // Also log to chat_log
+            db.logChat(mesh.name, 'peer', chat.peer, null, null, app.username, 'half_draft',
+              JSON.stringify({ text: replyText, agentName: agentName, originalMessage: text }), null, sessionId)
+          } catch (e) {
+            console.error('[chat auto-reply] half automation error:', e?.toString?.() || e)
+          }
+          return
+        }
+
+        // muted: log the reply to chat_log but do not send to ztm chat
+        if (currentConfig.muted) {
+          console.info('[chat auto-reply] muted, logging reply without sending to', chat.peer, ':', firstLine(replyText))
+          try {
+            db.logChat(mesh.name, 'peer', chat.peer, null, null, app.username, 'message',
+              JSON.stringify({ text: replyText, agentName: agentName }), null, sessionId, true)
+          } catch {}
+          return
+        }
+
         // Run onSend filter chain (handles delay + suppress-json + any future filters)
         onSend(chat.peer, replyText, credit).then(function (shouldSend) {
           if (!shouldSend) return
-          console.info('[chat auto-reply] reply to', chat.peer, ':', replyText)
-          addPeerMessage(chat.peer, { text: replyText, agentName: agentName })
+          new Timeout(thinkingTime).wait().then(function () {
+            // Re-check config one more time before sending
+            var finalConfig = getPeerConfig(chat.peer)
+            if (!finalConfig.autoReply || finalConfig.halfAutomation || finalConfig.muted) {
+              console.info('[chat auto-reply] config changed before send, aborting for', chat.peer)
+              return
+            }
+            console.info('[chat auto-reply] reply to', chat.peer, ':', firstLine(replyText))
+            addPeerMessage(chat.peer, { text: replyText, agentName: agentName }, sessionId)
+          })
         })
       },
       err => {
         console.error('[chat auto-reply] openclaw error:', err?.toString?.() || err)
+      }
+    )
+  }
+
+  function halfAutomationRewrite(peer, draftText, humanHint, sessionId) {
+    if (!spawnOpenclaw) return Promise.reject(new Error('openclaw not available'))
+    if (!peer) return Promise.reject(new Error('peer is required'))
+    var peerConfig = getPeerConfig(peer)
+    var agentName = peerConfig.autoReplyAgent || 'main'
+    
+    // Build message for agent: include original draft and human hint
+    var message = `I have drafted the following reply:\n\n${draftText}\n\nPlease rewrite it based on this guidance:\n\n${humanHint}`
+    
+    var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', message, '--session-id', sessionId, '--json', '--no-color']
+    
+    console.info('[half-automation rewrite]', cmd.join(' ').slice(0, 40))
+    return spawnOpenclaw(cmd).then(
+      output => {
+        try {
+          var parsed = JSON.parse(output.split('\n').join(''))
+          var brief = JSON.stringify(parsed).substring(0, 120) + ' ...'
+          console.info('[half-automation rewrite] openclaw output:', brief)
+          db.logApi('half-rewrite', cmd.join(' '), {}, message, {}, output)
+        } catch {
+          console.info('[half-automation rewrite] openclaw output:', output.substring(0, 120) + ' ...')
+          db.logApi('half-rewrite', cmd.join(' '), {}, message, {}, output)
+        }
+        var replyText
+        try {
+          var parsed = JSON.parse(output.split('\n').join(''))
+          replyText = parsed?.payloads?.[0]?.text ||
+                      parsed?.result?.payloads?.[0]?.text ||
+                      parsed?.message || parsed?.content || parsed?.text
+        } catch {}
+        if (!replyText) replyText = output.split('\n').join('').trim()
+        return replyText
       }
     )
   }
@@ -437,6 +599,10 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   }
 
   function newGroupChat(creator, group, existingGcid) {
+    if (isGroupDismissed(creator, group)) {
+      console.info('[newGroupChat] skip dismissed group:', creator, group)
+      return null
+    }
     var chat = {
       creator,
       group,
@@ -462,21 +628,24 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         if (time > chat.updateTime) chat.updateTime = time
         // Write to chat_log — only for messages from others (own messages are logged in add*Message)
         var msgText = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
-        if (sender !== app.username) {
-          console.info('[chat recv]', app.username, '<-', sender, ':', msgText)
-          triggerAutoReply(chat, msg)
-          try {
-            if (chat.peer) {
-              db.logChat(mesh.name, 'peer', chat.peer, null, null, sender, 'message',
-                typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
-                null)
-            } else if (chat.group) {
-              db.logChat(mesh.name, 'group', chat.group, chat.name, chat.creator, sender, 'message',
-                typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
-                null)
-            }
-          } catch {}
-        }
+          if (sender !== app.username) {
+            console.info('[chat recv]', app.username, '<-', sender, ':', firstLine(msgText))
+            triggerAutoReply(chat, msg)
+            try {
+              if (chat.peer) {
+                var recvSessionId = makeSessionId(sender, app.username)
+                db.logChat(mesh.name, 'peer', chat.peer, null, null, sender, 'message',
+                  typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
+                  null, recvSessionId)
+              } else if (chat.group) {
+                var senderUsername = sender.indexOf('/') !== -1 ? sender.split('/')[1] : sender
+                var recvSessionId = chat.gcid ? makeSessionId(senderUsername, chat.gcid) : null
+                db.logChat(mesh.name, 'group', chat.group, chat.name, chat.creator, sender, 'message',
+                  typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
+                  null, recvSessionId)
+              }
+            } catch {}
+          }
         // For group chats, trigger local agents regardless of who sent the message.
         // Local agents are virtual members of this EP — we proxy their participation.
         // Skip if this message was itself posted by a local agent (avoid infinite loop).
@@ -550,6 +719,28 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             messages.forEach(msg => msg.sender = sender)
             var hasIncoming = messages.some(m => m.sender !== app.username)
             if (hasIncoming && !initial) {
+              // run=0: discard messages entirely, do not store
+              var peerCfg = db.getChatPeer(mesh.name, chat.peer)
+              if (peerCfg && !peerCfg.run) {
+                console.info('[chat] peer stopped, discarding messages from', peer)
+                return
+              }
+              // is_blocked: log, reply "You are blocked", do not store or process further
+              if (peerCfg && peerCfg.isBlocked) {
+                console.info('[chat] peer blocked, replying "You are blocked" to', peer)
+                messages.forEach(msg => {
+                  if (msg.sender !== app.username) {
+                    var msgText = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
+                    console.info('[chat recv blocked]', app.username, '<-', msg.sender, ':', msgText)
+                    var recvSessionId = makeSessionId(msg.sender, app.username)
+                    try {
+                      db.logChat(mesh.name, 'peer', chat.peer, null, null, msg.sender, 'message', msgText, null, recvSessionId)
+                    } catch {}
+                  }
+                })
+                addPeerMessage(chat.peer, { text: 'You are blocked' })
+                return
+              }
               var existingConfig = db.getChatPeer(mesh.name, chat.peer)
               if (!existingConfig) {
                 db.setChatPeer(mesh.name, chat.peer, { autoReply: false, autoReplyAgent: 'main' })
@@ -586,7 +777,10 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
           if (sender !== creator) return
           if (isGroupDismissed(creator, group)) return
           var chat = findGroupChat(creator, group)
-          if (!chat) chat = newGroupChat(creator, group)
+          if (!chat) {
+            chat = newGroupChat(creator, group)
+            if (!chat) return
+          }
           try {
             var info = JSON.decode(data)
             if (info.name) chat.name = info.name
@@ -600,25 +794,50 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var params = matchPublishGroupMsgs(path)
     if (params) {
       return mesh.read(path).then(data => {
-        if (data) {
-          var pathSender = params.sender
-          var creator = params.creator
-          var group = params.group
-          if (isGroupDismissed(creator, group)) return
-          var chat = findGroupChat(creator, group)
-          // If no local chat found, check info.json for existing gcid before creating new
-          if (!chat) {
-            // Try to read gcid from info.json first
-            var infoPath = `/shared/${creator}/publish/groups/${creator}/${group}/info.json`
+        if (!data) return
+        var pathSender = params.sender
+        var creator = params.creator
+        var group = params.group
+        if (isGroupDismissed(creator, group)) return
+        var chat = findGroupChat(creator, group)
+        // If no local chat found, read info.json asynchronously to get gcid and members
+        var infoPromise
+        if (!chat) {
+          var infoPath = `/shared/${creator}/publish/groups/${creator}/${group}/info.json`
+          infoPromise = mesh.read(infoPath).then(function (infoData) {
             var existingGcid = null
+            var existingMembers = null
+            var existingName = null
             try {
-              var infoData = mesh.read(infoPath)
               if (infoData) {
                 var info = JSON.decode(infoData)
                 existingGcid = info.gcid || null
+                existingMembers = info.members instanceof Array ? info.members : null
+                existingName = info.name || null
               }
             } catch {}
             chat = newGroupChat(creator, group, existingGcid)
+            if (chat) {
+              if (existingMembers) chat.members = existingMembers
+              if (existingName) chat.name = existingName
+            }
+          })
+        } else {
+          infoPromise = Promise.resolve()
+        }
+        return infoPromise.then(function () {
+          if (!chat) return
+          var gcid = chat.gcid
+          var groupCfg = gcid ? db.getChatPeer(mesh.name, gcid) : null
+          // run=0: discard messages entirely, do not store
+          if (groupCfg && !groupCfg.run) {
+            console.info('[chat] group stopped, discarding messages for group', group)
+            return
+          }
+          // is_blocked: silently discard, do not store or process
+          if (groupCfg && groupCfg.isBlocked) {
+            console.info('[chat] group blocked, silently discarding messages for group', group)
+            return
           }
           var newMsgs = []
           try {
@@ -637,7 +856,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             }
           } catch {}
           if (initial) chat.newCount = 0
-        }
+        })
       })
     }
     return Promise.resolve()
@@ -721,7 +940,14 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
   function allChats() {
     return Promise.resolve(chats.filter(
-      chat => chat.peer || (chat.group && chat.name)
+      chat => {
+        if (chat.peer) return true
+        if (chat.group && chat.name) {
+          if (isGroupDismissed(chat.creator, chat.group)) return false
+          return true
+        }
+        return false
+      }
     ).map(
       chat => {
         var updated = chat.newCount
@@ -796,17 +1022,18 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     )
   }
 
-  function addPeerMessage(peer, message) {
+  function addPeerMessage(peer, message, sessionId) {
     if (!peer) return Promise.resolve(false)
     var msgText = typeof message === 'string' ? message : (message?.text || JSON.stringify(message))
-    console.info('[chat send]', app.username, '->', peer, ':', msgText)
+    console.info('[chat send]', app.username, '->', peer, ':', firstLine(msgText))
     var dirname = `/shared/${app.username}/publish/peers/${peer}/messages`
     return mesh.acl(dirname, { users: { [peer]: 'readonly' }}).then(
       () => publishMessage(dirname, message)
     ).then(() => {
       try {
+        var sid = sessionId || makeSessionId(app.username, peer)
         db.logChat(mesh.name, 'peer', peer, null, null, app.username, 'message',
-          typeof message === 'string' ? message : JSON.stringify(message), null)
+          typeof message === 'string' ? message : JSON.stringify(message), null, sid)
       } catch {}
       return true
     })
@@ -830,12 +1057,31 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     if (creator !== app.username) return Promise.resolve(false)
     var chat = findGroupChat(creator, group)
     var isNew = !chat
-    if (!chat) chat = newGroupChat(creator, group)
+    if (!chat) {
+      chat = newGroupChat(creator, group)
+      if (!chat) return Promise.resolve(false)
+      isNew = true
+    }
     if (info.name) chat.name = info.name
     if (info.members instanceof Array) chat.members = info.members
     // Ensure gcid is registered in chat_peer so auto-reply config can be stored per group
     if (isNew) {
-      db.setChatPeer(mesh.name, chat.gcid, { autoReply: false, autoReplyAgent: 'main' })
+      db.setChatPeer(mesh.name, chat.gcid, { autoReply: false, autoReplyAgent: 'main', peerName: info.name || '' })
+    } else if (info.name) {
+      db.setChatPeer(mesh.name, chat.gcid, { peerName: info.name })
+    }
+    // Create chat_peer records for local agent members (peer = gcid~agentName)
+    if (info.members instanceof Array) {
+      getLocalAgentNames().then(function (localAgents) {
+        info.members.forEach(function (member) {
+          if (member === app.username) return
+          if (localAgents.indexOf(member) === -1) return
+          var key = groupAgentKey(chat.gcid, member)
+          if (!db.getChatPeer(mesh.name, key)) {
+            db.setChatPeer(mesh.name, key, { autoReply: true, autoReplyAgent: member, peerName: (info.name || '') + ' / ' + member })
+          }
+        })
+      })
     }
     var dirname = `/shared/${creator}/publish/groups/${creator}/${group}`
     return mesh.acl(dirname, { users: Object.fromEntries(chat.members.map(name => [name, 'readonly'])) }).then(
@@ -849,45 +1095,59 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     })
   }
 
+  var dismissedGroupsCache = {}
+
   function groupDismissedKey(creator, group) {
     return 'group_dismissed:' + creator + ':' + group
   }
 
   function isGroupDismissed(creator, group) {
-    try { return !!db.getCache(groupDismissedKey(creator, group)) } catch { return false }
+    var key = groupDismissedKey(creator, group)
+    if (dismissedGroupsCache[key]) return true
+    try {
+      var val = !!db.getCache(key)
+      if (val) dismissedGroupsCache[key] = true
+      return val
+    } catch { return false }
   }
 
   function markGroupDismissed(creator, group) {
-    try { db.setCache(groupDismissedKey(creator, group), true) } catch {}
+    var key = groupDismissedKey(creator, group)
+    dismissedGroupsCache[key] = true
+    try {
+      db.setCache(key, true)
+      console.info('[group dismiss] marked dismissed:', creator, group)
+    } catch (e) {
+      console.error('[group dismiss] failed to persist dismissed flag:', creator, group, e?.toString?.() || e)
+    }
   }
 
   function delGroup(creator, group) {
     if (creator !== app.username) return Promise.resolve(false)
     var chat = findGroupChat(creator, group)
     if (!chat) return Promise.resolve(false)
+
+    // Mark dismissed and remove from memory FIRST (synchronously), before async mesh ops
+    var idx = chats.indexOf(chat)
+    if (idx >= 0) chats.splice(idx, 1)
+    markGroupDismissed(creator, group)
+    try {
+      db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
+        'group_delete', null, chat.members)
+    } catch {}
+
+    // Then try to clean up mesh filesystem (best-effort)
     var dirname = `/shared/${creator}/publish/groups/${creator}/${group}`
-    // Remove from mesh filesystem
-    return mesh.dir(dirname).then(files => {
-      return Promise.all(files.map(f => mesh.unlink(os.path.join(dirname, f))))
-    }).then(() => mesh.unlink(os.path.join(dirname, 'info.json'))).then(() => {
-      // Remove from in-memory list and mark dismissed in db
-      var idx = chats.indexOf(chat)
-      if (idx >= 0) chats.splice(idx, 1)
-      markGroupDismissed(creator, group)
-      try {
-        db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
-          'group_delete', null, chat.members)
-      } catch {}
-      return true
-    }).catch(() => {
-      // Even if unlink fails, remove from memory and mark dismissed
-      var idx = chats.indexOf(chat)
-      if (idx >= 0) chats.splice(idx, 1)
-      markGroupDismissed(creator, group)
-      try {
-        db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
-          'group_delete', null, chat.members)
-      } catch {}
+    var msgDir = os.path.join(dirname, 'messages')
+    // Delete message files inside messages/ subdirectory first
+    return mesh.dir(msgDir).then(function (msgFiles) {
+      return Promise.all((msgFiles || []).map(function (f) { return mesh.unlink(os.path.join(msgDir, f)) }))
+    }).catch(function () {}).then(function () {
+      // Then delete top-level files (info.json, messages/ dir itself, etc.)
+      return mesh.dir(dirname).then(function (files) {
+        return Promise.all((files || []).map(function (f) { return mesh.unlink(os.path.join(dirname, f)) }))
+      })
+    }).catch(function () {}).then(function () {
       return true
     })
   }
@@ -907,7 +1167,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   }
 
   // fromAgent: true means this message is an auto-reply from a local agent — do not re-trigger
-  function addGroupMessage(creator, group, message, fromAgent) {
+  function addGroupMessage(creator, group, message, fromAgent, sessionId) {
     var chat = findGroupChat(creator, group)
     if (!chat) return Promise.resolve(false)
     if (app.username !== creator && !chat.members.includes(app.username)) return Promise.resolve(false)
@@ -920,14 +1180,15 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       ? { text: message, sender: taggedSender }
       : Object.assign({}, message, { sender: taggedSender })
     var msgText = typeof message === 'string' ? message : (message?.text || JSON.stringify(message))
-    console.info('[chat send]', taggedSender, '-> group', group, ':', msgText)
+    console.info('[chat send]', taggedSender, '-> group', group, ':', firstLine(msgText))
     var dirname = `/shared/${app.username}/publish/groups/${creator}/${group}`
     return mesh.acl(dirname, { users: Object.fromEntries(chat.members.map(name => [name, 'readonly'])) }).then(
       () => publishMessage(os.path.join(dirname, 'messages'), taggedMessage)
     ).then(() => {
       try {
+        var sid = sessionId || (chat.gcid ? makeSessionId(app.username, chat.gcid) : null)
         db.logChat(mesh.name, 'group', group, chat.name, creator, taggedSender, 'message',
-          msgText, null)
+          msgText, null, sid)
       } catch {}
       return true
     })
@@ -941,6 +1202,37 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     return mesh.write(`/shared/${app.username}/publish/files/${hash}`, data).then(
       () => hash
     )
+  }
+
+  function computeHash(data) {
+    var h = new crypto.Hash('sha256')
+    h.update(data)
+    h.update(data.size.toString())
+    return h.digest().toString('hex')
+  }
+
+  function addFileToSession(data, sessionId, fileName) {
+    var hash = computeHash(data)
+    var dir = os.path.join(os.home(), '.openclaw', 'workspace', 'clawparty', 'files', sessionId)
+    try { os.mkdir(dir, { recursive: true }) } catch {}
+    var filepath = os.path.join(dir, hash)
+    try {
+      os.write(filepath, data)
+      return Promise.resolve({ hash, path: filepath, name: fileName })
+    } catch (e) {
+      return Promise.reject(new Error(e?.toString?.() || 'write failed'))
+    }
+  }
+
+  function getFileFromSession(sessionId, hash) {
+    var filepath = os.path.join(os.home(), '.openclaw', 'workspace', 'clawparty', 'files', sessionId, hash)
+    try {
+      var data = os.read(filepath)
+      if (data) return Promise.resolve(data)
+      return Promise.resolve(null)
+    } catch {
+      return Promise.resolve(null)
+    }
   }
 
   function getFile(owner, hash) {
@@ -986,5 +1278,6 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     allPeerConfigs,
     clearGroupEpRequestHint,
     clearPeerRequestHint,
+    halfAutomationRewrite,
   }
 }

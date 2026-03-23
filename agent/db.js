@@ -80,11 +80,20 @@ function open(pathname) {
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS chat_peer (
-      mesh             TEXT NOT NULL,
-      peer             TEXT NOT NULL,
-      auto_reply       INTEGER NOT NULL DEFAULT 0,
-      auto_reply_agent TEXT NOT NULL DEFAULT 'main',
-      peer_agent_name  TEXT NOT NULL DEFAULT '',
+      mesh               TEXT    NOT NULL,
+      peer               TEXT    NOT NULL,
+      auto_reply         INTEGER NOT NULL DEFAULT 0,
+      auto_reply_agent   TEXT    NOT NULL DEFAULT 'main',
+      peer_agent_name    TEXT    NOT NULL DEFAULT '',
+      is_blocked         INTEGER NOT NULL DEFAULT 0,
+      run                INTEGER NOT NULL DEFAULT 1,
+      muted              INTEGER NOT NULL DEFAULT 0,
+      thinking_time      INTEGER NOT NULL DEFAULT 3,
+      peer_profile       TEXT    NOT NULL DEFAULT '',
+      short_context      TEXT    NOT NULL DEFAULT '',
+      long_context       TEXT    NOT NULL DEFAULT '',
+      peer_name          TEXT    NOT NULL DEFAULT '',
+      half_automation    INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (mesh, peer)
     )
   `)
@@ -101,6 +110,33 @@ function open(pathname) {
   } catch {}
   try {
     db.exec(`ALTER TABLE chat_peer ADD COLUMN send_filter_chain TEXT NOT NULL DEFAULT ''`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN run INTEGER NOT NULL DEFAULT 1`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN thinking_time INTEGER NOT NULL DEFAULT 3`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN peer_profile TEXT NOT NULL DEFAULT ''`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN short_context TEXT NOT NULL DEFAULT ''`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN long_context TEXT NOT NULL DEFAULT ''`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN peer_name TEXT NOT NULL DEFAULT ''`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_peer ADD COLUMN half_automation INTEGER NOT NULL DEFAULT 0`)
   } catch {}
 
   db.exec(`
@@ -124,7 +160,9 @@ function open(pathname) {
       sender     TEXT    NOT NULL,
       event      TEXT    NOT NULL,
       content    TEXT,
-      members    TEXT
+      members    TEXT,
+      session_id TEXT,
+      muted      INTEGER NOT NULL DEFAULT 0
     )
   `)
 
@@ -133,6 +171,12 @@ function open(pathname) {
     db.exec(`CREATE INDEX IF NOT EXISTS chat_log_time ON chat_log(time)`)
     db.exec(`CREATE INDEX IF NOT EXISTS chat_log_sender ON chat_log(sender)`)
   } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_log ADD COLUMN session_id TEXT`)
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_log ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`)
+  } catch {}
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS cache (
@@ -140,6 +184,29 @@ function open(pathname) {
       value TEXT NOT NULL
     )
   `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cli_log (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp    REAL    NOT NULL,
+      agent_name   TEXT    NOT NULL,
+      session_id   TEXT    NOT NULL DEFAULT '',
+      message_md5  TEXT    NOT NULL
+    )
+  `)
+
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS cli_log_lookup ON cli_log(agent_name, session_id, message_md5, timestamp)`)
+  } catch {}
+
+  // Migrations: add new columns to cli_log for detailed CLI call logging
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN command TEXT NOT NULL DEFAULT ''`) } catch {}
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN arguments TEXT NOT NULL DEFAULT ''`) } catch {}
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN output TEXT NOT NULL DEFAULT ''`) } catch {}
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN exit_code INTEGER NOT NULL DEFAULT 0`) } catch {}
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN success INTEGER NOT NULL DEFAULT 0`) } catch {}
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0`) } catch {}
+  try { db.exec(`ALTER TABLE cli_log ADD COLUMN error_message TEXT NOT NULL DEFAULT ''`) } catch {}
 }
 
 function allZones() {
@@ -513,6 +580,15 @@ function getChatPeer(mesh, peer) {
     credit: row.credit !== undefined ? row.credit : 100,
     filterChain: row.filter_chain || '',
     sendFilterChain: row.send_filter_chain || '',
+    isBlocked: row.is_blocked === 1,
+    run: row.run !== undefined ? row.run : 1,
+    muted: row.muted === 1,
+    thinkingTime: row.thinking_time !== undefined ? row.thinking_time : 3,
+    peerProfile: row.peer_profile || '',
+    shortContext: row.short_context || '',
+    longContext: row.long_context || '',
+    peerName: row.peer_name || '',
+    halfAutomation: row.half_automation === 1,
   }
 }
 
@@ -525,15 +601,33 @@ function setChatPeer(mesh, peer, config) {
     var credit = 'credit' in config ? config.credit : old.credit
     var filterChain = 'filterChain' in config ? (config.filterChain || '') : (old.filterChain || '')
     var sendFilterChain = 'sendFilterChain' in config ? (config.sendFilterChain || '') : (old.sendFilterChain || '')
-    db.sql('UPDATE chat_peer SET auto_reply = ?, auto_reply_agent = ?, peer_agent_name = ?, credit = ?, filter_chain = ?, send_filter_chain = ? WHERE mesh = ? AND peer = ?')
+    var isBlocked = 'isBlocked' in config ? (config.isBlocked ? 1 : 0) : (old.isBlocked ? 1 : 0)
+    var run = 'run' in config ? config.run : old.run
+    var muted = 'muted' in config ? (config.muted ? 1 : 0) : (old.muted ? 1 : 0)
+    var thinkingTime = 'thinkingTime' in config ? config.thinkingTime : old.thinkingTime
+    var peerProfile = 'peerProfile' in config ? (config.peerProfile || '') : (old.peerProfile || '')
+    var shortContext = 'shortContext' in config ? (config.shortContext || '') : (old.shortContext || '')
+    var longContext = 'longContext' in config ? (config.longContext || '') : (old.longContext || '')
+    var peerName = 'peerName' in config ? (config.peerName || '') : (old.peerName || '')
+    var halfAutomation = 'halfAutomation' in config ? (config.halfAutomation ? 1 : 0) : (old.halfAutomation ? 1 : 0)
+    db.sql('UPDATE chat_peer SET auto_reply = ?, auto_reply_agent = ?, peer_agent_name = ?, credit = ?, filter_chain = ?, send_filter_chain = ?, is_blocked = ?, run = ?, muted = ?, thinking_time = ?, peer_profile = ?, short_context = ?, long_context = ?, peer_name = ?, half_automation = ? WHERE mesh = ? AND peer = ?')
       .bind(1, autoReply)
       .bind(2, autoReplyAgent)
       .bind(3, peerAgentName)
       .bind(4, credit)
       .bind(5, filterChain)
       .bind(6, sendFilterChain)
-      .bind(7, mesh)
-      .bind(8, peer)
+      .bind(7, isBlocked)
+      .bind(8, run)
+      .bind(9, muted)
+      .bind(10, thinkingTime)
+      .bind(11, peerProfile)
+      .bind(12, shortContext)
+      .bind(13, longContext)
+      .bind(14, peerName)
+      .bind(15, halfAutomation)
+      .bind(16, mesh)
+      .bind(17, peer)
       .exec()
   } else {
     var autoReply = config.autoReply ? 1 : 0
@@ -542,7 +636,16 @@ function setChatPeer(mesh, peer, config) {
     var credit = 'credit' in config ? config.credit : 100
     var filterChain = config.filterChain || ''
     var sendFilterChain = config.sendFilterChain || ''
-    db.sql('INSERT INTO chat_peer(mesh, peer, auto_reply, auto_reply_agent, peer_agent_name, credit, filter_chain, send_filter_chain) VALUES(?, ?, ?, ?, ?, ?, ?, ?)')
+    var isBlocked = config.isBlocked ? 1 : 0
+    var run = 'run' in config ? config.run : 1
+    var muted = config.muted ? 1 : 0
+    var thinkingTime = 'thinkingTime' in config ? config.thinkingTime : 3
+    var peerProfile = config.peerProfile || ''
+    var shortContext = config.shortContext || ''
+    var longContext = config.longContext || ''
+    var peerName = config.peerName || ''
+    var halfAutomation = config.halfAutomation ? 1 : 0
+    db.sql('INSERT INTO chat_peer(mesh, peer, auto_reply, auto_reply_agent, peer_agent_name, credit, filter_chain, send_filter_chain, is_blocked, run, muted, thinking_time, peer_profile, short_context, long_context, peer_name, half_automation) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(1, mesh)
       .bind(2, peer)
       .bind(3, autoReply)
@@ -551,6 +654,15 @@ function setChatPeer(mesh, peer, config) {
       .bind(6, credit)
       .bind(7, filterChain)
       .bind(8, sendFilterChain)
+      .bind(9, isBlocked)
+      .bind(10, run)
+      .bind(11, muted)
+      .bind(12, thinkingTime)
+      .bind(13, peerProfile)
+      .bind(14, shortContext)
+      .bind(15, longContext)
+      .bind(16, peerName)
+      .bind(17, halfAutomation)
       .exec()
   }
 }
@@ -568,6 +680,15 @@ function allChatPeers(mesh) {
       credit: row.credit !== undefined ? row.credit : 100,
       filterChain: row.filter_chain || '',
       sendFilterChain: row.send_filter_chain || '',
+      isBlocked: row.is_blocked === 1,
+      run: row.run !== undefined ? row.run : 1,
+      muted: row.muted === 1,
+      thinkingTime: row.thinking_time !== undefined ? row.thinking_time : 3,
+      peerProfile: row.peer_profile || '',
+      shortContext: row.short_context || '',
+      longContext: row.long_context || '',
+      peerName: row.peer_name || '',
+      halfAutomation: row.half_automation === 1,
     }))
 }
 
@@ -628,15 +749,11 @@ function getCache(key) {
     .bind(1, key)
     .exec()
   if (!rows[0]) {
-    console.info('[db cache] get', key, '-> (miss)')
     return null
   }
   try {
-    var parsed = JSON.parse(rows[0].value)
-    console.info('[db cache] get', key, '->', JSON.stringify(parsed).substring(0, 100))
-    return parsed
+    return JSON.parse(rows[0].value)
   } catch {
-    console.info('[db cache] get', key, '->', rows[0].value.substring(0, 100))
     return rows[0].value
   }
 }
@@ -651,12 +768,51 @@ function setCache(key, value) {
 }
 
 // event: 'message' | 'group_create' | 'group_delete' | 'group_leave'
+function hasCliLog(agentName, sessionId, messageMd5) {
+  var since = Date.now() / 1000 - 4 * 60 * 60
+  var rows = db.sql(
+    'SELECT id FROM cli_log WHERE agent_name = ? AND session_id = ? AND message_md5 = ? AND timestamp >= ?'
+  )
+    .bind(1, agentName)
+    .bind(2, sessionId)
+    .bind(3, messageMd5)
+    .bind(4, since)
+    .exec()
+  return rows.length > 0
+}
+
+function addCliLog(agentName, sessionId, messageMd5) {
+  db.sql('INSERT INTO cli_log(timestamp, agent_name, session_id, message_md5) VALUES(?, ?, ?, ?)')
+    .bind(1, Date.now() / 1000)
+    .bind(2, agentName)
+    .bind(3, sessionId)
+    .bind(4, messageMd5)
+    .exec()
+}
+
+function logCliCall(command, args, output, exitCode, success, durationMs, errorMessage, agentName, sessionId, messageMd5) {
+  db.sql(`INSERT INTO cli_log(timestamp, agent_name, session_id, message_md5, command, arguments, output, exit_code, success, duration_ms, error_message)
+          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(1, Date.now() / 1000)
+    .bind(2, agentName || '')
+    .bind(3, sessionId || '')
+    .bind(4, messageMd5 || '')
+    .bind(5, command || '')
+    .bind(6, args !== null && typeof args === 'object' ? JSON.stringify(args) : (args || ''))
+    .bind(7, output || '')
+    .bind(8, exitCode || 0)
+    .bind(9, success ? 1 : 0)
+    .bind(10, durationMs || 0)
+    .bind(11, errorMessage || '')
+    .exec()
+}
+
 // chat_type: 'peer' | 'group'
-function logChat(mesh, chatType, chatId, chatName, creator, sender, event, content, members) {
+function logChat(mesh, chatType, chatId, chatName, creator, sender, event, content, members, sessionId, muted) {
   var t = Date.now() / 1000
   db.sql(`
-    INSERT INTO chat_log(time, mesh, chat_type, chat_id, chat_name, creator, sender, event, content, members)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO chat_log(time, mesh, chat_type, chat_id, chat_name, creator, sender, event, content, members, session_id, muted)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
     .bind(1, t)
     .bind(2, mesh || '')
@@ -668,6 +824,8 @@ function logChat(mesh, chatType, chatId, chatName, creator, sender, event, conte
     .bind(8, event)
     .bind(9, content || null)
     .bind(10, members ? JSON.stringify(members) : null)
+    .bind(11, sessionId || null)
+    .bind(12, muted ? 1 : 0)
     .exec()
 }
 
@@ -706,6 +864,7 @@ function getChatLog(mesh, chatType, chatId, limit) {
     event: r.event,
     content: r.content || null,
     members: r.members ? JSON.parse(r.members) : null,
+    sessionId: r.session_id || null,
   }))
 }
 
@@ -747,4 +906,7 @@ export default {
   countRecentMessages,
   getCache,
   setCache,
+  hasCliLog,
+  addCliLog,
+  logCliCall,
 }

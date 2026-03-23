@@ -64,29 +64,36 @@
           </svg>
         </button>
 
+        <button class="header-btn" title="Reload" @click="emit('reload')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 4v6h-6"/>
+            <path d="M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+          </svg>
+        </button>
         <button class="header-btn" title="Settings">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
             <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z"/>
           </svg>
         </button>
       </div>
-      <button class="header-btn" title="Download chat history" @click="emit('download')">
+      <button class="header-btn" title="Download chat history (HTML)" @click="emit('download')">
         <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
           <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/>
         </svg>
       </button>
-      <div class="search-box">
-        <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 001.415-1.414l-3.85-3.85a1.007 1.007 0 00-.115-.1zM12 6.5a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0z"/>
-        </svg>
-        <input type="text" v-model="searchQuery" placeholder="Search messages">
-      </div>
+      <button class="header-btn" title="Download chat history (MD)" @click="emit('download-md')">
+        <span style="font-size: 12px; font-weight: 600;">MD</span>
+      </button>
+      <button class="header-btn" title="Download chat history (PDF)" @click="emit('download-pdf')">
+        <span style="font-size: 12px; font-weight: 600;">PDF</span>
+      </button>
     </div>
   </header>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+
 
 const props = defineProps({
   chat: {
@@ -107,13 +114,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['search', 'switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download'])
-
-const searchQuery = ref('')
-
-watch(searchQuery, (val) => {
-  emit('search', val)
-})
+const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload'])
 </script>
 
 <style scoped>
@@ -200,8 +201,7 @@ watch(searchQuery, (val) => {
 }
 
 .session-select-wrapper {
-  display: flex;
-  align-items: center;
+  display: none;
 }
 
 .session-select {
@@ -244,48 +244,10 @@ watch(searchQuery, (val) => {
   color: #dc2626;
 }
 
-.search-box {
-  position: relative;
-}
-
-.search-box input {
-  width: 180px;
-  padding: 6px 12px 6px 32px;
-  background: var(--bg-hover);
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-size: 13px;
-  outline: none;
-  transition: all 0.15s;
-}
-
-.search-box input:focus {
-  width: 240px;
-  background: #fff;
-  border-color: var(--slack-blue);
-}
-
-.search-box input::placeholder {
-  color: var(--text-secondary);
-}
-
-.search-icon {
-  position: absolute;
-  left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-secondary);
-}
-
 @media (max-width: 768px) {
   .chat-header {
     padding: 0 12px;
     height: 52px;
-  }
-  
-  .search-box {
-    display: none;
   }
   
   .header-divider,

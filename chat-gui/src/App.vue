@@ -95,8 +95,9 @@
       :showBackButton="isMobile"
       :autoFocus="!isMobile"
       v-model="newMessage"
-      v-model:selectedAgent="selectedAgent"
       @send="sendMessage"
+      @send-images="handleSendImages"
+      @send-files="handleSendFiles"
       @switchSession="(sessionId) => switchOpenclawSession(chats[activeChat], sessionId)"
       @deleteGroup="handleDeleteGroup"
       @leaveGroup="handleLeaveGroup"
@@ -132,7 +133,6 @@ const currentMeshAgentUsername = ref('')
 const chats = ref([])
 const activeChat = ref(null)
 const newMessage = ref('')
-const selectedAgent = ref('')
 const sending = ref(false)
 const showTokenDialog = ref(false)
 const tokenInput = ref('')
@@ -189,7 +189,10 @@ const formatTime = (timestamp) => {
 const parseChatData = (data) => {
   return data.map(item => {
     const name = item.peer || item.name || 'Unknown'
-    const latestMsg = item.latest?.message?.text || ''
+    var latestMsg = item.latest?.message?.text || ''
+    if (!latestMsg && Array.isArray(item.latest?.message?.files) && item.latest.message.files.length > 0) {
+      latestMsg = '[图片/文件]'
+    }
     const firstLine = latestMsg.split('\n')[0].substring(0, 30)
     const isGroup = !!item.group
     const peerAgentName = item.peerAgentName || ''
@@ -204,6 +207,7 @@ const parseChatData = (data) => {
       lastMessage: firstLine,
       updated: item.updated || 0,
       isGroup: isGroup,
+      gcid: item.gcid || '',
       creator: item.creator || '',
       groupId: item.group || '',
       members: item.members || [],
@@ -245,7 +249,11 @@ const fetchOpenclawAgents = async () => {
       model: agent.model,
       isOpenclaw: true
     }))
-    
+
+    // Remove stale agent chats for deleted agents
+    const freshIds = new Set(agentsData.map(a => a.id))
+    chats.value = chats.value.filter(c => !c.isOpenclaw || freshIds.has(c.agentId))
+
     agentsData.forEach(agent => {
       const existingChat = chats.value.find(c => c.isOpenclaw && c.agentId === agent.id)
       if (!existingChat) {
@@ -338,15 +346,11 @@ const sendMessage = async () => {
       const now = new Date()
       const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
       
-      const isBotChat = !!selectedAgent.value
-      const typingSender = isBotChat ? 'A to ' + selectedAgent.value : chat.name
-      const responseSender = isBotChat ? selectedAgent.value : chat.name
-      
       setTimeout(()=>{
         chat.messages.push({
           text: '',
           time: time,
-          sender: typingSender,
+          sender: chat.name,
           timestamp: now.getTime(),
           isTyping: true
         })
@@ -365,12 +369,9 @@ const sendMessage = async () => {
         }
       }
 
-      const sendPromise = isBotChat 
-        ? openclawService.botChat(chat.agentId, selectedAgent.value, text)
-        : openclawService.sendMessage(chat.agentId, text)
-      
-      sendPromise.then((response)=>{
-        let replyText = response.data?.payloads?.[0]?.text || response.data?.result?.payloads?.[0]?.text;
+      openclawService.sendMessage(chat.agentId, text).then((response)=>{
+        const payloads = response.data?.payloads || response.data?.result?.payloads || [];
+        const replyText = payloads.map(p => p?.text).filter(Boolean).join('\n\n');
         
         const typingIndex = chat.messages.findIndex(m => m.isTyping)
         if (typingIndex !== -1) {
@@ -381,7 +382,7 @@ const sendMessage = async () => {
           chat.messages.push({
             text: replyText,
             time: replyTime,
-            sender: responseSender,
+            sender: chat.name,
             timestamp: new Date().getTime(),
             isTemp: false
           })
@@ -403,7 +404,7 @@ const sendMessage = async () => {
           chat.messages.push({
             text: replyText,
             time: replyTime,
-            sender: responseSender,
+            sender: chat.name,
             timestamp: new Date().getTime(),
             isTemp: false
           })
@@ -412,9 +413,13 @@ const sendMessage = async () => {
         }
       })
     } else if (chat.isGroup) {
-      await chatService.sendGroupMessage(currentMesh.value, chat.creator, chat.groupId, text)
+      const groupParts = [currentMeshAgentUsername.value, chat.gcid].sort()
+      const groupSessionId = groupParts[0] + '~' + groupParts[1]
+      await chatService.sendGroupMessage(currentMesh.value, chat.creator, chat.groupId, text, groupSessionId)
     } else {
-      await chatService.sendMessage(currentMesh.value, chat.name, text)
+      const peerParts = [currentMeshAgentUsername.value, chat.name].sort()
+      const peerSessionId = peerParts[0] + '~' + peerParts[1]
+      await chatService.sendMessage(currentMesh.value, chat.name, text, peerSessionId)
     }
   } catch (error) {
     console.error('Failed to send message:', error)
@@ -442,6 +447,292 @@ const sendMessage = async () => {
   chat.time = time
   
   newMessage.value = ''
+}
+
+const handleSendImages = async (imageFiles) => {
+  if (!imageFiles || imageFiles.length === 0) return
+  if (activeChat.value === null) return
+  const chat = chats.value[activeChat.value]
+
+  if (chat.isOpenclaw) {
+    // Local openclaw agent: save pictures to agent workspace and show in chat
+    try {
+      const picturePaths = []
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i]
+        const fileName = file.name || ('img_' + Date.now() + '_' + i + '.png')
+        const arrayBuffer = await file.arrayBuffer()
+        const res = await openclawService.uploadPicture(chat.agentId, arrayBuffer, fileName)
+        const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+        if (data && data.name) {
+          picturePaths.push({ 
+            name: data.name, 
+            path: data.path, 
+            url: openclawService.getPictureUrl(chat.agentId, data.name),
+            type: file.type || 'image/png'  // Preserve original file type
+          })
+        }
+      }
+      if (picturePaths.length === 0) return
+
+      // Display pictures in local chat
+      const now = new Date()
+      const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+      if (!chat.messages) chat.messages = []
+      chat.messages.push({
+        text: '',
+        files: picturePaths.map(p => ({ 
+          name: p.name, 
+          url: p.url,
+          type: p.type
+        })),
+        time: time,
+        sender: 'You',
+        timestamp: now.getTime(),
+        isSent: true
+      })
+
+      // Send the file paths as message to the agent
+      const userText = newMessage.value.trim()
+      const agentMessage = userText
+        ? userText + '\n\n对方发送了一个图片，保存在：' + picturePaths.map(p => p.path).join('，')
+        : '对方发送了一个图片，保存在：' + picturePaths.map(p => p.path).join('，')
+
+      sending.value = true
+      newMessage.value = ''
+      setTimeout(() => {
+        chat.messages.push({ text: '', time: time, sender: chat.name, timestamp: now.getTime() + 1, isTyping: true })
+      }, 300)
+
+      openclawService.sendMessage(chat.agentId, agentMessage).then((resp) => {
+        const payloads = resp.data?.payloads || resp.data?.result?.payloads || [];
+        const replyText = payloads.map(p => p?.text).filter(Boolean).join('\n\n')
+        const typingIndex = chat.messages.findIndex(m => m.isTyping)
+        if (typingIndex !== -1) chat.messages.splice(typingIndex, 1)
+        if (replyText) {
+          const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
+          chat.messages.push({ text: replyText, time: replyTime, sender: chat.name, timestamp: new Date().getTime() })
+          chat.lastMessage = replyText
+          chat.time = replyTime
+        }
+        sending.value = false
+      }).catch(() => {
+        const typingIndex = chat.messages.findIndex(m => m.isTyping)
+        if (typingIndex !== -1) chat.messages.splice(typingIndex, 1)
+        sending.value = false
+      })
+    } catch (error) {
+      console.error('Failed to send images to openclaw agent:', error)
+    }
+    return
+  }
+
+  // Mesh chat: upload to mesh filesystem
+  if (!currentMesh.value) return
+  try {
+    const uploadedFiles = []
+    const savedPaths = []
+    for (let i = 0; i < imageFiles.length; i++) {
+      const file = imageFiles[i]
+      const arrayBuffer = await file.arrayBuffer()
+      const response = await chatService.uploadFile(currentMesh.value, arrayBuffer)
+      const hash = typeof response.data === 'string' ? response.data : ''
+      if (hash) {
+        uploadedFiles.push({
+          hash,
+          name: file.name || 'image',
+          type: file.type || 'image/png',
+          size: file.size || 0,
+          owner: currentMeshAgentUsername.value
+        })
+        savedPaths.push(`/shared/${currentMeshAgentUsername.value}/publish/files/${hash}`)
+      }
+    }
+    if (uploadedFiles.length === 0) return
+
+    const text = newMessage.value.trim()
+    if (chat.isGroup) {
+      const groupParts = [currentMeshAgentUsername.value, chat.gcid].sort()
+      const groupSessionId = groupParts[0] + '~' + groupParts[1]
+      await chatService.sendGroupMessage(currentMesh.value, chat.creator, chat.groupId, text, groupSessionId, uploadedFiles)
+    } else {
+      const peerParts = [currentMeshAgentUsername.value, chat.name].sort()
+      const peerSessionId = peerParts[0] + '~' + peerParts[1]
+      await chatService.sendMessage(currentMesh.value, chat.name, text, peerSessionId, uploadedFiles)
+    }
+    newMessage.value = ''
+    
+    // Show notification about saved paths for images
+    if (savedPaths.length > 0) {
+      const now = new Date()
+      const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+      if (!chat.messages) chat.messages = []
+      chat.messages.push({
+        text: `[图片保存到以下路径]\n${savedPaths.join('\n')}`,
+        time: time,
+        sender: '系统',
+        timestamp: now.getTime(),
+        isSent: true,
+        isSystemHint: true
+      })
+    }
+  } catch (error) {
+    console.error('Failed to send images:', error)
+  }
+}
+
+const handleSendFiles = async (files) => {
+  if (!files || files.length === 0) return
+  if (activeChat.value === null) return
+  const chat = chats.value[activeChat.value]
+
+  // OpenCLaw agent: save files to agent workspace
+  if (chat.isOpenclaw) {
+    const imageFiles = []
+    const otherFiles = []
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (file.type && file.type.startsWith('image/')) {
+        imageFiles.push(file)
+      } else {
+        otherFiles.push(file)
+      }
+    }
+
+    // Handle images: show preview in chat
+    if (imageFiles.length > 0) {
+      const picturePaths = []
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i]
+        const fileName = file.name || ('img_' + Date.now() + '_' + i + '.png')
+        const arrayBuffer = await file.arrayBuffer()
+        try {
+          const res = await openclawService.uploadPicture(chat.agentId, arrayBuffer, fileName)
+          const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+          if (data && data.name) {
+            picturePaths.push({
+              name: data.name,
+              path: data.path,
+              url: openclawService.getPictureUrl(chat.agentId, data.name),
+              type: file.type || 'image/png'
+            })
+          }
+        } catch (error) {
+          console.error('Failed to upload image:', error)
+        }
+      }
+      if (picturePaths.length > 0) {
+        const now = new Date()
+        const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+        if (!chat.messages) chat.messages = []
+        chat.messages.push({
+          text: '',
+          files: picturePaths.map(p => ({ name: p.name, url: p.url, type: p.type })),
+          time: time,
+          sender: 'You',
+          timestamp: now.getTime(),
+          isSent: true
+        })
+      }
+    }
+
+    // Handle other files: show text notification
+    if (otherFiles.length > 0) {
+      const savedPaths = []
+      for (let i = 0; i < otherFiles.length; i++) {
+        const file = otherFiles[i]
+        const fileName = file.name || ('file_' + Date.now() + '_' + i)
+        const arrayBuffer = await file.arrayBuffer()
+        try {
+          const res = await openclawService.uploadPicture(chat.agentId, arrayBuffer, fileName)
+          const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+          if (data && data.path) {
+            savedPaths.push(data.path)
+          }
+        } catch (error) {
+          console.error('Failed to upload file:', error)
+        }
+      }
+      if (savedPaths.length > 0) {
+        const now = new Date()
+        const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+        if (!chat.messages) chat.messages = []
+        chat.messages.push({
+          text: `文件已保存，保存在：\n${savedPaths.join('\n')}`,
+          time: time,
+          sender: '系统',
+          timestamp: now.getTime(),
+          isSent: true,
+          isSystemHint: true
+        })
+      }
+    }
+    return
+  }
+
+  if (!currentMesh.value) return
+
+    // Use mesh filesystem (same as image upload) - save to /shared/{owner}/publish/files/{hash}
+    const uploadedFiles = []
+    const sessionId = chat.isGroup
+      ? [currentMeshAgentUsername.value, chat.gcid].sort().join('~')
+      : [currentMeshAgentUsername.value, chat.name].sort().join('~')
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const fileName = file.name || ('file_' + Date.now() + '_' + i)
+      try {
+        const arrayBuffer = await file.arrayBuffer()
+        const response = await chatService.uploadFile(currentMesh.value, arrayBuffer)
+        const hash = typeof response.data === 'string' ? response.data : ''
+        if (hash) {
+          uploadedFiles.push({
+            hash: hash,
+            name: fileName,
+            type: file.type || 'application/octet-stream',
+            size: file.size || 0,
+            owner: currentMeshAgentUsername.value,
+            path: '/shared/' + currentMeshAgentUsername.value + '/publish/files/' + hash
+          })
+        }
+      } catch (error) {
+        console.error('Failed to upload file:', fileName, error)
+      }
+    }
+
+    const text = newMessage.value.trim()
+    if (uploadedFiles.length > 0) {
+      if (chat.isGroup) {
+        await chatService.sendGroupMessage(currentMesh.value, chat.creator, chat.groupId, text, sessionId, uploadedFiles)
+      } else {
+        await chatService.sendMessage(currentMesh.value, chat.name, text, sessionId, uploadedFiles)
+      }
+      newMessage.value = ''
+    }
+
+    // Show feedback
+    const now = new Date()
+    const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+    if (!chat.messages) chat.messages = []
+    if (uploadedFiles.length > 0) {
+      chat.messages.push({
+        text: '[文件已发送] ' + uploadedFiles.map(f => f.name).join('，'),
+        time: time,
+        sender: '系统',
+        timestamp: now.getTime(),
+        isSent: true,
+        isSystemHint: true
+      })
+    } else {
+      chat.messages.push({
+        text: '[文件上传失败] 请重试',
+        time: time,
+        sender: '系统',
+        timestamp: now.getTime(),
+        isSent: true,
+        isSystemHint: true
+      })
+    }
 }
 
 const switchMesh = async (meshName) => {
@@ -603,22 +894,28 @@ const handleDeleteGroup = async (chat) => {
   if (!confirm(`Delete group "${chat.name}"? This cannot be undone.`)) return
   try {
     await chatService.deleteGroup(currentMesh.value, chat.creator, chat.groupId)
-    await fetchChats()
-    activeChat.value = null
   } catch (error) {
     console.error('Failed to delete group:', error)
   }
+  // Remove from local list immediately regardless of API result
+  const idx = chats.value.indexOf(chat)
+  if (idx >= 0) chats.value.splice(idx, 1)
+  activeChat.value = null
+  await fetchChats()
 }
 
 const handleLeaveGroup = async (chat) => {
   if (!confirm(`Leave group "${chat.name}"?`)) return
   try {
     await chatService.leaveGroup(currentMesh.value, chat.creator, chat.groupId)
-    await fetchChats()
-    activeChat.value = null
   } catch (error) {
     console.error('Failed to leave group:', error)
   }
+  // Remove from local list immediately regardless of API result
+  const idx = chats.value.indexOf(chat)
+  if (idx >= 0) chats.value.splice(idx, 1)
+  activeChat.value = null
+  await fetchChats()
 }
 
 const joinParty = async (regUrl) => {
@@ -668,9 +965,13 @@ provide('localOpenclawAvailable', localOpenclawAvailable)
 
 const resolveEpDisplayName = (username) => {
   if (!username) return username
+  // 优先从 openclawAgents 获取 identityName（人可读的名字）
+  const agent = openclawAgents.value.find(a => a.id === username)
+  if (agent) return username + "/" + agent.name
+  // 如果不是本地 agent，使用 mesh 用户的 name
   const ep = users.value.find(u => u.username === username)
-  if (!ep) return username
-  return ep.username + '/' + ep.name
+  if (ep) return ep.username + "/" + ep.name
+  return username
 }
 provide('resolveEpDisplayName', resolveEpDisplayName)
 
