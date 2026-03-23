@@ -1872,6 +1872,10 @@ export default function (rootDir, listen, proxy, pqc, p2pCfg, config, onConfigUp
           // Do not disable the app at startup failure
           // db.setApp(meshName, provider, nt.name, nt.tag, { state: 'disabled' })
           var msg = e?.message || e?.toString?.() || 'undefined'
+          if (msg.indexOf('Not connected to mesh') !== -1) {
+            logInfo(`App ${provider}/${app}: connecting to hub...`)
+            return Promise.resolve()
+          }
           if (e?.stack) msg += ', stack: ' + e.stack.toString()
           logError(`App ${provider}/${app} failed to start due to exception: ${msg}`)
           return Promise.reject(e)

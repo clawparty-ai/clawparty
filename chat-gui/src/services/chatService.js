@@ -71,10 +71,16 @@ export const openclawService = {
     })
   },
 
-  botChat(currentAgentId, targetAgentId, text) {
-    return api.post(`/openclaw/bot-chat/${currentAgentId}/${targetAgentId}`, text, {
-      headers: { 'Content-Type': 'text/plain' }
+  uploadPicture(agentId, fileData, fileName) {
+    return api.post(`/openclaw/agents/${agentId}/pictures?name=${encodeURIComponent(fileName)}`, fileData, {
+      headers: { 'Content-Type': 'application/octet-stream' },
+      transformRequest: [data => data]
     })
+  },
+
+  getPictureUrl(agentId, fileName) {
+    const token = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
+    return `/api/openclaw/agents/${agentId}/pictures/${encodeURIComponent(fileName)}${token}`
   }
 }
 
@@ -103,12 +109,40 @@ export const chatService = {
     return api.get(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}/messages?since=${since}`)
   },
   
-  sendMessage(meshName, peer, text) {
-    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${peer}/messages`, { text })
+  sendMessage(meshName, peer, text, sessionId, files) {
+    const body = { text, sessionId: sessionId || null }
+    if (files && files.length > 0) body.files = files
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${peer}/messages`, body)
   },
   
-  sendGroupMessage(meshName, creator, groupId, text) {
-    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}/messages`, { text })
+  sendGroupMessage(meshName, creator, groupId, text, sessionId, files) {
+    const body = { text, sessionId: sessionId || null }
+    if (files && files.length > 0) body.files = files
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}/messages`, body)
+  },
+
+  uploadFile(meshName, fileData) {
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/files`, fileData, {
+      headers: { 'Content-Type': 'application/octet-stream' },
+      transformRequest: [data => data]
+    })
+  },
+
+  uploadFileToSession(meshName, fileData, sessionId, fileName) {
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/files/upload?sessionId=${encodeURIComponent(sessionId)}&name=${encodeURIComponent(fileName)}`, fileData, {
+      headers: { 'Content-Type': 'application/octet-stream' },
+      transformRequest: [data => data]
+    })
+  },
+
+  getFileUrl(meshName, owner, hash) {
+    const token = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
+    return `/api/meshes/${meshName}/apps/ztm/chat/api/files/${owner}/${hash}${token}`
+  },
+
+  getFileFromSessionUrl(meshName, sessionId, hash) {
+    const token = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
+    return `/api/meshes/${meshName}/apps/ztm/chat/api/files/upload/${encodeURIComponent(sessionId)}/${hash}${token}`
   },
   
   createGroup(meshName, creator, groupId, data) {
@@ -148,7 +182,27 @@ export const chatService = {
 
   revokeGroupEpAutoReply(meshName, gcid) {
     return api.delete(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/auto-reply`)
-  }
+  },
+
+  getAllPeerConfigs(meshName) {
+    return api.get(`/meshes/${meshName}/apps/ztm/chat/api/auto-reply`)
+  },
+
+  getPeerConfig(meshName, peer) {
+    return api.get(`/meshes/${meshName}/apps/ztm/chat/api/peers/${encodeURIComponent(peer)}/auto-reply`)
+  },
+
+  updatePeerConfig(meshName, peer, config) {
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${encodeURIComponent(peer)}/auto-reply`, config)
+  },
+
+  halfAutomationRewrite(meshName, peer, draftText, humanHint, sessionId) {
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${encodeURIComponent(peer)}/half-rewrite`, {
+      draftText,
+      humanHint,
+      sessionId
+    })
+  },
 }
 
 export default api

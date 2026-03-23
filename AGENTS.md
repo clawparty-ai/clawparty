@@ -136,6 +136,7 @@ cd chat-gui && npm run build && echo "Build successful"
 - Existing code often uses `var` and function declarations; preserve local style in touched files.
 - Use Pipy APIs directly where appropriate (`pipy.argv`, `pipy.exit`, `pipy.load`).
 - Use `JSON.decode` / `JSON.encode` in Pipy-side code.
+- **No regex**: PipyJS does not support `RegExp` APIs (`exec`, `match`, `test`, `replace(regex)`, `new RegExp`). Use string operations instead (`split`, `indexOf`, `charAt`, `substring`, `startsWith`, `endsWith`, `includes`).
 
 ### Comments
 - Keep comments minimal.
