@@ -1348,6 +1348,7 @@ function runHub(args, program) {
 function runAgent(args, program) {
   var cmd = [
     program,
+    '--log-level', 'info',
     '--pipy', 'repo://ztm/agent',
     '--args',
     '--data', args['--data'] || '~/.openclaw/workspace/clawparty',
