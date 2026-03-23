@@ -13,7 +13,7 @@ export default function (ctx, config) {
   var penalty       = (config && config.penalty)       || 1
 
   var count = ctx.db.countRecentMessages(ctx.mesh, ctx.peer, ctx.sender, ctx.text, withinSeconds)
-  console.info('[filter repeat-message] peer:', ctx.peer, 'content:', ctx.text,
+  console.info('[filter repeat-message] peer:', ctx.peer, 'content:', (ctx.text || '').split('\n')[0],
     'count in last', withinSeconds, 's:', count, '/ max:', maxCount)
 
   if (count >= maxCount) {

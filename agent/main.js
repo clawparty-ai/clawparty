@@ -4,6 +4,12 @@ import api from './api.js'
 import db from './db.js'
 import cmdline from './cmdline.js'
 
+function firstLine(text) {
+  if (typeof text !== 'string') return text
+  var idx = text.indexOf('\n')
+  return idx === -1 ? text : text.slice(0, idx) + '...'
+}
+
 try {
   cmdline(pipy.argv, {
     commands: [{
@@ -83,13 +89,15 @@ try {
         db.open(os.path.join(dbPath, 'ztm.db'))
         api.init(dbPath, listen, args['--proxy'], pqc, p2pConfig)
 
-        // Pre-populate local agent id cache synchronously so chat app can use it on first message
+        // Pre-populate local agent id cache synchronously so chat app can use it immediately
         try {
           var agentsDir = os.path.join(os.home(), '.openclaw', 'agents')
           var agentIds = os.readDir(agentsDir)
             .filter(function (name) { return name.endsWith('/') && name !== 'main/' })
             .map(function (name) { return name.slice(0, -1) })
-          db.setCache('local_agent_ids', agentIds)
+          if (agentIds.length > 0) {
+            db.setCache('local_agent_ids', agentIds)
+          }
         } catch {}
 
         if (joinMesh) {
@@ -114,43 +122,70 @@ try {
   pipy.exit(-1)
 }
 
+function md5(text) {
+  var h = new crypto.Hash('md5')
+  h.update(text)
+  return h.digest('hex')
+}
+
 function main(listen, apiToken, noAuth) {
   var gui = new http.Directory('gui')
 
   function makeOpenclawPipeline(cmd) {
     var $output
+    var $startTime
+    var $exitCode = 0
+    var $errorMessage = ''
     return pipeline($=>$
-      .onStart(new Data)
+      .onStart(() => { $startTime = Date.now(); return new Data })
       .exec(() => cmd, {
+        stderr: true,
         onExit: (code, err) => {
-          if (err) err.toString().split('\n').filter(Boolean).forEach(
-            line => console.error('[openclaw]', line)
-          )
+          $exitCode = code
+          if (err) {
+            $errorMessage = err.toString()
+            $errorMessage.split('\n').filter(Boolean).forEach(
+              line => console.error('[openclaw cli]', line)
+            )
+          }
           return new StreamEnd
         }
       })
-      .replaceStreamStart(evt => [new MessageStart, evt])
+      .replaceStreamStart(evt => { $output = ''; return [new MessageStart, evt] })
       .replaceStreamEnd(() => new MessageEnd)
       .replaceMessage(msg => {
         $output = msg?.body?.toString?.() || ''
         return new StreamEnd
       })
-      .onEnd(() => $output)
+      .onEnd(() => {
+        var durationMs = Date.now() - $startTime
+        var success = $exitCode === 0 && !$errorMessage
+        db.logCliCall(cmd[0], cmd.slice(1), $output, $exitCode, success, durationMs, $errorMessage)
+        $errorMessage = ''
+        return $output
+      })
     )
   }
 
-  var openclawStatus = makeOpenclawPipeline(['openclaw', 'status', '--json'])
-  var openclawAgents = makeOpenclawPipeline(['openclaw', 'agents', 'list', '--json'])
+  var openclawStatus = makeOpenclawPipeline(['openclaw', 'status', '--json', '--no-color'])
+  var openclawAgents = makeOpenclawPipeline(['openclaw', 'agents', 'list', '--json', '--no-color'])
 
   var $openclawAgentCmd
   var $openclawAgentOutput
+  var $openclawAgentStartTime
+  var $openclawAgentExitCode = 0
+  var $openclawAgentErrorMessage = ''
   var openclawAgentMessage = pipeline($=>$
-    .onStart(cmd => { $openclawAgentCmd = cmd; return new Data })
+    .onStart(cmd => { $openclawAgentCmd = cmd; $openclawAgentStartTime = Date.now(); return new Data })
     .exec(() => $openclawAgentCmd, {
       onExit: (code, err) => {
-        if (err) err.toString().split('\n').filter(Boolean).forEach(
-          line => console.error('[openclaw]', line)
-        )
+        $openclawAgentExitCode = code
+        if (err) {
+          $openclawAgentErrorMessage = err.toString()
+          $openclawAgentErrorMessage.split('\n').filter(Boolean).forEach(
+            line => console.error('[openclaw cli]', line)
+          )
+        }
         return new StreamEnd
       }
     })
@@ -160,20 +195,47 @@ function main(listen, apiToken, noAuth) {
       $openclawAgentOutput = msg?.body?.toString?.() || ''
       return new StreamEnd
     })
-    .onEnd(() => $openclawAgentOutput)
+    .onEnd(() => {
+      var durationMs = Date.now() - $openclawAgentStartTime
+      var success = $openclawAgentExitCode === 0 && !$openclawAgentErrorMessage
+      db.logCliCall($openclawAgentCmd[0], $openclawAgentCmd.slice(1), $openclawAgentOutput, $openclawAgentExitCode, success, durationMs, $openclawAgentErrorMessage)
+      $openclawAgentErrorMessage = ''
+      return $openclawAgentOutput
+    })
   )
 
   var $ztmVersionOutput
+  var $ztmVersionStartTime
+  var $ztmVersionExitCode = 0
+  var $ztmVersionErrorMessage = ''
   var ztmVersion = pipeline($=>$
-    .onStart(new Data)
-    .exec(() => ['ztm', 'version'], { stderr: true })
+    .onStart(() => { $ztmVersionStartTime = Date.now(); return new Data })
+    .exec(() => ['ztm', 'version'], {
+      stderr: true,
+      onExit: (code, err) => {
+        $ztmVersionExitCode = code
+        if (err) {
+          $ztmVersionErrorMessage = err.toString()
+          $ztmVersionErrorMessage.split('\n').filter(Boolean).forEach(
+            line => console.error('[openclaw cli]', line)
+          )
+        }
+        return new StreamEnd
+      }
+    })
     .replaceStreamStart(evt => [new MessageStart, evt])
     .replaceStreamEnd(() => new MessageEnd)
     .replaceMessage(msg => {
       $ztmVersionOutput = msg?.body?.toString?.() || ''
       return new StreamEnd
     })
-    .onEnd(() => $ztmVersionOutput)
+    .onEnd(() => {
+      var durationMs = Date.now() - $ztmVersionStartTime
+      var success = $ztmVersionExitCode === 0 && !$ztmVersionErrorMessage
+      db.logCliCall('ztm', ['version'], $ztmVersionOutput, $ztmVersionExitCode, success, durationMs, $ztmVersionErrorMessage)
+      $ztmVersionErrorMessage = ''
+      return $ztmVersionOutput
+    })
   )
 
   var routes = Object.entries({
@@ -659,6 +721,8 @@ function main(listen, apiToken, noAuth) {
 
     '/api/openclaw/status': {
       'GET': function () {
+        var statusCmd = 'openclaw status --json'
+        console.info('[openclaw cli]', statusCmd.slice(0, 200))
         return openclawStatus.spawn().then(
           output => response(200, output.split('\n').join('')),
           output => response(500, output.split('\n').join(''))
@@ -668,6 +732,8 @@ function main(listen, apiToken, noAuth) {
 
     '/api/openclaw/agents': {
       'GET': function () {
+        var agentsCmd = 'openclaw agents list --json'
+        console.info('[openclaw cli]', agentsCmd.slice(0, 200))
         return openclawAgents.spawn().then(
           output => {
             var cleaned = output.split('\n').join('')
@@ -675,12 +741,11 @@ function main(listen, apiToken, noAuth) {
               var list = JSON.parse(cleaned)
               if (Array.isArray(list)) {
                 var ids = list.map(a => a.id || a.name).filter(Boolean)
-                db.setCache('local_agent_ids', ids)
-                return response(200, cleaned)
+                console.info('[openclaw cli] openclaw agents list --json output:', JSON.stringify(ids))
+                if (ids.length > 0) db.setCache('local_agent_ids', ids)
               }
             } catch {}
-            // openclaw not installed or returned non-JSON output — return empty array
-            return response(200, '[]')
+            return response(200, cleaned || '[]')
           },
           output => response(500, output.split('\n').join(''))
         )
@@ -704,7 +769,8 @@ function main(listen, apiToken, noAuth) {
     '/api/openclaw/session/{agent}': {
       'GET': function ({ agent }) {
         agent = URL.decodeComponent(agent)
-        var cmd = ['openclaw', 'sessions', '--agent', agent, '--json']
+        var cmd = ['openclaw', 'sessions', '--agent', agent, '--json', '--no-color']
+        console.info('[openclaw cli]', cmd.join(' ').slice(0, 200))
         return openclawAgentMessage.spawn(cmd).then(
           output => response(200, output.split('\n').join('')),
           output => response(500, output.split('\n').join(''))
@@ -754,8 +820,16 @@ function main(listen, apiToken, noAuth) {
       'POST': function ({ agent }, req) {
         agent = URL.decodeComponent(agent)
         var message = req.body.toString()
-        console.info('[chat send] user ->', agent, ':', message)
-        var cmd = ['openclaw', 'agent', '--agent', agent, '--message', message, '--json']
+        var sessionId = new URL(req.head.path).searchParams.get('session-id') || agent
+        var messageMd5 = md5(message)
+        console.info('[chat send] user ->', agent, ':', firstLine(message))
+        if (db.hasCliLog(agent, sessionId, messageMd5)) {
+          console.info('[openclaw cli] duplicate call, skipping. agent:', agent, 'session:', sessionId)
+          return response(200, JSON.stringify({ warning: 'duplicated cli call' }))
+        }
+        db.addCliLog(agent, sessionId, messageMd5)
+        var cmd = ['openclaw', 'agent', '--agent', agent, '--message', message, '--session-id', sessionId, '--json', '--no-color']
+        console.info('[openclaw cli]', cmd.join(' ').slice(0, 200))
         return openclawAgentMessage.spawn(cmd).then(
           output => response(200, output.split('\n').join('')),
           output => response(500, output.split('\n').join(''))
@@ -763,18 +837,37 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
-    '/api/openclaw/bot-chat/{sender}/{receiver}': {
-      'POST': function ({ sender, receiver }, req) {
-        sender = URL.decodeComponent(sender)
-        receiver = URL.decodeComponent(receiver)
-        var message = req.body?.toString?.() || 'Hello, let us connect!'
-        console.info('[chat send]', sender, '->', receiver, ':', message)
-        var prompt = `let ${sender} send message to ${receiver}, message is "${message}"`
-        var cmd = ['openclaw', 'agent', '--agent', 'main', '--message', prompt, '--json']
-        return openclawAgentMessage.spawn(cmd).then(
-          output => response(200, output.split('\n').join('')),
-          output => response(500, output.split('\n').join(''))
-        )
+    '/api/openclaw/agents/{agent}/pictures': {
+      'POST': function ({ agent }, req) {
+        agent = URL.decodeComponent(agent)
+        var url = new URL(req.head.path, 'http://localhost')
+        var filename = url.searchParams.get('name') || ('img_' + Date.now() + '.png')
+        var dir = os.path.join(os.home(), '.openclaw', 'agents', agent, 'clawparty', 'pictures')
+        try { os.mkdir(dir, { recursive: true }) } catch {}
+        var filepath = os.path.join(dir, filename)
+        try {
+          os.write(filepath, req.body)
+          return response(200, JSON.stringify({ path: filepath, name: filename }))
+        } catch (e) {
+          return response(500, JSON.stringify({ error: e?.toString?.() || 'write failed' }))
+        }
+      }
+    },
+
+    '/api/openclaw/agents/{agent}/pictures/{filename}': {
+      'GET': function ({ agent, filename }) {
+        agent = URL.decodeComponent(agent)
+        filename = URL.decodeComponent(filename)
+        var filepath = os.path.join(os.home(), '.openclaw', 'agents', agent, 'clawparty', 'pictures', filename)
+        try {
+          var data = os.read(filepath)
+          if (data) {
+            return new Message({ status: 200 }, data)
+          }
+          return response(404)
+        } catch {
+          return response(404)
+        }
       }
     },
 
@@ -933,6 +1026,26 @@ function main(listen, apiToken, noAuth) {
     }
   )
 
+  // Warm up local_agent_ids cache on startup so group auto-reply works immediately
+  openclawAgents.spawn().then(
+    output => {
+      var cleaned = output.split('\n').join('')
+      try {
+        var list = JSON.parse(cleaned)
+        if (Array.isArray(list)) {
+          var ids = list.map(a => a.id || a.name).filter(Boolean)
+          if (ids.length > 0) {
+            db.setCache('local_agent_ids', ids)
+            console.info('[openclaw] startup: local agent list cached:', JSON.stringify(ids))
+          } else {
+            console.info('[openclaw] startup: openclaw agents list returned empty, skipping cache')
+          }
+        }
+      } catch {}
+    },
+    err => console.error('[openclaw] startup: failed to fetch local agent list:', err?.toString?.() || err)
+  )
+
   var appApiMatch = new http.Match('/api/meshes/{mesh}/apps/{provider}/{app}')
   var appPreMatch = new http.Match('/api/meshes/{mesh}/apps/{provider}/{app}/*')
 
@@ -961,9 +1074,16 @@ function main(listen, apiToken, noAuth) {
     var directToken = getHeader(head, 'x-ztm-token')
     if (directToken && directToken === apiToken) return true
     var authorization = getHeader(head, 'authorization')
-    if (typeof authorization !== 'string') return false
-    if (!authorization.startsWith(authSchemePrefix)) return false
-    return authorization.substring(authSchemePrefix.length) === apiToken
+    if (typeof authorization === 'string' && authorization.startsWith(authSchemePrefix)) {
+      if (authorization.substring(authSchemePrefix.length) === apiToken) return true
+    }
+    // Allow token as query parameter (for <img src> and other browser-native requests)
+    try {
+      var url = new URL(head.path, 'http://localhost')
+      var qtoken = url.searchParams.get('token')
+      if (qtoken && qtoken === apiToken) return true
+    } catch {}
+    return false
   }
 
   var appSessionPools = new algo.Cache(
@@ -1000,7 +1120,9 @@ function main(listen, apiToken, noAuth) {
               $reqHead = req.head
               $reqBody = req.body?.toString?.() || ''
               try {
-                println(`${formatLocalTime()} [INF] [api] ${$clientIp} ${$reqHead.path}`)
+                if ($reqHead.path.indexOf('/endpoints') === -1) {
+                  println(`${formatLocalTime()} [INF] [api] ${$clientIp} ${$reqHead.path}`)
+                }
               } catch {}
               var path = req.head.path
               var params = null

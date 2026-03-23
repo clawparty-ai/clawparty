@@ -5,13 +5,20 @@ import db from '../../../db.js'
 // Module-level static pipeline for running openclaw commands — must be defined at top level in Pipy
 var $openclawCmd
 var $openclawOutput
+var $openclawStartTime
+var $openclawExitCode = 0
+var $openclawErrorMessage = ''
 var openclawExec = pipeline($=>$
-  .onStart(cmd => { $openclawCmd = cmd; return new Data })
+  .onStart(cmd => { $openclawCmd = cmd; $openclawStartTime = Date.now(); return new Data })
   .exec(() => $openclawCmd, {
     onExit: (code, err) => {
-      if (err) err.toString().split('\n').filter(Boolean).forEach(
-        line => console.error('[openclaw]', line)
-      )
+      $openclawExitCode = code
+      if (err) {
+        $openclawErrorMessage = err.toString()
+        $openclawErrorMessage.split('\n').filter(Boolean).forEach(
+          line => console.error('[openclaw]', line)
+        )
+      }
       return new StreamEnd
     }
   })
@@ -21,7 +28,13 @@ var openclawExec = pipeline($=>$
     $openclawOutput = msg?.body?.toString?.() || ''
     return new StreamEnd
   })
-  .onEnd(() => $openclawOutput)
+  .onEnd(() => {
+    var durationMs = Date.now() - $openclawStartTime
+    var success = $openclawExitCode === 0 && !$openclawErrorMessage
+    db.logCliCall($openclawCmd[0], $openclawCmd.slice(1), $openclawOutput, $openclawExitCode, success, durationMs, $openclawErrorMessage)
+    $openclawErrorMessage = ''
+    return $openclawOutput
+  })
 )
 
 export default function ({ app, mesh, utils }) {
@@ -82,7 +95,9 @@ export default function ({ app, mesh, utils }) {
 
       'POST': responder((params, req) => {
         var peer = URL.decodeComponent(params.peer)
-        return api.addPeerMessage(peer, JSON.decode(req.body)).then(
+        var body = JSON.decode(req.body)
+        var sessionId = body.sessionId || null
+        return api.addPeerMessage(peer, body, sessionId).then(
           ret => response(ret ? 201 : 404)
         )
       }),
@@ -141,7 +156,9 @@ export default function ({ app, mesh, utils }) {
       'POST': responder((params, req) => {
         var creator = URL.decodeComponent(params.creator)
         var group = URL.decodeComponent(params.group)
-        return api.addGroupMessage(creator, group, JSON.decode(req.body)).then(
+        var body = JSON.decode(req.body)
+        var sessionId = body.sessionId || null
+        return api.addGroupMessage(creator, group, body, false, sessionId).then(
           ret => response(ret ? 201 : 404)
         )
       }),
@@ -229,6 +246,23 @@ export default function ({ app, mesh, utils }) {
       }),
     },
 
+    '/api/peers/{peer}/half-rewrite': {
+      'POST': responder((params, req) => {
+        var peer = URL.decodeComponent(params.peer)
+        var body
+        try { body = JSON.decode(req.body) } catch { body = {} }
+        var draftText = body.draftText || ''
+        var humanHint = body.humanHint || ''
+        var sessionId = body.sessionId || ''
+        if (!draftText) return Promise.resolve(response(400, JSON.stringify({ error: 'draftText required' })))
+        return api.halfAutomationRewrite(peer, draftText, humanHint, sessionId).then(
+          replyText => response(200, JSON.stringify({ text: replyText }))
+        ).catch(
+          e => response(500, JSON.stringify({ error: e?.toString?.() || 'rewrite failed' }))
+        )
+      }),
+    },
+
     '/api/auto-reply': {
       'GET': responder(() => Promise.resolve(response(200, api.allPeerConfigs()))),
     },
@@ -237,6 +271,30 @@ export default function ({ app, mesh, utils }) {
       'POST': responder((_, req) => {
         return api.addFile(req.body).then(
           hash => hash ? response(200, hash) : response(404)
+        )
+      }),
+    },
+
+    '/api/files/upload': {
+      'POST': responder((_, req) => {
+        var url = new URL(req.head.path, 'http://localhost')
+        var sessionId = url.searchParams.get('sessionId') || ''
+        var fileName = url.searchParams.get('name') || 'file'
+        if (!sessionId) return Promise.resolve(response(400, JSON.stringify({ error: 'sessionId required' })))
+        return api.addFileToSession(req.body, sessionId, fileName).then(
+          ret => ret ? response(200, JSON.stringify(ret)) : response(404)
+        ).catch(
+          e => response(500, JSON.stringify({ error: e?.toString?.() || 'upload failed' }))
+        )
+      }),
+    },
+
+    '/api/files/upload/{sessionId}/{hash}': {
+      'GET': responder((params) => {
+        var sessionId = params.sessionId
+        var hash = params.hash
+        return api.getFileFromSession(sessionId, hash).then(
+          ret => ret ? new Message({ status: 200 }, ret) : response(404)
         )
       }),
     },
