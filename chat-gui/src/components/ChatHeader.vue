@@ -64,6 +64,13 @@
           </svg>
         </button>
 
+        <button class="header-btn" title="Reload" @click="emit('reload')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 4v6h-6"/>
+            <path d="M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+          </svg>
+        </button>
         <button class="header-btn" title="Settings">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
             <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z"/>
@@ -107,7 +114,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf'])
+const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload'])
 </script>
 
 <style scoped>
