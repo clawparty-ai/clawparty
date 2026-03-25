@@ -1062,12 +1062,12 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       if (!chat) return Promise.resolve(false)
       isNew = true
     }
-    if (info.name) chat.name = info.name
+    if (info.name !== undefined && info.name !== null) chat.name = info.name
     if (info.members instanceof Array) chat.members = info.members
     // Ensure gcid is registered in chat_peer so auto-reply config can be stored per group
     if (isNew) {
       db.setChatPeer(mesh.name, chat.gcid, { autoReply: false, autoReplyAgent: 'main', peerName: info.name || '' })
-    } else if (info.name) {
+    } else if (info.name !== undefined && info.name !== null) {
       db.setChatPeer(mesh.name, chat.gcid, { peerName: info.name })
     }
     // Create chat_peer records for local agent members (peer = gcid~agentName)
@@ -1153,8 +1153,13 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   }
 
   function leaveGroup(creator, group) {
+    console.log('[leaveGroup] called with creator:', creator, 'group:', group)
     var chat = findGroupChat(creator, group)
-    if (!chat) return Promise.resolve(false)
+    console.log('[leaveGroup] findGroupChat result:', chat ? 'found' : 'not found')
+    if (!chat) {
+      console.log('[leaveGroup] Available groups:', chats.filter(c => c.group).map(c => ({creator: c.creator, group: c.group})))
+      return Promise.resolve(false)
+    }
     // Remove from in-memory list and mark dismissed in db
     var idx = chats.indexOf(chat)
     if (idx >= 0) chats.splice(idx, 1)
@@ -1163,6 +1168,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       db.logChat(mesh.name, 'group', group, chat.name, creator, app.username,
         'group_leave', null, chat.members)
     } catch {}
+    console.log('[leaveGroup] success, group dismissed:', creator, group)
     return Promise.resolve(true)
   }
 

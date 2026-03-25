@@ -901,16 +901,28 @@ const handleDeleteGroup = async (chat) => {
 }
 
 const handleLeaveGroup = async (chat) => {
-  if (!confirm(`Leave group "${chat.name}"?`)) return
+  const confirmed = window.confirm ? window.confirm(`Leave group "${chat.name}"?`) : true
+  if (!confirmed) return
+  
+  console.log('[handleLeaveGroup] Leaving group:', { creator: chat.creator, groupId: chat.groupId, name: chat.name })
+  
   try {
-    await chatService.leaveGroup(currentMesh.value, chat.creator, chat.groupId)
+    const result = await chatService.leaveGroup(currentMesh.value, chat.creator, chat.groupId)
+    console.log('[handleLeaveGroup] API result:', result)
   } catch (error) {
-    console.error('Failed to leave group:', error)
+    console.error('[handleLeaveGroup] API error:', error)
+    return
   }
+  
   // Remove from local list immediately regardless of API result
-  const idx = chats.value.indexOf(chat)
+  const idx = chats.value.findIndex(c => c.id === chat.id)
+  console.log('[handleLeaveGroup] Removing from local list, idx:', idx)
   if (idx >= 0) chats.value.splice(idx, 1)
-  activeChat.value = null
+  if (activeChat.value === idx) {
+    activeChat.value = null
+  } else if (activeChat.value !== null && activeChat.value > idx) {
+    activeChat.value--
+  }
   await fetchChats()
 }
 
@@ -921,6 +933,12 @@ const joinParty = async (regUrl) => {
 
 const renameGroupChat = async (chat, newName) => {
   if (!currentMesh.value || !newName.trim()) return
+  
+  if (chat.creator !== currentMeshAgentUsername.value) {
+    console.error('Failed to rename group: Only the group creator can rename the group')
+    return
+  }
+  
   try {
     await chatService.createGroup(currentMesh.value, chat.creator, chat.groupId, {
       name: newName.trim(),
@@ -934,6 +952,12 @@ const renameGroupChat = async (chat, newName) => {
 
 const updateGroupMembers = async (chat, members) => {
   if (!currentMesh.value) return
+  
+  if (chat.creator !== currentMeshAgentUsername.value) {
+    console.error('Failed to update group members: Only the group creator can update members')
+    return
+  }
+  
   try {
     await chatService.updateGroupMembers(
       currentMesh.value, chat.creator, chat.groupId,
