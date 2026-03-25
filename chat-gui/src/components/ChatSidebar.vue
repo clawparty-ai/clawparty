@@ -292,8 +292,8 @@
                   <span class="item-name" @click="$emit('select', getChatIndex(chat.id))">{{ chat.name }}</span>
                 </template>
                 <span v-if="chat.updated > 0 && renamingChatId !== chat.id" class="unread-badge">{{ chat.updated > 99 ? '99+' : chat.updated }}</span>
-                <button class="group-action-btn" @click.stop="startRename(chat)" title="Rename">✎</button>
-                <button class="group-action-btn" @click.stop="openEditMembers(chat)" title="Edit members">👥</button>
+                <button v-if="chat.creator === currentMeshAgentUsername" class="group-action-btn" @click.stop="startRename(chat)" title="Rename">✎</button>
+                <button v-if="chat.creator === currentMeshAgentUsername" class="group-action-btn" @click.stop="openEditMembers(chat)" title="Edit members">👥</button>
               </div>
               <!-- Expanded members list -->
               <div v-if="expandedGroups.has(chat.id)" class="group-members-list">
