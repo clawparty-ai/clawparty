@@ -173,7 +173,7 @@ export const chatService = {
   },
 
   revokeGroupAgentAutoReply(meshName, gcid, agentName) {
-    return api.delete(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/agents/${agentName}/auto-reply`)
+    return api.del(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/agents/${agentName}/auto-reply`)
   },
 
   approveGroupEpAutoReply(meshName, gcid, agentName) {
@@ -181,7 +181,7 @@ export const chatService = {
   },
 
   revokeGroupEpAutoReply(meshName, gcid) {
-    return api.delete(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/auto-reply`)
+    return api.del(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/auto-reply`)
   },
 
   getAllPeerConfigs(meshName) {
