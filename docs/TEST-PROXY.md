@@ -1,253 +1,253 @@
 # Proxy App Test Plan
 
-## 概述
+## Overview
 
-Proxy App 是 ClawParty 的零信任代理应用，允许从任何位置访问设备。本文档记录了 Proxy App 的测试方案和测试案例。
+Proxy App is ClawParty zero-trust proxy application, allowing device access from any location. This document records Proxy App test plans and test cases.
 
-## 测试范围
+## Test Scope
 
-### 1. 基础功能测试
-- CLI 帮助命令
-- 代理配置
-- 监听和转发端点
+### 1. Basic Function Tests
+- CLI help commands
+- Proxy configuration
+- Listening and forwarding endpoints
 
-### 2. 监听端配置测试
-- 设置监听地址
-- 修改监听端口
-- 关闭监听
+### 2. Listening Endpoint Configuration Tests
+- Set listening address
+- Modify listening port
+- Close listening
 
-### 3. 转发端配置测试
-- 添加转发目标
-- 移除转发目标
-- 查看转发规则
+### 3. Forwarding Endpoint Configuration Tests
+- Add forwarding targets
+- Remove forwarding targets
+- View forwarding rules
 
-### 4. 代理连接测试
-- HTTP 代理
-- HTTPS 代理
-- SOCKS 代理（可选）
+### 4. Proxy Connection Tests
+- HTTP proxy
+- HTTPS proxy
+- SOCKS proxy (optional)
 
-### 5. 域名和 IP 过滤测试
-- 域名匹配
-- IP 范围匹配
-- 通配符支持
+### 5. Domain and IP Filtering Tests
+- Domain matching
+- IP range matching
+- Wildcard support
 
-### 6. 多端点测试
-- 多个转发端
-- 多个监听端
-
----
-
-## 测试案例
-
-### TC-PX-001: CLI 帮助命令
-
-**前置条件**: Proxy App 已启动
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm proxy help` | 显示帮助信息 |
-| 2 | 执行 `ztm proxy help config` | 显示 config 命令帮助 |
-| 3 | 验证选项说明 | 显示 --set-listen, --add-target, --remove-target |
+### 6. Multi-endpoint Tests
+- Multiple forwarding endpoints
+- Multiple listening endpoints
 
 ---
 
-### TC-PX-002: 配置转发端
+## Test Cases
 
-**前置条件**: 存在两个端点
+### TC-PX-001: CLI Help Commands
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm proxy config --add-target 0.0.0.0/0 '*'` | 配置成功 |
-| 2 | 执行 `ztm proxy config` | 显示配置信息 |
-| 3 | 验证目标列表 | 包含 0.0.0.0/0 和 * |
-| 4 | 验证监听状态 | 显示 not listening |
+**Precondition**: Proxy App is running
 
----
-
-### TC-PX-003: 配置监听端
-
-**前置条件**: 存在两个端点
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm proxy config --set-listen 0.0.0.0:1080` | 监听配置成功 |
-| 2 | 执行 `ztm proxy config` | 显示监听地址 |
-| 3 | 验证监听端口 | 端口 1080 被监听 |
-| 4 | 验证代理状态 | 显示 listening |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm proxy help` | Display help info |
+| 2 | Execute `ztm proxy help config` | Display config command help |
+| 3 | Verify option description | Display --set-listen, --add-target, --remove-target |
 
 ---
 
-### TC-PX-004: HTTP 代理测试
+### TC-PX-002: Configure Forwarding Endpoint
 
-**前置条件**: 监听端和转发端都已配置
+**Precondition**: Two endpoints exist
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `curl --proxy http://localhost:1080 http://example.com` | 代理请求成功 |
-| 2 | 验证响应内容 | 内容与直接访问一致 |
-| 3 | 执行 `curl --proxy http://localhost:1080 http://internal-host:8080` | 访问内部服务成功 |
-| 4 | 验证转发规则匹配 | 请求被正确转发 |
-
----
-
-### TC-PX-005: 添加特定域名目标
-
-**前置条件**: 无
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm proxy config --add-target '*.example.com'` | 添加成功 |
-| 2 | 执行 `ztm proxy config` | 目标列表包含 *.example.com |
-| 3 | 代理访问 example.com | 代理成功 |
-| 4 | 代理访问 other.com | 代理失败（不在目标列表） |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm proxy config --add-target 0.0.0.0/0 '*'` | Config successful |
+| 2 | Execute `ztm proxy config` | Display config info |
+| 3 | Verify target list | Contains 0.0.0.0/0 and * |
+| 4 | Verify listening status | Display not listening |
 
 ---
 
-### TC-PX-006: 添加 IP 范围目标
+### TC-PX-003: Configure Listening Endpoint
 
-**前置条件**: 无
+**Precondition**: Two endpoints exist
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm proxy config --add-target '192.168.0.0/16'` | 添加成功 |
-| 2 | 执行 `ztm proxy config` | 目标列表包含 IP 范围 |
-| 3 | 代理访问 192.168.1.100 | 代理成功 |
-| 4 | 代理访问 10.0.0.1 | 代理失败（不在范围） |
-
----
-
-### TC-PX-007: 移除转发目标
-
-**前置条件**: 存在配置的转发目标
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm proxy config --remove-target '*.example.com'` | 移除成功 |
-| 2 | 执行 `ztm proxy config` | 目标列表不再包含该域名 |
-| 3 | 代理访问 example.com | 代理失败 |
-| 4 | 验证其他目标不受影响 | 其他目标仍可代理 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm proxy config --set-listen 0.0.0.0:1080` | Listening config successful |
+| 2 | Execute `ztm proxy config` | Display listening address |
+| 3 | Verify listening port | Port 1080 is being listened |
+| 4 | Verify proxy status | Display listening |
 
 ---
 
-### TC-PX-008: 修改监听端口
+### TC-PX-004: HTTP Proxy Test
 
-**前置条件**: 监听已配置
+**Precondition**: Both listening and forwarding endpoints configured
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm proxy config --set-listen 0.0.0.0:1081` | 修改成功 |
-| 2 | 验证旧端口 | 端口 1080 不再监听 |
-| 3 | 验证新端口 | 端口 1081 开始监听 |
-| 4 | 通过新端口代理 | 代理成功 |
-
----
-
-### TC-PX-009: 关闭代理监听
-
-**前置条件**: 监听已配置
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm proxy config --set-listen` | 关闭监听 |
-| 2 | 执行 `ztm proxy config` | 显示 not listening |
-| 3 | 尝试通过代理访问 | 连接失败 |
-| 4 | 验证转发配置保留 | 转发目标仍存在 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `curl --proxy http://localhost:1080 http://example.com` | Proxy request successful |
+| 2 | Verify response content | Content matches direct access |
+| 3 | Execute `curl --proxy http://localhost:1080 http://internal-host:8080` | Access internal service successfully |
+| 4 | Verify forwarding rules match | Request forwarded correctly |
 
 ---
 
-### TC-PX-010: 域名解析测试
+### TC-PX-005: Add Specific Domain Target
 
-**前置条件**: 转发端有域名解析
+**Precondition**: None
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 在转发端配置 hosts | 配置特定域名解析 |
-| 2 | 通过代理访问该域名 | 使用转发端的解析 |
-| 3 | 验证访问成功 | 服务正确响应 |
-| 4 | 验证 DNS 解析位置 | 使用转发端的 DNS |
-
----
-
-### TC-PX-011: 多端点代理
-
-**前置条件**: 存在多个端点
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 配置端点 A 为转发端 | 配置成功 |
-| 2 | 配置端点 B 为监听端 | 配置成功 |
-| 3 | 通过端点 B 代理访问 | 请求被转发到端点 A |
-| 4 | 端点 A 再转发到目标 | 完整代理链工作 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm proxy config --add-target '*.example.com'` | Added successfully |
+| 2 | Execute `ztm proxy config` | Target list contains *.example.com |
+| 3 | Proxy access example.com | Proxy successful |
+| 4 | Proxy access other.com | Proxy failed (not in target list) |
 
 ---
 
-### TC-PX-012: HTTPS 代理测试
+### TC-PX-006: Add IP Range Target
 
-**前置条件**: 监听端和转发端都已配置
+**Precondition**: None
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `curl --proxy http://localhost:1080 https://example.com` | HTTPS 代理成功 |
-| 2 | 验证证书验证 | 正确验证目标证书 |
-| 3 | 验证加密通道 | 数据加密传输 |
-| 4 | 验证 CONNECT 方法 | 使用 HTTP CONNECT |
-
----
-
-### TC-PX-013: 错误处理
-
-**前置条件**: 无
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 配置端口冲突的监听 | 返回端口占用错误 |
-| 2 | 代理不可达的目标 | 返回连接错误 |
-| 3 | 代理不匹配的目标 | 返回目标不可达错误 |
-| 4 | 无效的配置参数 | 返回参数错误 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm proxy config --add-target '192.168.0.0/16'` | Added successfully |
+| 2 | Execute `ztm proxy config` | Target list contains IP range |
+| 3 | Proxy access 192.168.1.100 | Proxy successful |
+| 4 | Proxy access 10.0.0.1 | Proxy failed (not in range) |
 
 ---
 
-## 测试环境要求
+### TC-PX-007: Remove Forwarding Target
 
-### 硬件要求
-- 至少 2 个端点（模拟分布式代理环境）
-- 不同网络环境（可选）
+**Precondition**: Configured forwarding target exists
 
-### 软件要求
-- ClawParty 运行环境
-- ZTM 网络连接
-- 测试工具（curl, wget）
-
-### 测试数据
-- HTTP/HTTPS 服务
-- 域名和 IP 范围测试用例
-- 网络配置
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm proxy config --remove-target '*.example.com'` | Removed successfully |
+| 2 | Execute `ztm proxy config` | Target list no longer contains that domain |
+| 3 | Proxy access example.com | Proxy failed |
+| 4 | Verify other targets unaffected | Other targets still proxyable |
 
 ---
 
-## 测试执行指南
+### TC-PX-008: Modify Listening Port
 
-### 单元测试
-- 测试 CLI 命令解析
-- 验证配置存储逻辑
-- 测试目标匹配算法
+**Precondition**: Listening configured
 
-### 集成测试
-- 测试监听到转发的完整流程
-- 测试多端点协作
-- 测试配置变更同步
-
-### 端到端测试
-- 完整的代理请求流程
-- 多跳代理场景
-- 高并发场景
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm proxy config --set-listen 0.0.0.0:1081` | Modified successfully |
+| 2 | Verify old port | Port 1080 no longer listening |
+| 3 | Verify new port | Port 1081 starts listening |
+| 4 | Proxy through new port | Proxy successful |
 
 ---
 
-## 已知问题和注意事项
+### TC-PX-009: Close Proxy Listening
 
-1. **端口要求**: 监听端需要可用的本地端口
-2. **防火墙**: 需要确保端点间可以通信
-3. **DNS 解析**: 使用转发端的 DNS 配置
-4. **协议支持**: 支持 HTTP/HTTPS 代理
-5. **目标匹配**: 支持域名、IP 范围和通配符
+**Precondition**: Listening configured
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm proxy config --set-listen` | Close listening |
+| 2 | Execute `ztm proxy config` | Display not listening |
+| 3 | Try proxy access | Connection failed |
+| 4 | Verify forwarding config retained | Forwarding targets still exist |
+
+---
+
+### TC-PX-010: Domain Resolution Test
+
+**Precondition**: Forwarding endpoint has domain resolution
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Configure hosts on forwarding endpoint | Configure specific domain resolution |
+| 2 | Access domain through proxy | Use forwarding endpoint's resolution |
+| 3 | Verify access successful | Service responds correctly |
+| 4 | Verify DNS resolution location | Use forwarding endpoint's DNS |
+
+---
+
+### TC-PX-011: Multi-endpoint Proxy
+
+**Precondition**: Multiple endpoints exist
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Configure endpoint A as forwarding endpoint | Config successful |
+| 2 | Configure endpoint B as listening endpoint | Config successful |
+| 3 | Proxy access through endpoint B | Request forwarded to endpoint A |
+| 4 | Endpoint A forwards to target | Complete proxy chain works |
+
+---
+
+### TC-PX-012: HTTPS Proxy Test
+
+**Precondition**: Both listening and forwarding endpoints configured
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `curl --proxy http://localhost:1080 https://example.com` | HTTPS proxy successful |
+| 2 | Verify certificate validation | Verify target certificate correctly |
+| 3 | Verify encrypted channel | Data transmitted encrypted |
+| 4 | Verify CONNECT method | Use HTTP CONNECT |
+
+---
+
+### TC-PX-013: Error Handling
+
+**Precondition**: None
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Configure listening with port conflict | Returns port occupied error |
+| 2 | Proxy to unreachable target | Returns connection error |
+| 3 | Proxy to non-matching target | Returns target unreachable error |
+| 4 | Invalid config parameters | Returns parameter error |
+
+---
+
+## Test Environment Requirements
+
+### Hardware Requirements
+- At least 2 endpoints (simulating distributed proxy environment)
+- Different network environments (optional)
+
+### Software Requirements
+- ClawParty runtime
+- ZTM network connection
+- Test tools (curl, wget)
+
+### Test Data
+- HTTP/HTTPS services
+- Domain and IP range test cases
+- Network configuration
+
+---
+
+## Test Execution Guide
+
+### Unit Tests
+- Test CLI command parsing
+- Verify config storage logic
+- Test target matching algorithm
+
+### Integration Tests
+- Test complete listening to forwarding flow
+- Test multi-endpoint collaboration
+- Test config change sync
+
+### End-to-end Tests
+- Complete proxy request flow
+- Multi-hop proxy scenarios
+- High concurrency scenarios
+
+---
+
+## Known Issues and Notes
+
+1. **Port requirement**: Listening endpoint needs available local port
+2. **Firewall**: Ensure endpoints can communicate
+3. **DNS resolution**: Use forwarding endpoint's DNS config
+4. **Protocol support**: Support HTTP/HTTPS proxy
+5. **Target matching**: Support domain, IP range and wildcard

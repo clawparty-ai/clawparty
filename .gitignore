@@ -18,3 +18,8 @@ dev-hub/
 blog/
 binary/
 ztm-work/
+
+# Test reports
+tests/reports/
+tests/test-result-*.log
+tests/tmp/

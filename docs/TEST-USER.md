@@ -1,286 +1,285 @@
-# 用户管理测试方案
+# User Management Test Plan
 
-## 概述
+## Overview
 
-用户管理是 ClawParty 的核心功能之一，包括用户注册、身份认证、状态管理和权限控制。本文档记录了用户管理功能的测试方案和测试案例。
+User management is one of ClawParty core functions, including user registration, identity authentication, status management and permission control. This document records user management test plans and test cases.
 
-## 测试范围
+## Test Scope
 
-### 1. 用户注册测试
-- 注册 API 可用性
-- 注册参数验证
-- 证书签发
-- Permit 生成
+### 1. User Registration Tests
+- Registration API availability
+- Registration parameter validation
+- Certificate issuance
+- Permit generation
 
-### 2. 用户状态测试
-- 状态流转
-- 状态查询
-- 状态变更
+### 2. User Status Tests
+- Status flow
+- Status query
+- Status change
 
-### 3. 用户封禁测试
-- 封禁用户
-- 解除封禁
-- 封禁效果
+### 3. User Ban Tests
+- Ban user
+- Unban user
+- Ban effect
 
-### 4. 身份认证测试
-- 证书验证
-- 连接建立
-- 权限检查
+### 4. Identity Authentication Tests
+- Certificate verification
+- Connection establishment
+- Permission check
 
-### 5. 审计日志测试
-- API 日志
-- 用户事件日志
-- 日志查询
+### 5. Audit Log Tests
+- API logs
+- User event logs
+- Log query
 
-### 6. CLI 命令测试
-- 加入 Mesh
-- 配置管理
-- 用户操作
-
----
-
-## 测试案例
-
-### TC-UR-001: 启用注册 API
-
-**前置条件**: Hub 已启动
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm hub --enable-registration` | 注册 API 启动 |
-| 2 | 验证注册端口 | 端口 5678 被监听 |
-| 3 | 访问注册 API | 返回 API 信息 |
-| 4 | 验证明文 HTTP | 无需客户端证书 |
+### 6. CLI Command Tests
+- Join Mesh
+- Configuration management
+- User operations
 
 ---
 
-### TC-UR-002: 用户注册成功
+## Test Cases
 
-**前置条件**: 注册 API 已启用
+### TC-UR-001: Enable Registration API
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 获取客户端公钥 | 返回 RSA 公钥 |
-| 2 | 提交注册请求 | 请求成功 |
-| 3 | 验证响应格式 | 包含 UserName, EpName, Permit |
-| 4 | 验证用户状态 | 状态为 permit-issued |
-| 5 | 验证 Permit 内容 | 包含 CA 证书和用户证书 |
+**Precondition**: Hub is running
 
----
-
-### TC-UR-003: 注册参数验证
-
-**前置条件**: 注册 API 已启用
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 提交缺少 UserName 的请求 | 返回 400 错误 |
-| 2 | 提交缺少 PublicKey 的请求 | 返回 400 错误 |
-| 3 | 提交无效的公钥格式 | 返回 400 错误 |
-| 4 | 提交完整的有效请求 | 返回 201 成功 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm hub --enable-registration` | Registration API started |
+| 2 | Verify registration port | Port 5678 is being listened |
+| 3 | Access registration API | Returns API info |
+| 4 | Verify plain HTTP | No client certificate required |
 
 ---
 
-### TC-UR-004: 重复注册处理
+### TC-UR-002: User Registration Success
 
-**前置条件**: 用户已注册
+**Precondition**: Registration API enabled
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 使用相同用户名注册 | 返回 409 用户已存在 |
-| 2 | 验证用户状态不变 | 状态保持不变 |
-| 3 | 验证日志记录 | 记录重复注册尝试 |
-| 4 | 使用不同用户名注册 | 返回 201 成功 |
-
----
-
-### TC-UR-005: 用户连接激活
-
-**前置条件**: 用户已获得 Permit
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 使用 Permit 连接 Hub | 连接成功 |
-| 2 | 验证用户状态 | 状态变为 activated |
-| 3 | 验证端点上线 | 端点出现在列表中 |
-| 4 | 验证连接日志 | 记录 connect 事件 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Get client public key | Returns RSA public key |
+| 2 | Submit registration request | Request successful |
+| 3 | Verify response format | Contains UserName, EpName, Permit |
+| 4 | Verify user status | Status is permit-issued |
+| 5 | Verify Permit content | Contains CA certificate and user certificate |
 
 ---
 
-### TC-UR-006: 查看用户状态
+### TC-UR-003: Registration Parameter Validation
 
-**前置条件**: 存在注册用户
+**Precondition**: Registration API enabled
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 查询用户信息 | 返回用户详情 |
-| 2 | 验证状态字段 | 显示正确状态 |
-| 3 | 验证时间字段 | 包含创建和更新时间 |
-| 4 | 验证端点名称 | 显示正确的端点名 |
-
----
-
-### TC-UR-007: 封禁用户
-
-**前置条件**: 用户已激活
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 管理员执行封禁 | 封禁成功 |
-| 2 | 验证用户状态 | 状态变为 evicted |
-| 3 | 验证连接断开 | 用户连接被断开 |
-| 4 | 验证封禁日志 | 记录 evict 事件 |
-| 5 | 尝试重新连接 | 连接被拒绝 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Submit request without UserName | Returns 400 error |
+| 2 | Submit request without PublicKey | Returns 400 error |
+| 3 | Submit invalid public key format | Returns 400 error |
+| 4 | Submit complete valid request | Returns 201 success |
 
 ---
 
-### TC-UR-008: 解除封禁
+### TC-UR-004: Duplicate Registration Handling
 
-**前置条件**: 用户已被封禁
+**Precondition**: User already registered
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 管理员执行解除封禁 | 解除成功 |
-| 2 | 验证用户状态 | 状态恢复为 activated |
-| 3 | 验证封禁记录删除 | evictions 表中记录删除 |
-| 4 | 验证解封日志 | 记录 evict_removed 事件 |
-| 5 | 用户重新连接 | 连接成功 |
-
----
-
-### TC-UR-009: 封禁用户重新注册
-
-**前置条件**: 用户已被封禁
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 封禁用户尝试注册 | 返回 403 被拒绝 |
-| 2 | 验证注册日志 | 记录封禁用户注册尝试 |
-| 3 | 解除封禁后尝试注册 | 仍返回 409（用户已存在） |
-| 4 | 删除用户记录后注册 | 返回 201 成功 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Register with same username | Returns 409 user already exists |
+| 2 | Verify user status unchanged | Status remains unchanged |
+| 3 | Verify log record | Records duplicate registration attempt |
+| 4 | Register with different username | Returns 201 success |
 
 ---
 
-### TC-UR-010: API 日志记录
+### TC-UR-005: User Connection Activation
 
-**前置条件**: 注册 API 已启用
+**Precondition**: User has obtained Permit
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行注册操作 | 操作成功 |
-| 2 | 查询 API 日志 | 日志包含该操作 |
-| 3 | 验证日志字段 | 包含 time, method, path, status |
-| 4 | 验证客户端 IP | 记录正确的 IP |
-
----
-
-### TC-UR-011: 用户事件日志
-
-**前置条件**: 用户操作已执行
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行用户注册 | 日志记录 cert_issued |
-| 2 | 用户连接 | 日志记录 connect |
-| 3 | 用户断开 | 日志记录 disconnect |
-| 4 | 封禁用户 | 日志记录 evict |
-| 5 | 解除封禁 | 日志记录 evict_removed |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Connect to Hub using Permit | Connection successful |
+| 2 | Verify user status | Status changes to activated |
+| 3 | Verify endpoint online | Endpoint appears in list |
+| 4 | Verify connection log | Records connect event |
 
 ---
 
-### TC-UR-012: 使用 CLI 加入 Mesh
+### TC-UR-006: View User Status
 
-**前置条件**: Hub 已启动，注册 API 已启用
+**Precondition**: Registered user exists
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm join party` | 自动注册并加入 |
-| 2 | 验证 Permit 文件 | 文件已保存 |
-| 3 | 验证用户信息 | 信息写入 clawparty.md |
-| 4 | 验证连接状态 | 成功连接到 Mesh |
-
----
-
-### TC-UR-013: 使用 CLI 手动注册
-
-**前置条件**: Hub 已启动，注册 API 已启用
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm try openclaw` | 注册成功 |
-| 2 | 验证参数传递 | 所有参数正确传递 |
-| 3 | 验证 Permit 保存 | 保存到指定路径 |
-| 4 | 验证连接建立 | 成功连接到 Mesh |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Query user info | Returns user details |
+| 2 | Verify status field | Displays correct status |
+| 3 | Verify time fields | Contains creation and update time |
+| 4 | Verify endpoint name | Displays correct endpoint name |
 
 ---
 
-### TC-UR-014: 证书过期处理
+### TC-UR-007: Ban User
 
-**前置条件**: 证书即将过期
+**Precondition**: User is activated
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 等待证书过期 | 证书过期 |
-| 2 | 尝试连接 | 连接失败 |
-| 3 | 重新注册申请证书 | 需要删除旧记录 |
-| 4 | 获得新证书 | 证书有效期重置 |
-
----
-
-### TC-UR-015: 多端点用户
-
-**前置条件**: 用户已有端点
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 使用相同用户添加新端点 | 返回 409 用户已存在 |
-| 2 | 验证现有端点 | 端点仍在线 |
-| 3 | 验证用户状态 | 状态保持 activated |
-| 4 | 验证日志记录 | 记录重复注册尝试 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Administrator bans user | Ban successful |
+| 2 | Verify user status | Status changes to evicted |
+| 3 | Verify connection disconnected | User connection disconnected |
+| 4 | Verify ban log | Records evict event |
+| 5 | Try to reconnect | Connection rejected |
 
 ---
 
-## 测试环境要求
+### TC-UR-008: Unban User
 
-### 硬件要求
-- Hub 服务器
-- 至少 2 个客户端端点
+**Precondition**: User has been banned
 
-### 软件要求
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Administrator unbans user | Unban successful |
+| 2 | Verify user status | Status restored to activated |
+| 3 | Verify ban record deleted | Record deleted from evictions table |
+| 4 | Verify unban log | Records evict_removed event |
+| 5 | User reconnects | Connection successful |
+
+---
+
+### TC-UR-009: Banned User Re-registration
+
+**Precondition**: User has been banned
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Banned user tries to register | Returns 403 rejected |
+| 2 | Verify registration log | Records banned user registration attempt |
+| 3 | Try to register after unban | Still returns 409 (user already exists) |
+
+---
+
+### TC-UR-010: API Log Recording
+
+**Precondition**: Registration API enabled
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute registration operation | Operation successful |
+| 2 | Query API log | Log contains the operation |
+| 3 | Verify log fields | Contains time, method, path, status |
+| 4 | Verify client IP | Records correct IP |
+
+---
+
+### TC-UR-011: User Event Logs
+
+**Precondition**: User operations executed
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute user registration | Log records cert_issued |
+| 2 | User connects | Log records connect |
+| 3 | User disconnects | Log records disconnect |
+| 4 | Ban user | Log records evict |
+| 5 | Unban user | Log records evict_removed |
+
+---
+
+### TC-UR-012: Join Mesh Using CLI
+
+**Precondition**: Hub running, registration API enabled
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm join party` | Auto register and join |
+| 2 | Verify Permit file | File saved |
+| 3 | Verify user info | Info written to clawparty.md |
+| 4 | Verify connection status | Successfully connected to Mesh |
+
+---
+
+### TC-UR-013: Manual Registration Using CLI
+
+**Precondition**: Hub running, registration API enabled
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm try openclaw` | Registration successful |
+| 2 | Verify parameter passing | All parameters passed correctly |
+| 3 | Verify Permit saved | Saved to specified path |
+| 4 | Verify connection established | Successfully connected to Mesh |
+
+---
+
+### TC-UR-014: Certificate Expiration Handling
+
+**Precondition**: Certificate about to expire
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Wait for certificate to expire | Certificate expires |
+| 2 | Try to connect | Connection failed |
+| 3 | Re-register for new certificate | Need to delete old record |
+| 4 | Obtain new certificate | Certificate validity reset |
+
+---
+
+### TC-UR-015: Multi-endpoint User
+
+**Precondition**: User has existing endpoint
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Add new endpoint with same user | Returns 409 user already exists |
+| 2 | Verify existing endpoint | Endpoint still online |
+| 3 | Verify user status | Status remains activated |
+| 4 | Verify log record | Records duplicate registration attempt |
+
+---
+
+## Test Environment Requirements
+
+### Hardware Requirements
+- Hub server
+- At least 2 client endpoints
+
+### Software Requirements
 - ClawParty Hub
 - ClawParty Agent
-- SQLite 数据库
+- SQLite database
 
-### 测试数据
-- 测试用户账号
-- 测试公钥
-- 测试 Permit
-
----
-
-## 测试执行指南
-
-### 单元测试
-- 测试注册参数验证
-- 验证状态流转逻辑
-- 测试日志记录
-
-### 集成测试
-- 测试注册到连接的完整流程
-- 测试封禁和解封流程
-- 测试审计日志
-
-### 端到端测试
-- 完整的用户生命周期
-- 多用户并发注册
-- 异常场景处理
+### Test Data
+- Test user account
+- Test public key
+- Test Permit
 
 ---
 
-## 已知问题和注意事项
+## Test Execution Guide
 
-1. **注册 API 安全**: 注册端口为明文 HTTP，需要网络安全措施
-2. **证书有效期**: 默认 365 天，过期需重新注册
-3. **封禁时间**: 封禁有时间戳和过期时间
-4. **用户记录**: 删除用户记录才能重新注册
-5. **日志保留**: 日志表会持续增长，需要定期清理
+### Unit Tests
+- Test registration parameter validation
+- Verify status flow logic
+- Test log recording
+
+### Integration Tests
+- Test complete registration to connection flow
+- Test ban and unban flow
+- Test audit logs
+
+### End-to-End Tests
+- Complete user lifecycle
+- Multi-user concurrent registration
+- Exception scenario handling
+
+---
+
+## Known Issues and Notes
+
+1. **Registration API security**: Registration port is plain HTTP, needs network security measures
+2. **Certificate validity**: Default 365 days, need to re-register after expiration
+3. **Ban time**: Ban has timestamp and expiration time
+4. **User records**: Need to delete user record to re-register
+5. **Log retention**: Log table will continue to grow, needs periodic cleanup
