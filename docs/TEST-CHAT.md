@@ -1,474 +1,474 @@
 # Chat App Test Plan
 
-## 概述
+## Overview
 
-Chat App 是 ClawParty 的即时通讯应用，支持点对点聊天、群组聊天、自动回复、消息过滤等功能。本文档记录了 Chat App 的测试方案和测试案例。
+Chat App is ClawParty instant messaging application, supporting peer-to-peer chat, group chat, auto-reply, message filtering and more. This document records Chat App test plans and test cases.
 
-## 测试范围
+## Test Scope
 
-### 1. 基础功能测试
-- 端点管理
-- 用户列表
-- 聊天列表
-- 消息查询
+### 1. Basic Function Tests
+- Endpoint management
+- User list
+- Chat list
+- Message query
 
-### 2. 点对点聊天测试
-- 发送消息
-- 接收消息
-- 消息历史
-- 会话管理
+### 2. Peer Chat Tests
+- Send messages
+- Receive messages
+- Message history
+- Session management
 
-### 3. 群组聊天测试
-- 创建群组
-- 更新群组成员
-- 修改群组名称
-- 删除群组
-- 离开群组
-- 发送群组消息
+### 3. Group Chat Tests
+- Create group
+- Update group members
+- Modify group name
+- Delete group
+- Leave group
+- Send group messages
 
-### 4. 自动回复测试
-- 点对点自动回复
-- 群组自动回复
-- 代理自动回复
-- 半自动化模式
+### 4. Auto-reply Tests
+- Peer auto-reply
+- Group auto-reply
+- Agent auto-reply
+- Semi-automation mode
 
-### 5. 消息过滤测试
-- 信用系统
-- 关键词过滤
-- 发送过滤
+### 5. Message Filter Tests
+- Credit system
+- Keyword filtering
+- Send filtering
 
-### 6. 文件上传测试
-- 聊天文件上传
-- 会话文件上传
-- 文件下载
+### 6. File Upload Tests
+- Chat file upload
+- Session file upload
+- File download
 
-### 7. GUI 功能测试
-- 聊天界面
-- 群组管理界面
-- 自动回复配置界面
-
----
-
-## 测试案例
-
-### TC-CH-001: 获取应用信息
-
-**前置条件**: Chat App 已启动
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/appinfo | 返回应用名称、用户名、端点信息 |
-| 2 | 验证返回字段 | 包含 name, provider, username, endpoint |
+### 7. GUI Function Tests
+- Chat interface
+- Group management interface
+- Auto-reply configuration interface
 
 ---
 
-### TC-CH-002: 获取端点列表
+## Test Cases
 
-**前置条件**: 网络中有其他端点
+### TC-CH-001: Get App Info
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/endpoints | 返回所有可发现的端点列表 |
-| 2 | 验证端点信息 | 包含用户名和端点 ID |
+**Precondition**: Chat App is running
 
----
-
-### TC-CH-003: 获取用户列表
-
-**前置条件**: 网络中有其他用户
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/users | 返回所有用户列表 |
-| 2 | 验证用户唯一性 | 用户名去重排序 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/appinfo | Returns app name, username, endpoint info |
+| 2 | Verify return fields | Contains name, provider, username, endpoint |
 
 ---
 
-### TC-CH-004: 获取聊天列表
+### TC-CH-002: Get Endpoints List
 
-**前置条件**: 存在活跃的聊天
+**Precondition**: Other endpoints in network
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/chats | 返回所有聊天列表 |
-| 2 | 验证聊天类型 | 区分点对点和群组聊天 |
-| 3 | 验证更新时间 | 按更新时间排序 |
-
----
-
-### TC-CH-005: 发送点对点消息
-
-**前置条件**: 存在可通信的端点
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 POST /api/peers/{peer}/messages | 消息发送成功，返回 201 |
-| 2 | 消息体包含 text 字段 | 正确解析消息内容 |
-| 3 | 验证消息存储 | 消息出现在聊天历史中 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/endpoints | Returns all discoverable endpoints |
+| 2 | Verify endpoint info | Contains username and endpoint ID |
 
 ---
 
-### TC-CH-006: 接收点对点消息
+### TC-CH-003: Get Users List
 
-**前置条件**: 其他端点发送了消息
+**Precondition**: Other users in network
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/peers/{peer}/messages | 返回消息列表 |
-| 2 | 使用 since 参数过滤 | 只返回指定时间后的消息 |
-| 3 | 验证消息格式 | 包含 time, sender, message 字段 |
-
----
-
-### TC-CH-007: 创建群组
-
-**前置条件**: 无
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 POST /api/groups/{creator}/{groupId} | 群组创建成功，返回 201 |
-| 2 | 请求体包含 name 和 members | 群组信息正确设置 |
-| 3 | 调用 GET /api/groups/{creator}/{groupId} | 返回群组信息 |
-| 4 | 验证群组成员 | 成员列表包含创建者和指定成员 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/users | Returns all users list |
+| 2 | Verify user uniqueness | Username deduped and sorted |
 
 ---
 
-### TC-CH-008: 更新群组成员
+### TC-CH-004: Get Chats List
 
-**前置条件**: 群组已创建
+**Precondition**: Active chats exist
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 POST /api/groups/{creator}/{groupId} | 更新成员列表 |
-| 2 | 添加新成员 | 新成员出现在成员列表中 |
-| 3 | 移除成员 | 成员从列表中移除 |
-| 4 | 验证更新时间 | updateTime 被更新 |
-
----
-
-### TC-CH-009: 修改群组名称
-
-**前置条件**: 群组已创建，当前用户是创建者
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 POST /api/groups/{creator}/{groupId} | 更新群组名称 |
-| 2 | 请求体包含新 name | 名称更新成功 |
-| 3 | 非创建者尝试修改 | 返回 403 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/chats | Returns all chats list |
+| 2 | Verify chat types | Distinguishes peer and group chats |
+| 3 | Verify update time | Sorted by update time |
 
 ---
 
-### TC-CH-010: 发送群组消息
+### TC-CH-005: Send Peer Message
 
-**前置条件**: 群组已创建，用户是成员
+**Precondition**: Communicable endpoint exists
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 POST /api/groups/{creator}/{groupId}/messages | 消息发送成功，返回 201 |
-| 2 | 消息包含 text 字段 | 正确解析消息内容 |
-| 3 | 验证消息存储 | 消息出现在群组聊天中 |
-
----
-
-### TC-CH-011: 接收群组消息
-
-**前置条件**: 群组中已有消息
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/groups/{creator}/{groupId}/messages | 返回消息列表 |
-| 2 | 使用 since 参数过滤 | 只返回指定时间后的消息 |
-| 3 | 验证发送者信息 | 包含 sender 字段 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call POST /api/peers/{peer}/messages | Message sent successfully, returns 201 |
+| 2 | Message body contains text field | Message content parsed correctly |
+| 3 | Verify message storage | Message appears in chat history |
 
 ---
 
-### TC-CH-012: 删除群组（创建者）
+### TC-CH-006: Receive Peer Message
 
-**前置条件**: 用户是群组创建者
+**Precondition**: Other endpoint sent message
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 DELETE /api/groups/{creator}/{groupId} | 群组删除，返回 204 |
-| 2 | 再次调用 GET | 群组不存在，返回 404 |
-| 3 | 验证清理 | 群组从聊天列表移除 |
-
----
-
-### TC-CH-013: 离开群组（成员）
-
-**前置条件**: 用户是群组成员（非创建者）
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 DELETE /api/groups/{creator}/{groupId}?leave=1 | 成功离开，返回 204 |
-| 2 | 再次查询群组 | 群组从本地列表移除 |
-| 3 | 其他成员不受影响 | 群组仍然存在 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/peers/{peer}/messages | Returns message list |
+| 2 | Use since parameter filter | Returns only messages after timestamp |
+| 3 | Verify message format | Contains time, sender, message fields |
 
 ---
 
-### TC-CH-014: 点对点自动回复配置
+### TC-CH-007: Create Group
 
-**前置条件**: 无
+**Precondition**: None
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/peers/{peer}/auto-reply | 返回当前配置 |
-| 2 | 调用 POST /api/peers/{peer}/auto-reply | 启用自动回复 |
-| 3 | 验证配置生效 | 收到消息时触发自动回复 |
-| 4 | 调用 POST 关闭自动回复 | 自动回复停止 |
-
----
-
-### TC-CH-015: 群组自动回复配置
-
-**前置条件**: 群组已创建
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/groupchat/{gcid}/auto-reply | 返回当前配置 |
-| 2 | 调用 POST /api/groupchat/{gcid}/auto-reply | 启用自动回复 |
-| 3 | 验证配置生效 | 群组消息触发自动回复 |
-| 4 | 调用 DELETE 关闭自动回复 | 自动回复停止 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call POST /api/groups/{creator}/{groupId} | Group created successfully, returns 201 |
+| 2 | Request body contains name and members | Group info set correctly |
+| 3 | Call GET /api/groups/{creator}/{groupId} | Returns group info |
+| 4 | Verify group members | Member list contains creator and specified members |
 
 ---
 
-### TC-CH-016: 代理自动回复配置
+### TC-CH-008: Update Group Members
 
-**前置条件**: 群组中有代理成员
+**Precondition**: Group has been created
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 POST /api/groupchat/{gcid}/agents/{agent}/auto-reply | 代理自动回复启用 |
-| 2 | 验证配置 | 代理参与群组聊天 |
-| 3 | 调用 DELETE 关闭代理自动回复 | 代理停止回复 |
-
----
-
-### TC-CH-017: 半自动化模式
-
-**前置条件**: 配置了自动回复
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 启用半自动化 | 消息回复需要人工确认 |
-| 2 | 调用 POST /api/peers/{peer}/half-rewrite | 生成草稿回复 |
-| 3 | 验证草稿 | 包含建议的回复文本 |
-| 4 | 人工修改后发送 | 消息正确发送 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call POST /api/groups/{creator}/{groupId} | Update member list |
+| 2 | Add new member | New member appears in member list |
+| 3 | Remove member | Member removed from list |
+| 4 | Verify update time | updateTime updated |
 
 ---
 
-### TC-CH-018: 通过 GCID 操作群组
+### TC-CH-009: Modify Group Name
 
-**前置条件**: 群组已创建
+**Precondition**: Group created, current user is creator
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/groupchat/{gcid} | 返回群组信息 |
-| 2 | 调用 POST /api/groupchat/{gcid} | 发送消息到群组 |
-| 3 | 验证返回 | 包含 gcid, group, name 信息 |
-
----
-
-### TC-CH-019: 文件上传
-
-**前置条件**: 无
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 POST /api/files | 文件上传成功，返回哈希 |
-| 2 | 验证哈希格式 | SHA256 哈希值 |
-| 3 | 调用 GET /api/files/{owner}/{hash} | 返回文件内容 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call POST /api/groups/{creator}/{groupId} | Update group name |
+| 2 | Request body contains new name | Name updated successfully |
+| 3 | Non-creator tries to modify | Returns 403 |
 
 ---
 
-### TC-CH-020: 会话文件上传
+### TC-CH-010: Send Group Message
 
-**前置条件**: 存在会话 ID
+**Precondition**: Group created, user is member
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 POST /api/files/upload?sessionId=xxx&name=yyy | 文件上传成功 |
-| 2 | 验证返回 | 包含 hash, path, name |
-| 3 | 调用 GET /api/files/upload/{sessionId}/{hash} | 返回文件内容 |
-
----
-
-### TC-CH-021: 消息中包含文件
-
-**前置条件**: 文件已上传
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 发送消息时包含 files 字段 | 消息正确存储文件引用 |
-| 2 | 接收消息 | 文件信息正确显示 |
-| 3 | 通过文件 URL 下载 | 文件内容完整 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call POST /api/groups/{creator}/{groupId}/messages | Message sent successfully, returns 201 |
+| 2 | Message contains text field | Message content parsed correctly |
+| 3 | Verify message storage | Message appears in group chat |
 
 ---
 
-### TC-CH-022: 消息过滤 - 信用系统
+### TC-CH-011: Receive Group Message
 
-**前置条件**: 配置了过滤器
+**Precondition**: Messages exist in group
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 接收消息 | 触发过滤器评估 |
-| 2 | 消息包含敏感内容 | 信用分降低 |
-| 3 | 信用分过低 | 自动回复暂停 |
-| 4 | 调用 GET /api/peers/{peer}/auto-reply | 返回当前信用分 |
-
----
-
-### TC-CH-023: 消息过滤 - 关键词
-
-**前置条件**: 配置了关键词过滤器
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 发送包含关键词的消息 | 过滤器触发 |
-| 2 | 验证过滤结果 | 根据配置处理消息 |
-| 3 | 发送正常消息 | 不触发过滤器 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/groups/{creator}/{groupId}/messages | Returns message list |
+| 2 | Use since parameter filter | Returns only messages after timestamp |
+| 3 | Verify sender info | Contains sender field |
 
 ---
 
-### TC-CH-024: 消息过滤 - 发送过滤
+### TC-CH-012: Delete Group (Creator)
 
-**前置条件**: 配置了发送过滤器
+**Precondition**: User is group creator
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 自动回复生成消息 | 触发发送过滤器 |
-| 2 | 过滤器返回 false | 消息不发送 |
-| 3 | 过滤器返回 true | 消息正常发送 |
-
----
-
-### TC-CH-025: CLI 命令测试
-
-**前置条件**: Chat App CLI 可用
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm chat --help` | 显示帮助信息 |
-| 2 | 执行 `ztm chat send user1 "hello"` | 消息发送成功 |
-| 3 | 执行 `ztm chat list` | 显示聊天列表 |
-| 4 | 执行 `ztm chat history user1` | 显示聊天历史 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call DELETE /api/groups/{creator}/{groupId} | Group deleted, returns 204 |
+| 2 | Call GET again | Group does not exist, returns 404 |
+| 3 | Verify cleanup | Group removed from chat list |
 
 ---
 
-### TC-CH-026: GUI 聊天界面
+### TC-CH-013: Leave Group (Member)
 
-**前置条件**: Chat GUI 已加载
+**Precondition**: User is group member (not creator)
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 点击用户头像 | 进入聊天界面 |
-| 2 | 输入消息并发送 | 消息显示在聊天窗口 |
-| 3 | 接收新消息 | 实时显示新消息 |
-| 4 | 点击历史消息 | 加载更多历史 |
-
----
-
-### TC-CH-027: GUI 群组管理
-
-**前置条件**: Chat GUI 已加载
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 点击创建群组按钮 | 弹出创建群组对话框 |
-| 2 | 输入群组名称和成员 | 群组创建成功 |
-| 3 | 点击编辑群组 | 弹出编辑对话框 |
-| 4 | 修改群组名称 | 名称更新成功 |
-| 5 | 添加/移除成员 | 成员列表更新 |
-| 6 | 点击离开群组 | 确认后离开群组 |
-| 7 | 点击删除群组 | 确认后删除群组 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call DELETE /api/groups/{creator}/{groupId}?leave=1 | Successfully left, returns 204 |
+| 2 | Query group again | Group removed from local list |
+| 3 | Other members unaffected | Group still exists |
 
 ---
 
-### TC-CH-028: GUI 自动回复配置
+### TC-CH-014: Peer Auto-reply Configuration
 
-**前置条件**: Chat GUI 已加载，存在聊天
+**Precondition**: None
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 打开聊天设置 | 显示自动回复选项 |
-| 2 | 启用自动回复 | 选择代理名称 |
-| 3 | 配置成功 | 显示自动回复已启用 |
-| 4 | 关闭自动回复 | 自动回复停止 |
-
----
-
-### TC-CH-029: 消息时间过滤
-
-**前置条件**: 存在消息历史
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/peers/{peer}/messages?since=timestamp | 只返回时间戳之后的消息 |
-| 2 | 调用 GET /api/peers/{peer}/messages?before=timestamp | 只返回时间戳之前的消息 |
-| 3 | 组合使用 since 和 before | 返回时间范围内的消息 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/peers/{peer}/auto-reply | Returns current config |
+| 2 | Call POST /api/peers/{peer}/auto-reply | Enable auto-reply |
+| 3 | Verify config effective | Auto-reply triggered when message received |
+| 4 | Call POST to disable auto-reply | Auto-reply stops |
 
 ---
 
-### TC-CH-030: 会话消息
+### TC-CH-015: Group Auto-reply Configuration
 
-**前置条件**: 存在会话
+**Precondition**: Group created
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 发送消息时包含 sessionId | 消息关联到会话 |
-| 2 | 查询消息时指定 sessionId | 只返回该会话的消息 |
-| 3 | 会话文件上传 | 文件关联到会话 |
-
----
-
-## 测试环境要求
-
-### 硬件要求
-- 至少 2 个端点（模拟分布式聊天环境）
-- 可选：配置了 openclaw 的代理环境
-
-### 软件要求
-- ClawParty 运行环境
-- ZTM 网络连接
-- Chat GUI（可选）
-
-### 测试数据
-- 测试用户账号
-- 测试群组
-- 测试消息内容
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/groupchat/{gcid}/auto-reply | Returns current config |
+| 2 | Call POST /api/groupchat/{gcid}/auto-reply | Enable auto-reply |
+| 3 | Verify config effective | Group message triggers auto-reply |
+| 4 | Call DELETE to disable auto-reply | Auto-reply stops |
 
 ---
 
-## 测试执行指南
+### TC-CH-016: Agent Auto-reply Configuration
 
-### 单元测试
-- 测试各个 API 函数的输入输出
-- 验证消息格式和存储
-- 测试过滤器逻辑
+**Precondition**: Agent member exists in group
 
-### 集成测试
-- 测试 CLI 命令到 API 的调用链
-- 测试跨端点消息传递
-- 测试自动回复触发
-
-### 端到端测试
-- 完整的聊天流程
-- 群组管理流程
-- 文件上传下载流程
-
-### GUI 测试
-- 界面交互测试
-- 实时消息更新
-- 错误处理和用户反馈
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call POST /api/groupchat/{gcid}/agents/{agent}/auto-reply | Agent auto-reply enabled |
+| 2 | Verify config | Agent participates in group chat |
+| 3 | Call DELETE to disable agent auto-reply | Agent stops replying |
 
 ---
 
-## 已知问题和注意事项
+### TC-CH-017: Semi-automation Mode
 
-1. **消息格式**: 支持纯文本和包含文件引用的对象格式
-2. **群组 ID**: 使用 UUID 格式，创建时生成
-3. **GCID**: 群组聊天 ID，用于快速查找群组
-4. **信用系统**: 默认信用分 100，过滤器可降低
-5. **消息同步**: 基于 mesh 文件系统，非实时推送
-6. **URL 编码**: API 参数需要 URL 编码
-7. **半自动化**: 需要人工确认回复，适合质量控制场景
+**Precondition**: Auto-reply configured
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Enable semi-automation | Message reply requires human confirmation |
+| 2 | Call POST /api/peers/{peer}/half-rewrite | Generate draft reply |
+| 3 | Verify draft | Contains suggested reply text |
+| 4 | Human modifies and sends | Message sent correctly |
+
+---
+
+### TC-CH-018: Operate Group by GCID
+
+**Precondition**: Group created
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/groupchat/{gcid} | Returns group info |
+| 2 | Call POST /api/groupchat/{gcid} | Send message to group |
+| 3 | Verify return | Contains gcid, group, name info |
+
+---
+
+### TC-CH-019: File Upload
+
+**Precondition**: None
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call POST /api/files | File uploaded successfully, returns hash |
+| 2 | Verify hash format | SHA256 hash value |
+| 3 | Call GET /api/files/{owner}/{hash} | Returns file content |
+
+---
+
+### TC-CH-020: Session File Upload
+
+**Precondition**: Session ID exists
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call POST /api/files/upload?sessionId=xxx&name=yyy | File uploaded successfully |
+| 2 | Verify return | Contains hash, path, name |
+| 3 | Call GET /api/files/upload/{sessionId}/{hash} | Returns file content |
+
+---
+
+### TC-CH-021: Message with File
+
+**Precondition**: File uploaded
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Send message with files field | Message stores file reference correctly |
+| 2 | Receive message | File info displayed correctly |
+| 3 | Download via file URL | File content complete |
+
+---
+
+### TC-CH-022: Message Filter - Credit System
+
+**Precondition**: Filter configured
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Receive message | Filter evaluation triggered |
+| 2 | Message contains sensitive content | Credit score decreased |
+| 3 | Credit score too low | Auto-reply paused |
+| 4 | Call GET /api/peers/{peer}/auto-reply | Returns current credit score |
+
+---
+
+### TC-CH-023: Message Filter - Keywords
+
+**Precondition**: Keyword filter configured
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Send message with keyword | Filter triggered |
+| 2 | Verify filter result | Message handled according to config |
+| 3 | Send normal message | Filter not triggered |
+
+---
+
+### TC-CH-024: Message Filter - Send Filtering
+
+**Precondition**: Send filter configured
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Auto-reply generates message | Send filter triggered |
+| 2 | Filter returns false | Message not sent |
+| 3 | Filter returns true | Message sent normally |
+
+---
+
+### TC-CH-025: CLI Command Tests
+
+**Precondition**: Chat App CLI available
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm chat --help` | Display help info |
+| 2 | Execute `ztm chat send user1 "hello"` | Message sent successfully |
+| 3 | Execute `ztm chat list` | Display chat list |
+| 4 | Execute `ztm chat history user1` | Display chat history |
+
+---
+
+### TC-CH-026: GUI Chat Interface
+
+**Precondition**: Chat GUI loaded
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Click user avatar | Enter chat interface |
+| 2 | Input message and send | Message displayed in chat window |
+| 3 | Receive new message | New message displayed in real-time |
+| 4 | Click historical message | Load more history |
+
+---
+
+### TC-CH-027: GUI Group Management
+
+**Precondition**: Chat GUI loaded
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Click create group button | Popup create group dialog |
+| 2 | Input group name and members | Group created successfully |
+| 3 | Click edit group | Popup edit dialog |
+| 4 | Modify group name | Name updated successfully |
+| 5 | Add/remove members | Member list updated |
+| 6 | Click leave group | Confirm and leave group |
+| 7 | Click delete group | Confirm and delete group |
+
+---
+
+### TC-CH-028: GUI Auto-reply Configuration
+
+**Precondition**: Chat GUI loaded, chats exist
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Open chat settings | Display auto-reply options |
+| 2 | Enable auto-reply | Select agent name |
+| 3 | Config successful | Display auto-reply enabled |
+| 4 | Disable auto-reply | Auto-reply stops |
+
+---
+
+### TC-CH-029: Message Time Filter
+
+**Precondition**: Message history exists
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/peers/{peer}/messages?since=timestamp | Returns only messages after timestamp |
+| 2 | Call GET /api/peers/{peer}/messages?before=timestamp | Returns only messages before timestamp |
+| 3 | Use both since and before | Returns messages in time range |
+
+---
+
+### TC-CH-030: Session Messages
+
+**Precondition**: Session exists
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Send message with sessionId | Message associated with session |
+| 2 | Query messages with sessionId | Returns only messages for that session |
+| 3 | Session file upload | File associated with session |
+
+---
+
+## Test Environment Requirements
+
+### Hardware Requirements
+- At least 2 endpoints (simulating distributed chat environment)
+- Optional: Agent environment with openclaw configured
+
+### Software Requirements
+- ClawParty runtime
+- ZTM network connection
+- Chat GUI (optional)
+
+### Test Data
+- Test user account
+- Test group
+- Test message content
+
+---
+
+## Test Execution Guide
+
+### Unit Tests
+- Test input/output of each API function
+- Verify message format and storage
+- Test filter logic
+
+### Integration Tests
+- Test CLI command to API call chain
+- Test cross-endpoint message delivery
+- Test auto-reply trigger
+
+### End-to-End Tests
+- Complete chat flow
+- Group management flow
+- File upload/download flow
+
+### GUI Tests
+- Interface interaction tests
+- Real-time message updates
+- Error handling and user feedback
+
+---
+
+## Known Issues and Notes
+
+1. **Message Format**: Supports plain text and object format with file references
+2. **Group ID**: Uses UUID format, generated on creation
+3. **GCID**: Group Chat ID, used for quick group lookup
+4. **Credit System**: Default credit score 100, filter can decrease
+5. **Message Sync**: Based on mesh file system, not real-time push
+6. **URL Encoding**: API parameters need URL encoding
+7. **Semi-automation**: Requires human confirmation for reply, suitable for quality control scenarios

@@ -1,348 +1,348 @@
 # Cloud App Test Plan
 
-## 概述
+## Overview
 
-Cloud App 是 ClawParty 的分布式文件云存储应用，支持跨端点的文件同步、共享和管理。本文档记录了 Cloud App 的测试方案和测试案例。
+Cloud App is ClawParty distributed file cloud storage application, supporting cross-endpoint file sync, sharing and management. This document records Cloud App test plans and test cases.
 
-## 测试范围
+## Test Scope
 
-### 1. 基础功能测试
-- 端点管理
-- 配置管理
-- 文件列表
-- 文件状态查询
+### 1. Basic Function Tests
+- Endpoint management
+- Configuration management
+- File list
+- File status query
 
-### 2. 文件上传测试
-- 单文件上传
-- 大文件分块上传
-- 重复文件上传
+### 2. File Upload Tests
+- Single file upload
+- Large file chunked upload
+- Duplicate file upload
 
-### 3. 文件下载测试
-- 单文件下载
-- 分块下载
-- 并发下载
-- 下载恢复
-- 下载取消
+### 3. File Download Tests
+- Single file download
+- Chunked download
+- Concurrent download
+- Download resume
+- Download cancel
 
-### 4. 文件管理测试
-- 文件删除（unpublish）
-- 文件擦除（erase）
-- 目录操作
+### 4. File Management Tests
+- File deletion (unpublish)
+- File erasure (erase)
+- Directory operations
 
-### 5. 访问控制测试
-- ACL 设置
-- 权限验证
-- 跨用户访问
+### 5. Access Control Tests
+- ACL settings
+- Permission verification
+- Cross-user access
 
-### 6. 自动同步测试
-- 自动下载
-- 自动上传
-- 镜像配置
+### 6. Auto-sync Tests
+- Auto-download
+- Auto-upload
+- Mirror configuration
 
-### 7. CLI 命令测试
-- config 命令
-- ls 命令
-- share 命令
-- mirror 命令
-- upload/download 命令
-- unpublish/erase 命令
-
----
-
-## 测试案例
-
-### TC-CL-001: 端点配置管理
-
-**前置条件**: Cloud App 已启动
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm cloud config --local-dir ~/testCloud` | 配置成功更新 |
-| 2 | 执行 `ztm cloud config` | 显示 localDir 为 ~/testCloud |
-| 3 | 调用 GET /api/endpoints/{ep}/config | 返回当前配置 |
+### 7. CLI Command Tests
+- config command
+- ls command
+- share command
+- mirror command
+- upload/download command
+- unpublish/erase command
 
 ---
 
-### TC-CL-002: 文件列表查询
+## Test Cases
 
-**前置条件**: 存在测试文件
+### TC-CL-001: Endpoint Configuration Management
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm cloud ls /` | 显示用户列表 |
-| 2 | 执行 `ztm cloud ls /users/{username}` | 显示该用户的文件列表 |
-| 3 | 执行 `ztm cloud ls /users/{username} --hash` | 显示文件信息和哈希值 |
-| 4 | 调用 GET /api/files/ | 返回根目录信息 |
-| 5 | 调用 GET /api/files/users/{username} | 返回用户文件列表 |
+**Precondition**: Cloud App is running
 
----
-
-### TC-CL-003: 文件上传
-
-**前置条件**: 本地存在待上传文件
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm cloud upload /users/{username}/test.txt` | 文件上传成功 |
-| 2 | 调用 POST /api/uploads {path: "path"} | 返回 201 |
-| 3 | 上传后执行 `ztm cloud ls` | 文件状态变为 synced |
-| 4 | 重复上传同一文件 | 返回成功（幂等） |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm cloud config --local-dir ~/testCloud` | Config updated successfully |
+| 2 | Execute `ztm cloud config` | Display localDir as ~/testCloud |
+| 3 | Call GET /api/endpoints/{ep}/config | Returns current config |
 
 ---
 
-### TC-CL-004: 文件下载
+### TC-CL-002: File List Query
 
-**前置条件**: 远端存在可下载文件
+**Precondition**: Test files exist
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm cloud download /users/{username}/test.txt` | 下载任务启动 |
-| 2 | 执行 `ztm cloud download --list` | 显示下载进度 |
-| 3 | 调用 GET /api/downloads | 返回下载列表 |
-| 4 | 下载完成后检查本地文件 | 文件完整，哈希匹配 |
-
----
-
-### TC-CL-005: 分块下载与恢复
-
-**前置条件**: 大文件（>1MB）存在分块
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 开始下载大文件 | 分块下载启动 |
-| 2 | 中断下载（模拟网络中断） | 下载暂停 |
-| 3 | 重新启动 Cloud App | 自动恢复下载 |
-| 4 | 执行 `ztm cloud download --list` | 显示下载进度继续 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm cloud ls /` | Display user list |
+| 2 | Execute `ztm cloud ls /users/{username}` | Display user's file list |
+| 3 | Execute `ztm cloud ls /users/{username} --hash` | Display file info and hash |
+| 4 | Call GET /api/files/ | Returns root directory info |
+| 5 | Call GET /api/files/users/{username} | Returns user file list |
 
 ---
 
-### TC-CL-006: 下载取消
+### TC-CL-003: File Upload
 
-**前置条件**: 存在进行中的下载
+**Precondition**: Local file exists for upload
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 开始下载大文件 | 下载任务启动 |
-| 2 | 执行 `ztm cloud download --cancel /path/to/file` | 下载任务取消 |
-| 3 | 执行 `ztm cloud download --list` | 该下载不再显示 |
-| 4 | 调用 DELETE /api/downloads/{path} | 返回 204 |
-
----
-
-### TC-CL-007: 文件删除（Unpublish）
-
-**前置条件**: 文件已上传并同步
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm cloud unpublish /users/{username}/test.txt` | 文件从云端删除 |
-| 2 | 再次执行 `ztm cloud ls` | 文件不再显示 |
-| 3 | 本地文件保留 | 本地文件不受影响 |
-| 4 | 调用 DELETE /api/files/{path} | 返回 204 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm cloud upload /users/{username}/test.txt` | File uploaded successfully |
+| 2 | Call POST /api/uploads {path: "path"} | Returns 201 |
+| 3 | Execute `ztm cloud ls` after upload | File status becomes synced |
+| 4 | Upload same file again | Returns success (idempotent) |
 
 ---
 
-### TC-CL-008: 文件擦除（Erase）
+### TC-CL-004: File Download
 
-**前置条件**: 文件已上传
+**Precondition**: Downloadable file exists on remote
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm cloud erase /users/{username}/test.txt` | 本地文件删除 |
-| 2 | 调用 DELETE /api/endpoints/{ep}/files/{path} | 返回 204 |
-| 3 | 云端元数据保留 | 其他端点仍可下载 |
-
----
-
-### TC-CL-009: ACL 权限设置
-
-**前置条件**: 文件已上传
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm cloud share /path --set-all readonly` | 所有用户可读 |
-| 2 | 执行 `ztm cloud share /path --set-block user1` | user1 被阻止访问 |
-| 3 | 执行 `ztm cloud share /path --set-readonly user2` | user2 只读访问 |
-| 4 | 执行 `ztm cloud share /path` | 显示当前 ACL 配置 |
-| 5 | 调用 POST /api/acl/{path} | ACL 设置成功 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm cloud download /users/{username}/test.txt` | Download task started |
+| 2 | Execute `ztm cloud download --list` | Display download progress |
+| 3 | Call GET /api/downloads | Returns download list |
+| 4 | Check local file after download | File complete, hash matches |
 
 ---
 
-### TC-CL-010: ACL 权限验证
+### TC-CL-005: Chunked Download and Resume
 
-**前置条件**: 已设置 ACL
+**Precondition**: Large file (>1MB) has chunks
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 被阻止的用户尝试下载文件 | 返回 403 或无法访问 |
-| 2 | 只读用户尝试下载文件 | 下载成功 |
-| 3 | 只读用户尝试上传文件 | 上传被拒绝 |
-| 4 | 调用 GET /api/acl/{path} | 返回 ACL 配置 |
-
----
-
-### TC-CL-011: 自动下载配置
-
-**前置条件**: 无
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm cloud mirror /users/remoteUser --download on` | 配置自动下载 |
-| 2 | 远端用户上传新文件 | 自动开始下载 |
-| 3 | 执行 `ztm cloud mirror /users/remoteUser` | 显示 download: on |
-| 4 | 执行 `ztm cloud mirror /users/remoteUser --download off` | 关闭自动下载 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Start downloading large file | Chunked download started |
+| 2 | Interrupt download (simulate network failure) | Download paused |
+| 3 | Restart Cloud App | Auto-resume download |
+| 4 | Execute `ztm cloud download --list` | Display download progress continues |
 
 ---
 
-### TC-CL-012: 自动上传配置
+### TC-CL-006: Download Cancel
 
-**前置条件**: 无
+**Precondition**: Download in progress exists
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm cloud mirror /users/{username} --upload on` | 配置自动上传 |
-| 2 | 本地文件修改 | 自动开始上传 |
-| 3 | 执行 `ztm cloud mirror /users/{username}` | 显示 upload: on |
-| 4 | 执行 `ztm cloud mirror /users/{username} --upload off` | 关闭自动上传 |
-
----
-
-### TC-CL-013: 镜像配置查看
-
-**前置条件**: 已配置镜像
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/mirrors | 返回所有镜像配置 |
-| 2 | 调用 GET /api/mirrors/{path} | 返回指定路径的镜像配置 |
-| 3 | 调用 GET /api/endpoints/{ep}/mirrors | 返回指定端点的镜像配置 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Start downloading large file | Download task started |
+| 2 | Execute `ztm cloud download --cancel /path/to/file` | Download task cancelled |
+| 3 | Execute `ztm cloud download --list` | Download no longer displayed |
+| 4 | Call DELETE /api/downloads/{path} | Returns 204 |
 
 ---
 
-### TC-CL-014: 文件流式传输
+### TC-CL-007: File Deletion (Unpublish)
 
-**前置条件**: 文件已上传
+**Precondition**: File uploaded and synced
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/file-data/{path} | 返回文件流 |
-| 2 | 验证 Content-Type | 根据扩展名正确设置 |
-| 3 | 验证文件完整性 | 下载的文件哈希匹配 |
-
----
-
-### TC-CL-015: 分块服务
-
-**前置条件**: 文件有分块
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/chunks/users/{username}/{file}?chunk=0 | 返回第一块数据 |
-| 2 | 调用 GET /api/chunks/users/{username}/{file}?chunk=1 | 返回第二块数据 |
-| 3 | 验证分块哈希 | 分块哈希与元数据匹配 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm cloud unpublish /users/{username}/test.txt` | File deleted from cloud |
+| 2 | Execute `ztm cloud ls` again | File no longer displayed |
+| 3 | Local file retained | Local file unaffected |
+| 4 | Call DELETE /api/files/{path} | Returns 204 |
 
 ---
 
-### TC-CL-016: 并发下载
+### TC-CL-008: File Erasure (Erase)
 
-**前置条件**: 大文件需要分块下载
+**Precondition**: File has been uploaded
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 开始下载大文件 | 启动 8 个并发下载通道 |
-| 2 | 监控下载进度 | 多个分块同时下载 |
-| 3 | 下载完成 | 所有分块合并，文件完整 |
-
----
-
-### TC-CL-017: 下载输出到指定文件
-
-**前置条件**: 远端存在文件
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm cloud download /remote/path -o /local/output.txt` | 文件保存到指定位置 |
-| 2 | 验证输出文件 | 文件内容和哈希正确 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm cloud erase /users/{username}/test.txt` | Local file deleted |
+| 2 | Call DELETE /api/endpoints/{ep}/files/{path} | Returns 204 |
+| 3 | Cloud metadata retained | Other endpoints can still download |
 
 ---
 
-### TC-CL-018: 目录同步
+### TC-CL-009: ACL Permission Settings
 
-**前置条件**: 目录存在
+**Precondition**: File has been uploaded
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 执行 `ztm cloud mirror /dir --download on --upload on` | 双向同步配置 |
-| 2 | 本地文件修改 | 自动上传到云端 |
-| 3 | 远端文件修改 | 自动下载到本地 |
-| 4 | 验证文件状态 | 状态为 synced |
-
----
-
-### TC-CL-019: 跨端点配置同步
-
-**前置条件**: 多端点环境
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 调用 GET /api/endpoints/{ep}/config | 返回端点配置 |
-| 2 | 调用 POST /api/endpoints/{ep}/config | 配置更新成功 |
-| 3 | 验证配置应用 | 新配置生效 |
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm cloud share /path --set-all readonly` | All users can read |
+| 2 | Execute `ztm cloud share /path --set-block user1` | user1 blocked |
+| 3 | Execute `ztm cloud share /path --set-readonly user2` | user2 read-only access |
+| 4 | Execute `ztm cloud share /path` | Display current ACL config |
+| 5 | Call POST /api/acl/{path} | ACL set successfully |
 
 ---
 
-### TC-CL-020: 错误处理
+### TC-CL-010: ACL Permission Verification
 
-**前置条件**: 无
+**Precondition**: ACL has been set
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | 访问不存在的文件 | 返回 404 |
-| 2 | 无权限访问文件 | 返回 403 |
-| 3 | 无效的 API 调用 | 返回适当的错误码 |
-| 4 | 下载过程中源端点下线 | 自动尝试其他源 |
-
----
-
-## 测试环境要求
-
-### 硬件要求
-- 至少 2 个端点（模拟分布式环境）
-- 足够的磁盘空间用于文件测试
-
-### 软件要求
-- ClawParty 运行环境
-- ZTM 网络连接
-
-### 测试数据
-- 小文件 (<1MB)
-- 大文件 (>10MB，用于分块测试)
-- 多个文件（用于目录测试）
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Blocked user tries to download file | Returns 403 or access denied |
+| 2 | Read-only user tries to download file | Download successful |
+| 3 | Read-only user tries to upload file | Upload rejected |
+| 4 | Call GET /api/acl/{path} | Returns ACL config |
 
 ---
 
-## 测试执行指南
+### TC-CL-011: Auto-download Configuration
 
-### 单元测试
-- 测试各个 API 函数的输入输出
-- 验证文件状态计算逻辑
-- 测试哈希计算
+**Precondition**: None
 
-### 集成测试
-- 测试 CLI 命令到 API 的调用链
-- 测试跨端点文件同步
-- 测试 ACL 权限验证
-
-### 端到端测试
-- 完整的文件上传下载流程
-- 自动同步场景
-- 错误恢复场景
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm cloud mirror /users/remoteUser --download on` | Configure auto-download |
+| 2 | Remote user uploads new file | Auto-download started |
+| 3 | Execute `ztm cloud mirror /users/remoteUser` | Display download: on |
+| 4 | Execute `ztm cloud mirror /users/remoteUser --download off` | Disable auto-download |
 
 ---
 
-## 已知问题和注意事项
+### TC-CL-012: Auto-upload Configuration
 
-1. **分块大小**: 默认为 1MB，修改需要重新编译
-2. **并发数**: 默认 8 个并发下载通道
-3. **路径处理**: 使用 `os.path.normalize` 统一路径格式
-4. **ACL 继承**: 目录 ACL 不自动继承到子文件
+**Precondition**: None
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm cloud mirror /users/{username} --upload on` | Configure auto-upload |
+| 2 | Local file modified | Auto-upload started |
+| 3 | Execute `ztm cloud mirror /users/{username}` | Display upload: on |
+| 4 | Execute `ztm cloud mirror /users/{username} --upload off` | Disable auto-upload |
+
+---
+
+### TC-CL-013: Mirror Configuration View
+
+**Precondition**: Mirror configured
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/mirrors | Returns all mirror configs |
+| 2 | Call GET /api/mirrors/{path} | Returns mirror config for specified path |
+| 3 | Call GET /api/endpoints/{ep}/mirrors | Returns mirror config for specified endpoint |
+
+---
+
+### TC-CL-014: File Streaming
+
+**Precondition**: File has been uploaded
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/file-data/{path} | Returns file stream |
+| 2 | Verify Content-Type | Correctly set based on extension |
+| 3 | Verify file integrity | Downloaded file hash matches |
+
+---
+
+### TC-CL-015: Chunk Serving
+
+**Precondition**: File has chunks
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/chunks/users/{username}/{file}?chunk=0 | Returns first chunk data |
+| 2 | Call GET /api/chunks/users/{username}/{file}?chunk=1 | Returns second chunk data |
+| 3 | Verify chunk hash | Chunk hash matches metadata |
+
+---
+
+### TC-CL-016: Concurrent Download
+
+**Precondition**: Large file needs chunked download
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Start downloading large file | Start 8 concurrent download channels |
+| 2 | Monitor download progress | Multiple chunks download simultaneously |
+| 3 | Download complete | All chunks merged, file complete |
+
+---
+
+### TC-CL-017: Download to Specified File
+
+**Precondition**: File exists on remote
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm cloud download /remote/path -o /local/output.txt` | File saved to specified location |
+| 2 | Verify output file | File content and hash correct |
+
+---
+
+### TC-CL-018: Directory Sync
+
+**Precondition**: Directory exists
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Execute `ztm cloud mirror /dir --download on --upload on` | Bidirectional sync configured |
+| 2 | Local file modified | Auto-upload to cloud |
+| 3 | Remote file modified | Auto-download to local |
+| 4 | Verify file status | Status is synced |
+
+---
+
+### TC-CL-019: Cross-endpoint Config Sync
+
+**Precondition**: Multi-endpoint environment
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Call GET /api/endpoints/{ep}/config | Returns endpoint config |
+| 2 | Call POST /api/endpoints/{ep}/config | Config updated successfully |
+| 3 | Verify config applied | New config takes effect |
+
+---
+
+### TC-CL-020: Error Handling
+
+**Precondition**: None
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Access non-existent file | Returns 404 |
+| 2 | Access file without permission | Returns 403 |
+| 3 | Invalid API call | Returns appropriate error code |
+| 4 | Source endpoint goes offline during download | Auto-try other sources |
+
+---
+
+## Test Environment Requirements
+
+### Hardware Requirements
+- At least 2 endpoints (simulating distributed environment)
+- Enough disk space for file tests
+
+### Software Requirements
+- ClawParty runtime
+- ZTM network connection
+
+### Test Data
+- Small files (<1MB)
+- Large files (>10MB, for chunked tests)
+- Multiple files (for directory tests)
+
+---
+
+## Test Execution Guide
+
+### Unit Tests
+- Test input/output of each API function
+- Verify file status calculation logic
+- Test hash calculation
+
+### Integration Tests
+- Test CLI command to API call chain
+- Test cross-endpoint file sync
+- Test ACL permission verification
+
+### End-to-End Tests
+- Complete file upload/download flow
+- Auto-sync scenarios
+- Error recovery scenarios
+
+---
+
+## Known Issues and Notes
+
+1. **Chunk size**: Default is 1MB, modification requires recompilation
+2. **Concurrency**: Default 8 concurrent download channels
+3. **Path handling**: Uses `os.path.normalize` to unify path format
+4. **ACL inheritance**: Directory ACL does not automatically inherit to sub-files
