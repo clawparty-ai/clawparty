@@ -3,7 +3,7 @@
 # cleanup.sh - Clean up test environment
 #
 # Description:
-#   1. Stop all test services (Hub, Agent1, Agent2)
+#   1. Kill all processes listening on test ports (Hub, Agent1, Agent2, Registration)
 #   2. Delete temp directory
 #
 
@@ -29,34 +29,36 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Stop process
-stop_process() {
-    local name=$1
-    local pid_file=$TMP_DIR/$name.pid
-
-    if [ -f "$pid_file" ]; then
-        local pid=$(cat "$pid_file")
-        if kill -0 $pid 2>/dev/null; then
-            log_info "Stopping $name (PID: $pid)"
-            kill -9 $pid 2>/dev/null || true
-            sleep 1
-        fi
-        rm -f "$pid_file"
-    fi
-}
-
-# Clean up ports
+# Clean up all test ports
 cleanup_ports() {
     log_info "Cleaning up test ports..."
-
-    local ports=("18888" "7778" "7779")
+    
+    # Test ports
+    # 18888 - Hub mTLS port
+    # 5678  - Hub registration API
+    # 7778  - Agent1
+    # 7779  - Agent2
+    local ports=("18888" "5678" "7778" "7779")
+    
     for port in "${ports[@]}"; do
-        local pid=$(lsof -t -i:$port 2>/dev/null || true)
-        if [ -n "$pid" ]; then
-            log_warn "Force killing process on port $port (PID: $pid)"
-            kill -9 $pid 2>/dev/null || true
+        # Find processes using this port (IPv4 and IPv6)
+        local pids=$(lsof -i tcp:$port 2>/dev/null | grep -v "^COMMAND" | awk '{print $2}' | sort -u || true)
+        
+        if [ -n "$pids" ]; then
+            for pid in $pids; do
+                if kill -0 $pid 2>/dev/null; then
+                    local cmd=$(ps -p $pid -o comm= 2>/dev/null || echo "unknown")
+                    log_warn "Killing process on port $port (PID: $pid, CMD: $cmd)"
+                    kill -9 $pid 2>/dev/null || true
+                fi
+            done
+        else
+            log_info "Port $port is free"
         fi
     done
+    
+    # Extra wait to ensure ports are released
+    sleep 1
 }
 
 # Main function
@@ -64,21 +66,16 @@ main() {
     echo "=========================================="
     echo "Cleaning up test environment"
     echo "=========================================="
-
-    # Stop test processes
-    stop_process "hub"
-    stop_process "agent1"
-    stop_process "agent2"
-
-    # Clean up ports
+    
+    # Clean up by port
     cleanup_ports
-
+    
     # Delete temp directory
     if [ -d "$TMP_DIR" ]; then
         log_info "Deleting temp directory: $TMP_DIR"
         rm -rf "$TMP_DIR"
     fi
-
+    
     echo ""
     echo "=========================================="
     log_info "Test environment cleanup complete!"
