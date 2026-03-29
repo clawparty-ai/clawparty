@@ -331,7 +331,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
         // Local openclaw agent: auto-reply
         var sessionId = gcid
-        var cmd = ['openclaw', 'agent', '--agent', member, '--message', agentMsg, '--session-id', sessionId, '--json', '--no-color']
+        var cmd = ['openclaw', 'agent', '--agent', member, '--message', agentMsg, '--session-id', sessionId, '--json']
         console.info('[group auto-reply] calling local agent', member, 'for group', gcid || chat.group)
         spawnOpenclaw(cmd).then(
           function (output) {
@@ -384,7 +384,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       var credit = onReceive(gcid, senderUsername, agentMsg2)
       var sessionId = gcid
       var thinkingTime2 = peerConfig.thinkingTime !== undefined ? peerConfig.thinkingTime : 3
-      var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', agentMsg2, '--session-id', sessionId, '--json', '--no-color']
+      var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', agentMsg2, '--session-id', sessionId, '--json']
       console.info('[group auto-reply] calling agent', agentName, 'for self in group', gcid)
       spawnOpenclaw(cmd).then(
         function (output) {
@@ -438,7 +438,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     console.info('[chat auto-reply] credit after onReceive:', credit)
 
     var sessionId = makeSessionId(app.username, chat.peer)
-    var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--session-id', sessionId, '--json', '--no-color']
+    var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', text, '--session-id', sessionId, '--json']
     var thinkingTime = peerConfig.thinkingTime !== undefined ? peerConfig.thinkingTime : 3
 
     console.info('[openclaw cli]', cmd.join(' ').slice(0, 40))
@@ -538,7 +538,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     // Build message for agent: include original draft and human hint
     var message = `I have drafted the following reply:\n\n${draftText}\n\nPlease rewrite it based on this guidance:\n\n${humanHint}`
     
-    var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', message, '--session-id', sessionId, '--json', '--no-color']
+    var cmd = ['openclaw', 'agent', '--agent', agentName, '--message', message, '--session-id', sessionId, '--json']
     
     console.info('[half-automation rewrite]', cmd.join(' ').slice(0, 40))
     return spawnOpenclaw(cmd).then(

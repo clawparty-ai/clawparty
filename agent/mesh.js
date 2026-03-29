@@ -2109,8 +2109,100 @@ export default function (rootDir, listen, proxy, pqc, p2pCfg, config, onConfigUp
     } else {
       fsWatchers.push([prefix, [resolve]])
     }
-    if (!isWatching) startWatchingFiles()
+    if (!isWatching) {
+      startWatchingFiles()
+      startSSEClient()
+    }
     return promise
+  }
+
+  // SSE/Polling client for receiving file changes from Hub
+  var sseClient = null
+
+  function startSSEClient() {
+    if (sseClient) return
+
+    var hubAddress = hubActive[0]?.address
+    if (!hubAddress) {
+      logError('[Agent SSE] No active hub connection')
+      new Timeout(5).wait().then(startSSEClient)
+      return
+    }
+
+    logInfo('[Agent SSE] Starting SSE polling client...')
+    logInfo('[Agent SSE] Hub address: ' + hubAddress)
+
+    var pollCounter = 0
+
+    function pollForChanges() {
+      pollCounter++
+      var shouldLogPoll = (pollCounter % 10 === 0)  // Log every 10th poll
+      
+      if (shouldLogPoll) {
+        logInfo('[Agent SSE] Polling for changes since ' + fsLastChangeTime + ' (poll #' + pollCounter + ')')
+      }
+      
+      if (!hubActive[0]) {
+        if (shouldLogPoll) logError('[Agent SSE] No hub connection')
+        new Timeout(5).wait().then(pollForChanges)
+        return
+      }
+      
+      // Use the existing discoverFiles function
+      hubActive[0].discoverFiles(fsLastChangeTime, false)
+        .then(files => {
+          var keys = Object.keys(files || {})
+          if (keys.length > 0) {
+            logInfo('[Agent SSE] Poll response, keys=' + keys.join(', ') + ' (poll #' + pollCounter + ')')
+            notifySSEWatchers(files)
+          } else {
+            if (shouldLogPoll) {
+              logInfo('[Agent SSE] Poll response, no changes (poll #' + pollCounter + ')')
+            }
+          }
+          // Poll again after 2 seconds
+          new Timeout(2).wait().then(pollForChanges)
+        })
+        .catch(err => {
+          if (shouldLogPoll) {
+            logError('[Agent SSE] Poll error: ' + err)
+          }
+          new Timeout(5).wait().then(pollForChanges)
+        })
+    }
+
+    pollForChanges()
+    logInfo('[Agent SSE] SSE polling client started')
+  }
+
+  function notifySSEWatchers(files) {
+    if (!files) return
+
+    var paths = Object.keys(files)
+    logInfo('[Agent SSE] notifySSEWatchers, paths=' + paths.join(', '))
+
+    var maxSince = 0
+    paths.forEach(path => {
+      var since = files[path].since
+      if (since > maxSince) maxSince = since
+    })
+
+    if (maxSince > fsLastChangeTime) {
+      fsLastChangeTime = maxSince
+    }
+
+    fsWatchers.forEach(([prefix, watchers]) => {
+      var changes = []
+      paths.forEach(path => {
+        if (path.startsWith(prefix)) {
+          changes.push(path)
+        }
+      })
+      if (changes.length > 0) {
+        logInfo('[Agent SSE] Resolving ' + changes.length + ' changes for prefix ' + prefix)
+        watchers.forEach(resolve => resolve([...changes]))
+      }
+    })
   }
 
   function startWatchingFiles() {

@@ -92,6 +92,10 @@ var routes = Object.entries({
     'POST': () => findCurrentEndpointSession() ? postFilesystem : noSession,
   },
 
+  '/api/filesystem/events': {
+    'GET': () => sseFilesystemPipeline,
+  },
+
   '/api/filesystem/*': {
     'GET': () => getFileInfo,
   },
@@ -1152,6 +1156,73 @@ var postFilesystem = pipeline($=>$
   )
 )
 
+// SSE clients for real-time file sync
+var sseClients = []
+
+// Last file change timestamp (for polling)
+var lastFileChangeTime = Date.now()
+
+// Get file changes since a given time
+function getFileChangesSince(since) {
+  var changes = {}
+  var allFiles = getAllFiles()
+  for (var i = 0; i < allFiles.length; i++) {
+    var pair = allFiles[i]
+    var path = pair[0]
+    var info = pair[1]
+    if (info['+'] && info['+'] > since) {
+      changes[path] = {
+        '#': info['#'],
+        '$': info['$'],
+        'T': info['T'],
+        '+': info['+'],
+      }
+    }
+  }
+  return changes
+}
+
+// SSE pipeline for file changes stream (uses polling)
+var sseFilesystemPipeline = pipeline($=>$
+  .replaceMessage(function(req) {
+    logInfo('[Hub SSE] New SSE polling request, path=' + req.head.path)
+    
+    // Parse since parameter from query string
+    var path = req.head.path
+    var since = 0
+    var idx = path.indexOf('since=')
+    if (idx >= 0) {
+      var sinceStr = path.substring(idx + 6)
+      var endIdx = sinceStr.indexOf('&')
+      if (endIdx >= 0) sinceStr = sinceStr.substring(0, endIdx)
+      since = Number.parseFloat(sinceStr) || 0
+    }
+    
+    logInfo('[Hub SSE] Polling since=' + since)
+    
+    // Get file changes
+    var changes = getFileChangesSince(since)
+    var data = JSON.stringify(changes)
+    var keys = Object.keys(changes)
+    logInfo('[Hub SSE] Returning changes, count=' + keys.length)
+    
+    return new Message({
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: data,
+    })
+  })
+)
+
+// Broadcast file changes (update timestamp for polling)
+function broadcastSSE(changes) {
+  lastFileChangeTime = Date.now()
+  var keys = Object.keys(changes)
+  logInfo('[Hub SSE] broadcastSSE called, keys=' + keys.join(', '))
+}
+
 var postACL = pipeline($=>$
   .replaceMessage(
     function (req) {
@@ -2058,6 +2129,10 @@ function updateFileInfo(pathname, f, ep, update) {
         since: e['+'],
       })
       updated = true
+      // Broadcast to SSE clients
+      var changes = {}
+      changes[pathname] = e
+      broadcastSSE(changes)
     }
     fileWatchers = fileWatchers.filter(f => !f())
   }
