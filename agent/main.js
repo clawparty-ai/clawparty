@@ -167,8 +167,8 @@ function main(listen, apiToken, noAuth) {
     )
   }
 
-  var openclawStatus = makeOpenclawPipeline(['openclaw', 'status', '--json', '--no-color'])
-  var openclawAgents = makeOpenclawPipeline(['openclaw', 'agents', 'list', '--json', '--no-color'])
+  var openclawStatus = makeOpenclawPipeline(['openclaw', 'status', '--json'])
+  var openclawAgents = makeOpenclawPipeline(['openclaw', 'agents', 'list', '--json'])
 
   var $openclawAgentCmd
   var $openclawAgentOutput
@@ -769,7 +769,7 @@ function main(listen, apiToken, noAuth) {
     '/api/openclaw/session/{agent}': {
       'GET': function ({ agent }) {
         agent = URL.decodeComponent(agent)
-        var cmd = ['openclaw', 'sessions', '--agent', agent, '--json', '--no-color']
+        var cmd = ['openclaw', 'sessions', '--agent', agent, '--json']
         console.info('[openclaw cli]', cmd.join(' ').slice(0, 200))
         return openclawAgentMessage.spawn(cmd).then(
           output => response(200, output.split('\n').join('')),
@@ -828,7 +828,7 @@ function main(listen, apiToken, noAuth) {
           return response(200, JSON.stringify({ warning: 'duplicated cli call' }))
         }
         db.addCliLog(agent, sessionId, messageMd5)
-        var cmd = ['openclaw', 'agent', '--agent', agent, '--message', message, '--session-id', sessionId, '--json', '--no-color']
+        var cmd = ['openclaw', 'agent', '--agent', agent, '--message', message, '--session-id', sessionId, '--json']
         console.info('[openclaw cli]', cmd.join(' ').slice(0, 200))
         return openclawAgentMessage.spawn(cmd).then(
           output => response(200, output.split('\n').join('')),

@@ -79,7 +79,7 @@ export const openclawService = {
   },
 
   getPictureUrl(agentId, fileName) {
-    const token = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
+    const token = getToken() ? `?token=${encodeURIComponent(getToken())}` : ''
     return `/api/openclaw/agents/${agentId}/pictures/${encodeURIComponent(fileName)}${token}`
   }
 }
@@ -102,23 +102,23 @@ export const chatService = {
   },
   
   getGroupMessages(meshName, creator, groupId) {
-    return api.get(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}/messages`)
+    return api.get(`/meshes/${meshName}/apps/ztm/chat/api/groups/${encodeURIComponent(creator)}/${encodeURIComponent(groupId)}/messages`)
   },
   
   getGroupMessagesSince(meshName, creator, groupId, since) {
-    return api.get(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}/messages?since=${since}`)
+    return api.get(`/meshes/${meshName}/apps/ztm/chat/api/groups/${encodeURIComponent(creator)}/${encodeURIComponent(groupId)}/messages?since=${since}`)
   },
   
   sendMessage(meshName, peer, text, sessionId, files) {
     const body = { text, sessionId: sessionId || null }
     if (files && files.length > 0) body.files = files
-    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${peer}/messages`, body)
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${encodeURIComponent(peer)}/messages`, body)
   },
   
   sendGroupMessage(meshName, creator, groupId, text, sessionId, files) {
     const body = { text, sessionId: sessionId || null }
     if (files && files.length > 0) body.files = files
-    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}/messages`, body)
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${encodeURIComponent(creator)}/${encodeURIComponent(groupId)}/messages`, body)
   },
 
   uploadFile(meshName, fileData) {
@@ -136,29 +136,29 @@ export const chatService = {
   },
 
   getFileUrl(meshName, owner, hash) {
-    const token = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
+    const token = getToken() ? `?token=${encodeURIComponent(getToken())}` : ''
     return `/api/meshes/${meshName}/apps/ztm/chat/api/files/${owner}/${hash}${token}`
   },
 
   getFileFromSessionUrl(meshName, sessionId, hash) {
-    const token = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
+    const token = getToken() ? `?token=${encodeURIComponent(getToken())}` : ''
     return `/api/meshes/${meshName}/apps/ztm/chat/api/files/upload/${encodeURIComponent(sessionId)}/${hash}${token}`
   },
   
   createGroup(meshName, creator, groupId, data) {
-    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}`, data)
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${encodeURIComponent(creator)}/${encodeURIComponent(groupId)}`, data)
   },
 
   deleteGroup(meshName, creator, groupId) {
-    return api.delete(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}`)
+    return api.del(`/meshes/${meshName}/apps/ztm/chat/api/groups/${encodeURIComponent(creator)}/${encodeURIComponent(groupId)}`)
   },
 
   leaveGroup(meshName, creator, groupId) {
-    return api.delete(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}?leave=1`)
+    return api.del(`/meshes/${meshName}/apps/ztm/chat/api/groups/${encodeURIComponent(creator)}/${encodeURIComponent(groupId)}?leave=1`)
   },
 
   updateGroupMembers(meshName, creator, groupId, name, members) {
-    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${creator}/${groupId}`, { name, members })
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${encodeURIComponent(creator)}/${encodeURIComponent(groupId)}`, { name, members })
   },
 
   approvePeerAutoReply(meshName, peer, agentName) {
@@ -173,7 +173,7 @@ export const chatService = {
   },
 
   revokeGroupAgentAutoReply(meshName, gcid, agentName) {
-    return api.delete(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/agents/${agentName}/auto-reply`)
+    return api.del(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/agents/${agentName}/auto-reply`)
   },
 
   approveGroupEpAutoReply(meshName, gcid, agentName) {
@@ -181,7 +181,7 @@ export const chatService = {
   },
 
   revokeGroupEpAutoReply(meshName, gcid) {
-    return api.delete(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/auto-reply`)
+    return api.del(`/meshes/${meshName}/apps/ztm/chat/api/groupchat/${gcid}/auto-reply`)
   },
 
   getAllPeerConfigs(meshName) {
