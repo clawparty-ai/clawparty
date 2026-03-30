@@ -2136,7 +2136,7 @@ export default function (rootDir, listen, proxy, pqc, p2pCfg, config, onConfigUp
 
     function pollForChanges() {
       pollCounter++
-      var shouldLogPoll = (pollCounter % 10 === 0)  // Log every 10th poll
+      var shouldLogPoll = (pollCounter % 1000 === 0)  // Log every 1000th poll
       
       if (shouldLogPoll) {
         logInfo('[Agent SSE] Polling for changes since ' + fsLastChangeTime + ' (poll #' + pollCounter + ')')
