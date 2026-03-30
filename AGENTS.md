@@ -65,15 +65,57 @@ If you add linting in a PR, document exact commands in this file.
 
 ### Tests
 
-There is currently no configured automated test framework in this checkout.
+ClawParty uses Shell scripts for API and CLI tests.
 
-Single test command status:
-- Not available today (no `test` script and no discovered `*.test.*`/`*.spec.*` suite).
+#### Test Environment Setup
 
-If a test framework is introduced later, add explicit commands here, including single-test examples, e.g.:
 ```bash
-# Example future pattern (Vitest)
-cd chat-gui && npm run test -- src/components/ChatMain.test.js
+cd tests
+./prepare.sh
+```
+
+This will start test services:
+- Hub: http://localhost:18888
+- Agent1: http://localhost:7778
+- Agent2: http://localhost:7779
+
+#### Run Tests
+
+```bash
+# Run all tests
+./run-tests.sh
+
+# Run individually
+./api/run-tests.sh      # API tests
+./cli/run-tests.sh      # CLI tests
+```
+
+#### Clean Up
+
+```bash
+./cleanup.sh
+```
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| HUB_URL | http://localhost:18888 | Hub service address |
+| AGENT_URL | http://localhost:7778 | Agent service address |
+| API_TOKEN | enjoy-party | API authentication token |
+| ZTM_CONFIG | 127.0.0.1:7778 | CLI connected Agent address |
+
+#### Test Directory Structure
+
+```
+tests/
+├── prepare.sh           # Initialize test environment
+├── cleanup.sh           # Clean up test environment
+├── run-tests.sh         # Run all tests
+├── api/                 # API tests
+│   ├── hub/             # Hub API tests
+│   └── agent/           # Agent API tests
+└── cli/                 # CLI tests
 ```
 
 ### Verification
