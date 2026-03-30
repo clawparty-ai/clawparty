@@ -177,6 +177,9 @@ function open(pathname) {
   try {
     db.exec(`ALTER TABLE chat_log ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`)
   } catch {}
+  try {
+    db.exec(`ALTER TABLE chat_log ADD COLUMN msg_type TEXT NOT NULL DEFAULT 'response'`)
+  } catch {}
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS cache (
@@ -807,12 +810,13 @@ function logCliCall(command, args, output, exitCode, success, durationMs, errorM
     .exec()
 }
 
-// chat_type: 'peer' | 'group'
-function logChat(mesh, chatType, chatId, chatName, creator, sender, event, content, members, sessionId, muted) {
+// chat_type: 'peer' | 'group' | 'openclaw'
+// msg_type: 'user' | 'response' | 'system' | 'tool' (default: 'response')
+function logChat(mesh, chatType, chatId, chatName, creator, sender, event, content, members, sessionId, muted, msgType) {
   var t = Date.now() / 1000
   db.sql(`
-    INSERT INTO chat_log(time, mesh, chat_type, chat_id, chat_name, creator, sender, event, content, members, session_id, muted)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO chat_log(time, mesh, chat_type, chat_id, chat_name, creator, sender, event, content, members, session_id, muted, msg_type)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
     .bind(1, t)
     .bind(2, mesh || '')
@@ -826,31 +830,34 @@ function logChat(mesh, chatType, chatId, chatName, creator, sender, event, conte
     .bind(10, members ? JSON.stringify(members) : null)
     .bind(11, sessionId || null)
     .bind(12, muted ? 1 : 0)
+    .bind(13, msgType || 'response')
     .exec()
 }
 
-function getChatLog(mesh, chatType, chatId, limit) {
+// msgTypes: array of msg_type values to include (default: ['user', 'response'])
+function getChatLog(mesh, chatType, chatId, limit, msgTypes) {
   var rows
+  var types = msgTypes || ['user', 'response']
   if (chatId) {
     rows = db.sql(`
       SELECT * FROM chat_log
-      WHERE mesh = ? AND chat_type = ? AND chat_id = ?
+      WHERE mesh = ? AND chat_type = ? AND chat_id = ? AND msg_type IN (${types.map(() => '?').join(',')})
       ORDER BY time DESC LIMIT ?
     `)
       .bind(1, mesh || '')
       .bind(2, chatType)
       .bind(3, chatId)
-      .bind(4, limit || 200)
-      .exec()
+    types.forEach((t, i) => rows.bind(4 + i, t))
+    rows = rows.bind(4 + types.length, limit || 200).exec()
   } else {
     rows = db.sql(`
       SELECT * FROM chat_log
-      WHERE mesh = ?
+      WHERE mesh = ? AND msg_type IN (${types.map(() => '?').join(',')})
       ORDER BY time DESC LIMIT ?
     `)
       .bind(1, mesh || '')
-      .bind(2, limit || 200)
-      .exec()
+    types.forEach((t, i) => rows.bind(2 + i, t))
+    rows = rows.bind(2 + types.length, limit || 200).exec()
   }
   return rows.map(r => ({
     id: r.id,
@@ -865,6 +872,7 @@ function getChatLog(mesh, chatType, chatId, limit) {
     content: r.content || null,
     members: r.members ? JSON.parse(r.members) : null,
     sessionId: r.session_id || null,
+    msgType: r.msg_type || 'response',
   }))
 }
 

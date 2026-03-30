@@ -783,7 +783,8 @@ function main(listen, apiToken, noAuth) {
         agent = URL.decodeComponent(agent)
         try {
           var limit = 200
-          var logs = db.getChatLog('', 'openclaw', agent, limit)
+          // Only return user and response messages (exclude system/tool messages)
+          var logs = db.getChatLog('', 'openclaw', agent, limit, ['user', 'response'])
           // Convert to message format compatible with GUI
           var messages = logs.map(log => {
             var d = new Date(log.time * 1000)
@@ -792,7 +793,7 @@ function main(listen, apiToken, noAuth) {
               text: log.content || '',
               time: timeStr,
               sender: log.sender,
-              isSent: log.sender === 'user',
+              isSent: log.msgType === 'user' || log.sender === 'user',
               timestamp: log.time * 1000
             }
           }).reverse() // Reverse to show oldest first
@@ -856,7 +857,7 @@ function main(listen, apiToken, noAuth) {
         db.addCliLog(agent, sessionId, messageMd5)
         // Log user message to chat_log
         try {
-          db.logChat('', 'openclaw', agent, agent, null, 'user', 'message', message, null, sessionId, false)
+          db.logChat('', 'openclaw', agent, agent, null, 'user', 'message', message, null, sessionId, false, 'user')
         } catch (e) {
           console.error('[openclaw chat] Failed to log user message:', e)
         }
@@ -869,10 +870,18 @@ function main(listen, apiToken, noAuth) {
               var respData = null
               try { respData = JSON.parse(output.split('\n').join('')) } catch {}
               if (respData && respData.payloads) {
-                var replyText = respData.payloads.map(p => p?.text).filter(Boolean).join('\n\n')
-                if (replyText) {
-                  db.logChat('', 'openclaw', agent, agent, null, agent, 'message', replyText, null, sessionId, false)
-                }
+                respData.payloads.forEach(function(p) {
+                  var text = p?.text
+                  if (!text) return
+                  var role = p?.role || 'assistant'
+                  var type = p?.type || 'text'
+                  // Determine msg_type: 'response' for assistant text, 'system' for tool/system messages
+                  var msgType = 'response'
+                  if (role === 'tool' || role === 'system' || type === 'tool_use' || type === 'tool_result') {
+                    msgType = 'system'
+                  }
+                  db.logChat('', 'openclaw', agent, agent, null, agent, 'message', text, null, sessionId, false, msgType)
+                })
               }
             } catch (e) {
               console.error('[openclaw chat] Failed to log agent response:', e)
