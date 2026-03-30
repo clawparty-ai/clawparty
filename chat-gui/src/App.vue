@@ -808,44 +808,79 @@ const selectOpenclawAgent = async (agent) => {
 
 const loadSessionHistory = async (chat, agentId, sessionId) => {
   try {
-    const historyResponse = await openclawService.getSessionHistory(agentId, sessionId)
-    let historyData = null
-    try {
-      historyData = JSON.parse(`[${historyResponse.data.replaceAll('\n',',')}{}]`)
-    } catch (e) {
-      console.error('Failed to parse history:', e)
-    }
-    chat.messages = [];
-    historyData.filter((n)=>n.type=='message').forEach((n,i)=>{
-      const text = n.message.content.filter((n)=>n.type=='text')[0]?.text;
-      if(!!text){
-        chat.messages.push(
-        { 
-          "text": n.message.content.filter((n)=>n.type=='text')[0]?.text, 
-          "time": new Date(n.message.timestamp).toLocaleTimeString(), 
-          "sender": n.message.role, "isSent": n.message.role=='user', "timestamp": n.message.timestamp }
-        )
-      }
-    })
+    // Load chat history from chat_log database instead of session JSONL files
+    const response = await openclawService.getChatLog(agentId)
+    const messages = Array.isArray(response.data) ? response.data : []
+    chat.messages = messages.map(msg => ({
+      text: msg.text || '',
+      time: msg.time || '',
+      sender: msg.sender || '',
+      isSent: msg.isSent || false,
+      timestamp: msg.timestamp || 0
+    }))
     chat.sessionId = sessionId
   } catch (error) {
-    console.error('Failed to load session history:', error)
+    console.error('Failed to load chat log:', error)
+    // Fallback: try session history if chat-log fails
+    try {
+      const historyResponse = await openclawService.getSessionHistory(agentId, sessionId)
+      let historyData = null
+      try {
+        historyData = JSON.parse(`[${historyResponse.data.replaceAll('\n',',')}{}]`)
+      } catch (e) {
+        console.error('Failed to parse history:', e)
+      }
+      chat.messages = [];
+      if (historyData) {
+        historyData.filter((n)=>n.type=='message').forEach((n,i)=>{
+          const text = n.message.content.filter((n)=>n.type=='text')[0]?.text;
+          if(!!text){
+            chat.messages.push({
+              "text": text,
+              "time": new Date(n.message.timestamp).toLocaleTimeString(),
+              "sender": n.message.role,
+              "isSent": n.message.role=='user',
+              "timestamp": n.message.timestamp
+            })
+          }
+        })
+      }
+      chat.sessionId = sessionId
+    } catch (fallbackError) {
+      console.error('Failed to load session history fallback:', fallbackError)
+    }
   }
 }
 
 const switchOpenclawSession = async (chat, sessionId) => {
   try {
-    const response = await openclawService.getSessionHistory(chat.agentId, sessionId)
-    let data = null
-    try {
-      data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
-    } catch (e) {
-      console.error('Failed to parse history:', e)
-    }
-    chat.messages = data?.messages || []
+    // Load chat history from chat_log database
+    const response = await openclawService.getChatLog(chat.agentId)
+    const messages = Array.isArray(response.data) ? response.data : []
+    chat.messages = messages.map(msg => ({
+      text: msg.text || '',
+      time: msg.time || '',
+      sender: msg.sender || '',
+      isSent: msg.isSent || false,
+      timestamp: msg.timestamp || 0
+    }))
     chat.sessionId = sessionId
   } catch (error) {
-    console.error('Failed to fetch message history:', error)
+    console.error('Failed to fetch chat log:', error)
+    // Fallback to session history
+    try {
+      const response = await openclawService.getSessionHistory(chat.agentId, sessionId)
+      let data = null
+      try {
+        data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
+      } catch (e) {
+        console.error('Failed to parse history:', e)
+      }
+      chat.messages = data?.messages || []
+      chat.sessionId = sessionId
+    } catch (fallbackError) {
+      console.error('Failed to fetch session history fallback:', fallbackError)
+    }
   }
 }
 

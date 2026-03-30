@@ -71,6 +71,10 @@ export const openclawService = {
     })
   },
 
+  getChatLog(agentId) {
+    return api.get(`/openclaw/${agentId}/chat-log`)
+  },
+
   uploadPicture(agentId, fileData, fileName) {
     return api.post(`/openclaw/agents/${agentId}/pictures?name=${encodeURIComponent(fileName)}`, fileData, {
       headers: { 'Content-Type': 'application/octet-stream' },
