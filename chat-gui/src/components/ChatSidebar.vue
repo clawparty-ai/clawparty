@@ -344,7 +344,7 @@
               {{ (user.username || user.name)[0].toUpperCase() }}
             </div>
             <span class="item-name">{{ user.name }}</span>
-            <span class="item-subname" v-if="user.username">{{ user.username }}</span>
+            <span class="item-subname" v-if="user.username">{{ user.name }}/{{ user.username }}</span>
             <span v-if="getChatUpdated(user.username || user.name) > 0" class="unread-badge">{{ getChatUpdated(user.username || user.name) > 99 ? '99+' : getChatUpdated(user.username || user.name) }}</span>
             <span class="item-status" :class="{ online: user.online }"></span>
           </div>
@@ -361,7 +361,8 @@
             <div class="item-avatar" :style="{ background: getAvatarColor(chat.name) }">
               {{ chat.name[0].toUpperCase() }}
             </div>
-            <span class="item-name">{{ chat.displayName || chat.name }}</span>
+            <span class="item-name">{{ chat.displayName }}</span>
+            <span class="item-subname" v-if="chat.name !== chat.displayName">{{ chat.displayName }}/{{ chat.name }}</span>
             <span v-if="chat.updated > 0" class="unread-badge">{{ chat.updated > 99 ? '99+' : chat.updated }}</span>
           </div>
         </template>

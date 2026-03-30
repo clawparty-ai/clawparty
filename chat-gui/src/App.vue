@@ -83,10 +83,10 @@
       </div>
     </div>
     <ChatMain
-      v-if="activeChat !== null && activeChat < chats.length"
-      :chat="chats[activeChat]"
-      :meshName="currentMesh"
-      :currentUserName="currentMeshAgentUsername"
+      v-if="(activeChat !== null && activeChat < chats.length) || activeOpenclawAgent"
+      :chat="activeOpenclawAgent || chats[activeChat]"
+      :meshName="activeOpenclawAgent ? null : currentMesh"
+      :currentUserName="activeOpenclawAgent ? activeOpenclawAgent.agentId : currentMeshAgentUsername"
       :sending="sending"
       :openclawSessions="openclawSessions"
       :showBackButton="isMobile"
@@ -95,10 +95,10 @@
       @send="sendMessage"
       @send-images="handleSendImages"
       @send-files="handleSendFiles"
-      @switchSession="(sessionId) => switchOpenclawSession(chats[activeChat], sessionId)"
+      @switchSession="(sessionId) => switchOpenclawSession(activeOpenclawAgent, sessionId)"
       @deleteGroup="handleDeleteGroup"
       @leaveGroup="handleLeaveGroup"
-      @back="activeChat = null"
+      @back="activeOpenclawAgent ? (activeOpenclawAgent = null) : (activeChat = null)"
     />
     <div v-else-if="!isMobile" class="empty-state">
       <div class="empty-icon">
@@ -128,6 +128,7 @@ const currentMesh = ref('')
 const currentMeshAgentUsername = ref('')
 const chats = ref([])
 const activeChat = ref(null)
+const activeOpenclawAgent = ref(null)  // 当前活动的 openclaw agent
 const newMessage = ref('')
 const sending = ref(false)
 const showTokenDialog = ref(false)
@@ -238,6 +239,7 @@ const fetchOpenclawAgents = async () => {
     const response = await openclawService.getAgents()
     const agentsData = Array.isArray(response.data) ? response.data : []
     localOpenclawAvailable.value = agentsData.length > 0
+    // 只更新 openclawAgents 列表，不添加到 chats 列表
     openclawAgents.value = agentsData.map(agent => ({
       id: agent.id,
       name: agent.identityName || agent.id,
@@ -245,30 +247,6 @@ const fetchOpenclawAgents = async () => {
       model: agent.model,
       isOpenclaw: true
     }))
-
-    // Remove stale agent chats for deleted agents
-    const freshIds = new Set(agentsData.map(a => a.id))
-    chats.value = chats.value.filter(c => !c.isOpenclaw || freshIds.has(c.agentId))
-
-    agentsData.forEach(agent => {
-      const existingChat = chats.value.find(c => c.isOpenclaw && c.agentId === agent.id)
-      if (!existingChat) {
-        chats.value.push({
-          id: agent.id,
-          agentId: agent.id,
-          name: agent.identityName || agent.id,
-          emoji: agent.identityEmoji || '🤖',
-          time: '',
-          lastMessage: '',
-          updated: 0,
-          messages: [],
-          sessions: [],
-          sessionId: null,
-          isOpenclaw: true,
-          isTemp: true
-        })
-      }
-    })
   } catch (error) {
     localOpenclawAvailable.value = false
     console.error('Failed to fetch OpenClaw agents:', error)
@@ -288,6 +266,11 @@ const fetchChats = async () => {
       const newChatIds = new Set(newChats.map(c => c.id))
 
       newChats.forEach(newChat => {
+        // Only skip chats that have peerAgentName (openclaw agent related)
+        // Don't skip based on name containing '-lobster' - those are normal peer chats
+        if (newChat.peerAgentName) {
+          return
+        }
         const existingIndex = chats.value.findIndex(c => c.id === newChat.id && !c.isOpenclaw)
         if (existingIndex !== -1) {
           chats.value[existingIndex].time = newChat.time
@@ -779,35 +762,45 @@ const selectUser = async (user) => {
 }
 
 const selectOpenclawAgent = async (agent) => {
-  const chat = chats.value.find(c => c.isOpenclaw && c.agentId === agent.id)
-  if (chat) {
-    activeChat.value = chats.value.indexOf(chat)
-    if (!chat.sessions || chat.sessions.length === 0) {
+  // 直接设置活动 openclaw agent，不添加到 chats 列表
+  activeOpenclawAgent.value = {
+    agentId: agent.id,
+    name: agent.name,
+    emoji: agent.emoji || '🤖',
+    isOpenclaw: true,
+    messages: [],
+    sessions: [],
+    isTemp: true
+  }
+  
+  const chat = activeOpenclawAgent.value
+  
+  // 加载会话历史（仅当还没有会话时）
+  if (!chat.sessions || chat.sessions.length === 0) {
+    try {
+      const response = await openclawService.getSessions(agent.id)
+      const rawData = response.data
+      let sessions = []
       try {
-        const response = await openclawService.getSessions(agent.id)
-        const rawData = response.data
-        let sessions = []
-        try {
-          const parsed = typeof rawData === 'string' ? JSON.parse(rawData) : rawData
-          sessions = parsed?.sessions || []
-        } catch (e) {
-          console.error('Failed to parse sessions:', e)
-        }
-        openclawSessions.value = sessions
-        chat.sessions = sessions
-        const defaultSessionId = sessions.length > 0 ? String(sessions[0].sessionId) : null
-        if (defaultSessionId) {
-          await loadSessionHistory(chat, agent.id, defaultSessionId)
-        }
-        chat.isTemp = false
-      } catch (error) {
-        console.error('Failed to fetch sessions:', error)
+        const parsed = typeof rawData === 'string' ? JSON.parse(rawData) : rawData
+        sessions = parsed?.sessions || []
+      } catch (e) {
+        console.error('Failed to parse sessions:', e)
       }
-    } else if (!chat.messages || chat.messages.length === 0) {
-      const defaultSessionId = chat.sessions.length > 0 ? String(chat.sessions[0].sessionId) : null
+      openclawSessions.value = sessions
+      chat.sessions = sessions
+      const defaultSessionId = sessions.length > 0 ? String(sessions[0].sessionId) : null
       if (defaultSessionId) {
         await loadSessionHistory(chat, agent.id, defaultSessionId)
       }
+      chat.isTemp = false
+    } catch (error) {
+      console.error('Failed to fetch sessions:', error)
+    }
+  } else if (!chat.messages || chat.messages.length === 0) {
+    const defaultSessionId = chat.sessions.length > 0 ? String(chat.sessions[0].sessionId) : null
+    if (defaultSessionId) {
+      await loadSessionHistory(chat, agent.id, defaultSessionId)
     }
   }
 }
@@ -1030,6 +1023,10 @@ onUnmounted(() => {
 const startApp = () => {
   if (appStarted) return
   appStarted = true
+  
+  // 清理可能存在的旧 openclaw chats
+  chats.value = chats.value.filter(c => !c.isOpenclaw)
+  
   fetchMeshes().then(() => {
     startChatsPolling()
   })

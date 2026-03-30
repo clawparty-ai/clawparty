@@ -79,7 +79,7 @@ export const openclawService = {
   },
 
   getPictureUrl(agentId, fileName) {
-    const token = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
+    const token = getToken() ? `?token=${encodeURIComponent(getToken())}` : ''
     return `/api/openclaw/agents/${agentId}/pictures/${encodeURIComponent(fileName)}${token}`
   }
 }
@@ -136,12 +136,12 @@ export const chatService = {
   },
 
   getFileUrl(meshName, owner, hash) {
-    const token = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
+    const token = getToken() ? `?token=${encodeURIComponent(getToken())}` : ''
     return `/api/meshes/${meshName}/apps/ztm/chat/api/files/${owner}/${hash}${token}`
   },
 
   getFileFromSessionUrl(meshName, sessionId, hash) {
-    const token = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
+    const token = getToken() ? `?token=${encodeURIComponent(getToken())}` : ''
     return `/api/meshes/${meshName}/apps/ztm/chat/api/files/upload/${encodeURIComponent(sessionId)}/${hash}${token}`
   },
   

@@ -837,8 +837,8 @@ const parseMessages = (data) => {
     } else if (props.chat?.isGroup) {
       senderDisplay = resolveEpDisplayName(displaySender)
     } else {
-      // 对方的消息：直接用 peer 名称（来自左侧 peer list）
-      senderDisplay = displaySender
+      // 对方的消息：使用 resolveEpDisplayName 显示格式 "ep-name/agent-name"
+      senderDisplay = resolveEpDisplayName(displaySender)
     }
     // Resolve file URLs for image messages
     const rawFiles = item.message?.files || null
