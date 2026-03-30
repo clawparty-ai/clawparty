@@ -785,13 +785,17 @@ function main(listen, apiToken, noAuth) {
           var limit = 200
           var logs = db.getChatLog('', 'openclaw', agent, limit)
           // Convert to message format compatible with GUI
-          var messages = logs.map(log => ({
-            text: log.content || '',
-            time: new Date(log.time * 1000).toLocaleTimeString(),
-            sender: log.sender,
-            isSent: log.sender === 'user',
-            timestamp: log.time * 1000
-          })).reverse() // Reverse to show oldest first
+          var messages = logs.map(log => {
+            var d = new Date(log.time * 1000)
+            var timeStr = d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0')
+            return {
+              text: log.content || '',
+              time: timeStr,
+              sender: log.sender,
+              isSent: log.sender === 'user',
+              timestamp: log.time * 1000
+            }
+          }).reverse() // Reverse to show oldest first
           return response(200, JSON.stringify(messages))
         } catch (e) {
           console.error('[openclaw chat-log] Error:', e)
