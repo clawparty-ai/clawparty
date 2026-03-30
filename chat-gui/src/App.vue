@@ -22,7 +22,7 @@
       :activeChat="activeChat"
       @select="selectChat"
       @selectOpenclaw="selectOpenclawAgent"
-      @changeOrg="(org) => { mobileActiveOrg = org; activeChat = null; }"
+      @changeOrg="(org) => { mobileActiveOrg = org; activeChat = null; activeOpenclawAgent = null; }"
     />
     <!-- Mobile agents list view -->
     <div v-if="isMobile && activeChat === null && mobileActiveOrg === 'agents'" class="mobile-agents-view">
@@ -305,6 +305,7 @@ const fetchChats = async () => {
 }
 
 const selectChat = (index) => {
+  activeOpenclawAgent.value = null
   activeChat.value = index
   if (chats.value[index]) {
     chats.value[index].updated = 0
@@ -312,28 +313,27 @@ const selectChat = (index) => {
 }
 
 const sendMessage = async () => {
-  if (!newMessage.value.trim() || activeChat.value === null || sending.value) return
+  if (!newMessage.value.trim() || (!activeOpenclawAgent.value && activeChat.value === null) || sending.value) return
   
-  const chat = chats.value[activeChat.value]
+  const chat = activeOpenclawAgent.value || chats.value[activeChat.value]
   const text = newMessage.value
   sending.value = true
   
   try {
-    if (chat.isOpenclaw) {
-      if (!chat.messages) chat.messages = []
-      sending.value = false
-      const now = new Date()
-      const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
-      
-      setTimeout(()=>{
-        chat.messages.push({
-          text: '',
-          time: time,
-          sender: chat.name,
-          timestamp: now.getTime(),
-          isTyping: true
-        })
-      },300)
+      if (chat.isOpenclaw) {
+        if (!chat.messages) chat.messages = []
+        const now = new Date()
+        const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+        
+        setTimeout(()=>{
+          chat.messages.push({
+            text: '',
+            time: time,
+            sender: chat.name,
+            timestamp: now.getTime(),
+            isTyping: true
+          })
+        },300)
       
       // Detect #"group name" or #'group name' token — send message to that group as this agent
       const groupTokenMatch = text.match(/#["']([^"']+)["']/)
@@ -430,8 +430,8 @@ const sendMessage = async () => {
 
 const handleSendImages = async (imageFiles) => {
   if (!imageFiles || imageFiles.length === 0) return
-  if (activeChat.value === null) return
-  const chat = chats.value[activeChat.value]
+  if (!activeOpenclawAgent.value && activeChat.value === null) return
+  const chat = activeOpenclawAgent.value || chats.value[activeChat.value]
 
   if (chat.isOpenclaw) {
     // Local openclaw agent: save pictures to agent workspace and show in chat
@@ -562,8 +562,8 @@ const handleSendImages = async (imageFiles) => {
 
 const handleSendFiles = async (files) => {
   if (!files || files.length === 0) return
-  if (activeChat.value === null) return
-  const chat = chats.value[activeChat.value]
+  if (!activeOpenclawAgent.value && activeChat.value === null) return
+  const chat = activeOpenclawAgent.value || chats.value[activeChat.value]
 
   // OpenCLaw agent: save files to agent workspace
   if (chat.isOpenclaw) {
@@ -762,6 +762,7 @@ const selectUser = async (user) => {
 }
 
 const selectOpenclawAgent = async (agent) => {
+  activeChat.value = null
   // 直接设置活动 openclaw agent，不添加到 chats 列表
   activeOpenclawAgent.value = {
     agentId: agent.id,
