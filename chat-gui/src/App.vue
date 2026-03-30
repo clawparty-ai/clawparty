@@ -85,7 +85,7 @@
     <ChatMain
       v-if="(activeChat !== null && activeChat < chats.length) || activeOpenclawAgent"
       :chat="activeOpenclawAgent || chats[activeChat]"
-      :meshName="activeOpenclawAgent ? null : currentMesh"
+      :meshName="(activeOpenclawAgent && activeOpenclawAgent.agentId !== 'main') ? null : currentMesh"
       :currentUserName="activeOpenclawAgent ? activeOpenclawAgent.agentId : currentMeshAgentUsername"
       :sending="sending"
       :openclawSessions="openclawSessions"
