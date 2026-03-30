@@ -778,6 +778,28 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
+    '/api/openclaw/{agent}/chat-log': {
+      'GET': function ({ agent }) {
+        agent = URL.decodeComponent(agent)
+        try {
+          var limit = 200
+          var logs = db.getChatLog('', 'openclaw', agent, limit)
+          // Convert to message format compatible with GUI
+          var messages = logs.map(log => ({
+            text: log.content || '',
+            time: new Date(log.time * 1000).toLocaleTimeString(),
+            sender: log.sender,
+            isSent: log.sender === 'user',
+            timestamp: log.time * 1000
+          })).reverse() // Reverse to show oldest first
+          return response(200, JSON.stringify(messages))
+        } catch (e) {
+          console.error('[openclaw chat-log] Error:', e)
+          return response(500, JSON.stringify([]))
+        }
+      }
+    },
+
     '/api/openclaws': {
       'GET': function () {
         return response(200, db.allOpenclaws())
@@ -828,10 +850,31 @@ function main(listen, apiToken, noAuth) {
           return response(200, JSON.stringify({ warning: 'duplicated cli call' }))
         }
         db.addCliLog(agent, sessionId, messageMd5)
+        // Log user message to chat_log
+        try {
+          db.logChat('', 'openclaw', agent, agent, null, 'user', 'message', message, null, sessionId, false)
+        } catch (e) {
+          console.error('[openclaw chat] Failed to log user message:', e)
+        }
         var cmd = ['openclaw', 'agent', '--agent', agent, '--message', message, '--session-id', sessionId, '--json']
         console.info('[openclaw cli]', cmd.join(' ').slice(0, 200))
         return openclawAgentMessage.spawn(cmd).then(
-          output => response(200, output.split('\n').join('')),
+          output => {
+            // Log agent response to chat_log
+            try {
+              var respData = null
+              try { respData = JSON.parse(output.split('\n').join('')) } catch {}
+              if (respData && respData.payloads) {
+                var replyText = respData.payloads.map(p => p?.text).filter(Boolean).join('\n\n')
+                if (replyText) {
+                  db.logChat('', 'openclaw', agent, agent, null, agent, 'message', replyText, null, sessionId, false)
+                }
+              }
+            } catch (e) {
+              console.error('[openclaw chat] Failed to log agent response:', e)
+            }
+            return response(200, output.split('\n').join(''))
+          },
           output => response(500, output.split('\n').join(''))
         )
       }
