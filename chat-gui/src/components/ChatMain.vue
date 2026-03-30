@@ -295,6 +295,12 @@ const handleHashCommand = async (cmdString) => {
   // Insert command echo
   insertSystemMessage('> ' + trimmed)
   
+  // Hash commands require a mesh name (not available for local agents)
+  if (!props.meshName) {
+    insertSystemMessage('Hash commands (#list, #config) are only available in mesh chats, not in local agent chats.')
+    return
+  }
+  
   try {
     // #list-all
     if (trimmed === '#list') {
