@@ -841,25 +841,26 @@ function getChatLog(mesh, chatType, chatId, limit, msgTypes) {
   if (chatId) {
     rows = db.sql(`
       SELECT * FROM chat_log
-      WHERE mesh = ? AND chat_type = ? AND chat_id = ? AND msg_type IN (${types.map(() => '?').join(',')})
+      WHERE mesh = ? AND chat_type = ? AND chat_id = ?
       ORDER BY time DESC LIMIT ?
     `)
       .bind(1, mesh || '')
       .bind(2, chatType)
       .bind(3, chatId)
-    types.forEach((t, i) => rows.bind(4 + i, t))
-    rows = rows.bind(4 + types.length, limit || 200).exec()
+      .bind(4, limit || 200)
+      .exec()
   } else {
     rows = db.sql(`
       SELECT * FROM chat_log
-      WHERE mesh = ? AND msg_type IN (${types.map(() => '?').join(',')})
+      WHERE mesh = ?
       ORDER BY time DESC LIMIT ?
     `)
       .bind(1, mesh || '')
-    types.forEach((t, i) => rows.bind(2 + i, t))
-    rows = rows.bind(2 + types.length, limit || 200).exec()
+      .bind(2, limit || 200)
+      .exec()
   }
-  return rows.map(r => ({
+  // Filter by msg_type in JavaScript
+  return rows.filter(r => types.includes(r.msg_type || 'response')).map(r => ({
     id: r.id,
     time: r.time,
     mesh: r.mesh,

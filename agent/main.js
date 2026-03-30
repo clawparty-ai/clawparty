@@ -858,6 +858,7 @@ function main(listen, apiToken, noAuth) {
         // Log user message to chat_log
         try {
           db.logChat('', 'openclaw', agent, agent, null, 'user', 'message', message, null, sessionId, false, 'user')
+          console.info('[chat_log] write user message:', agent, 'msg_type=user, len=', message.length)
         } catch (e) {
           console.error('[openclaw chat] Failed to log user message:', e)
         }
@@ -865,28 +866,36 @@ function main(listen, apiToken, noAuth) {
         console.info('[openclaw cli]', cmd.join(' ').slice(0, 200))
         return openclawAgentMessage.spawn(cmd).then(
           output => {
+            var cleanOutput = output.split('\n').join('')
+            // Write to debug file to confirm this code runs
+            try { os.write('/tmp/chat_log_debug.txt', new Date().toISOString() + ' then callback called, output length: ' + cleanOutput.length + '\n') } catch {}
             // Log agent response to chat_log
             try {
               var respData = null
-              try { respData = JSON.parse(output.split('\n').join('')) } catch {}
-              if (respData && respData.payloads) {
-                respData.payloads.forEach(function(p) {
-                  var text = p?.text
-                  if (!text) return
-                  var role = p?.role || 'assistant'
-                  var type = p?.type || 'text'
-                  // Determine msg_type: 'response' for assistant text, 'system' for tool/system messages
+              try { 
+                respData = JSON.parse(cleanOutput)
+                try { os.write('/tmp/chat_log_debug.txt', new Date().toISOString() + ' JSON parsed, keys: ' + Object.keys(respData).join(',') + '\n') } catch {}
+              } catch (parseErr) {
+                try { os.write('/tmp/chat_log_debug.txt', new Date().toISOString() + ' JSON parse failed\n') } catch {}
+              }
+              var payloads = respData?.payloads || respData?.result?.payloads || []
+              try { os.write('/tmp/chat_log_debug.txt', new Date().toISOString() + ' payloads count: ' + payloads.length + '\n') } catch {}
+              for (var i = 0; i < payloads.length; i++) {
+                var p = payloads[i]
+                var text = p?.text
+                if (text) {
                   var msgType = 'response'
-                  if (role === 'tool' || role === 'system' || type === 'tool_use' || type === 'tool_result') {
+                  if (p?.role === 'tool' || p?.role === 'system') {
                     msgType = 'system'
                   }
                   db.logChat('', 'openclaw', agent, agent, null, agent, 'message', text, null, sessionId, false, msgType)
-                })
+                  try { os.write('/tmp/chat_log_debug.txt', new Date().toISOString() + ' wrote to db, text length: ' + text.length + '\n') } catch {}
+                }
               }
             } catch (e) {
-              console.error('[openclaw chat] Failed to log agent response:', e)
+              try { os.write('/tmp/chat_log_debug.txt', new Date().toISOString() + ' error: ' + e + '\n') } catch {}
             }
-            return response(200, output.split('\n').join(''))
+            return response(200, cleanOutput)
           },
           output => response(500, output.split('\n').join(''))
         )
