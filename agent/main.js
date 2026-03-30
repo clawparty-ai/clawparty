@@ -867,19 +867,11 @@ function main(listen, apiToken, noAuth) {
         return openclawAgentMessage.spawn(cmd).then(
           output => {
             var cleanOutput = output.split('\n').join('')
-            // Write to debug file to confirm this code runs
-            try { os.write('/tmp/chat_log_debug.txt', new Date().toISOString() + ' then callback called, output length: ' + cleanOutput.length + '\n') } catch {}
             // Log agent response to chat_log
             try {
               var respData = null
-              try { 
-                respData = JSON.parse(cleanOutput)
-                try { os.write('/tmp/chat_log_debug.txt', new Date().toISOString() + ' JSON parsed, keys: ' + Object.keys(respData).join(',') + '\n') } catch {}
-              } catch (parseErr) {
-                try { os.write('/tmp/chat_log_debug.txt', new Date().toISOString() + ' JSON parse failed\n') } catch {}
-              }
+              try { respData = JSON.parse(cleanOutput) } catch {}
               var payloads = respData?.payloads || respData?.result?.payloads || []
-              try { os.write('/tmp/chat_log_debug.txt', new Date().toISOString() + ' payloads count: ' + payloads.length + '\n') } catch {}
               for (var i = 0; i < payloads.length; i++) {
                 var p = payloads[i]
                 var text = p?.text
@@ -889,12 +881,9 @@ function main(listen, apiToken, noAuth) {
                     msgType = 'system'
                   }
                   db.logChat('', 'openclaw', agent, agent, null, agent, 'message', text, null, sessionId, false, msgType)
-                  try { os.write('/tmp/chat_log_debug.txt', new Date().toISOString() + ' wrote to db, text length: ' + text.length + '\n') } catch {}
                 }
               }
-            } catch (e) {
-              try { os.write('/tmp/chat_log_debug.txt', new Date().toISOString() + ' error: ' + e + '\n') } catch {}
-            }
+            } catch (e) {}
             return response(200, cleanOutput)
           },
           output => response(500, output.split('\n').join(''))
