@@ -746,11 +746,15 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
                 db.setChatPeer(mesh.name, chat.peer, { autoReply: false, autoReplyAgent: 'main' })
               }
               // If any incoming message carries an agentName, record it as the peer's agent
+              // Only update if peerAgentName is not already set (don't overwrite display name with ID)
               messages.forEach(msg => {
                 if (msg.sender !== app.username) {
                   var msgAgentName = typeof msg.message === 'object' ? msg.message?.agentName : null
                   if (msgAgentName) {
-                    db.setChatPeer(mesh.name, chat.peer, { peerAgentName: msgAgentName })
+                    var existingPeerConfig = db.getChatPeer(mesh.name, chat.peer)
+                    if (!existingPeerConfig || !existingPeerConfig.peerAgentName) {
+                      db.setChatPeer(mesh.name, chat.peer, { peerAgentName: msgAgentName })
+                    }
                   }
                 }
               })

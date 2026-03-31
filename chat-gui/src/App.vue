@@ -86,7 +86,7 @@
       v-if="(activeChat !== null && activeChat < chats.length) || activeOpenclawAgent"
       :chat="activeOpenclawAgent || chats[activeChat]"
       :meshName="(activeOpenclawAgent && activeOpenclawAgent.agentId !== 'main') ? null : currentMesh"
-      :currentUserName="activeOpenclawAgent ? activeOpenclawAgent.agentId : currentMeshAgentUsername"
+      :currentUserName="currentMeshAgentUsername"
       :sending="sending"
       :openclawSessions="openclawSessions"
       :showBackButton="isMobile"
@@ -419,7 +419,8 @@ const sendMessage = async () => {
     time: time,
     sender: currentMeshAgentUsername.value,
     timestamp: now.getTime(),
-    isTemp: true
+    isTemp: true,
+    isSent: true
   })
   
   chat.lastMessage = text
@@ -1016,7 +1017,7 @@ const resolveEpDisplayName = (username) => {
   if (!username) return username
   // 优先从 openclawAgents 获取 identityName（人可读的名字）
   const agent = openclawAgents.value.find(a => a.id === username)
-  if (agent) return username + "/" + agent.name
+  if (agent) return username + "/" + (agent.identityName || agent.name)
   // 如果不是本地 agent，使用 mesh 用户的 name
   const ep = users.value.find(u => u.username === username)
   if (ep) return ep.username + "/" + ep.name
