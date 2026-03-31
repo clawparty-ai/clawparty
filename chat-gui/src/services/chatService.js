@@ -165,10 +165,11 @@ export const chatService = {
     return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${encodeURIComponent(creator)}/${encodeURIComponent(groupId)}`, { name, members })
   },
 
-  approvePeerAutoReply(meshName, peer, agentName) {
+  approvePeerAutoReply(meshName, peer, agentName, peerAgentName) {
     return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${peer}/auto-reply`, {
       autoReply: true,
-      autoReplyAgent: agentName || 'main'
+      autoReplyAgent: agentName || 'main',
+      peerAgentName: peerAgentName || agentName || 'main'
     })
   },
 

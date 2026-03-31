@@ -181,7 +181,7 @@ const myDisplayNameWithAgent = computed(() => {
     return myName
   }
   const agent = openclawAgents.value.find(a => a.id === currentPeerConfig.value.autoReplyAgent)
-  const agentName = agent ? agent.name : currentPeerConfig.value.autoReplyAgent
+  const agentName = agent ? (agent.identityName || agent.name) : currentPeerConfig.value.autoReplyAgent
   return myName + '/' + agentName
 })
 
@@ -815,7 +815,8 @@ const renderMarkdown = (text) => {
 }
 
 const isMessageSent = (msg) => {
-  return msg.isSent || msg.sender === props.currentUserName
+  // Rely on isSent flag set by parseMessages or API
+  return msg.isSent === true
 }
 
 const openImagePreview = (url) => {
@@ -890,11 +891,13 @@ const approveGroupRequest = async (msg) => {
   try {
     if (msg.isPeerRequest) {
       // Peer chat: enable auto-reply with selected agent
-      const agentName = msg.selectedAgent || 'main'
-      await chatService.approvePeerAutoReply(props.meshName, msg.peer, agentName)
+      const agentId = msg.selectedAgent || 'main'
+      const agent = (openclawAgents.value || []).find(a => a.id === agentId)
+      const peerAgentName = agent ? (agent.identityName || agent.name) : agentId
+      await chatService.approvePeerAutoReply(props.meshName, msg.peer, agentId, peerAgentName)
       msg.isPeerRequest = false
       msg.isSystemHint = false
-      msg.text = `Auto-reply enabled for "${msg.peer}" via agent "${agentName}".`
+      msg.text = `Auto-reply enabled for "${msg.peer}" via agent "${peerAgentName}".`
     } else if (msg.isGroupEpRequest) {
       // ZTM EP member: enable auto-reply for this group with the selected agent
       const agentName = msg.selectedAgent || 'main'
