@@ -1,14 +1,16 @@
 :root {
   --bg-primary: #f8f8f8;
   --bg-secondary: #ffffff;
-  --bg-sidebar: #4a154b;
+  --bg-sidebar: #0A2E6F;
+  --sidebar-panel-bg: #F5F5F5;
+  --org-rail-bg: #0A2E6F;
   --bg-chat: #ffffff;
   --bg-input: #ffffff;
   --bg-hover: rgba(0, 0, 0, 0.04);
   --bg-active: rgba(0, 0, 0, 0.08);
   
-  --slack-purple: #4a154b;
-  --slack-aubergine: #611f69;
+  --slack-purple: #4776E6;
+  --slack-aubergine: #0A2E6F;
   --slack-green: #2eb67d;
   --slack-blue: #1d9bd1;
   --slack-red: #e01e5a;

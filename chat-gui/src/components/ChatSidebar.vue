@@ -8,9 +8,9 @@
         class="new-group-rail-btn"
         :class="{ active: showJoinParty }"
         @click="toggleJoinParty"
-        title="Join Party"
+        title="加入组织"
       >
-        <span class="join-party-icon">🥂</span>
+        <span class="join-party-icon">🌐</span>
       </button>
 
       <!-- 1. Create group chat button -->
@@ -30,7 +30,7 @@
         @click="activeOrg = 'groups'"
         title="Group Chats"
       >
-        <span class="org-double-lobster">🦞🦞</span>
+        <span class="org-double-lobster">👥</span>
         <span class="org-active-bar" v-if="activeOrg === 'groups'"></span>
       </div>
 
@@ -43,7 +43,7 @@
         @click="activeOrg = 'agents'"
         title="My Agents"
       >
-        <span class="org-emoji">🦞</span>
+        <span class="org-emoji">👤</span>
         <span class="org-active-bar" v-if="activeOrg === 'agents'"></span>
       </div>
 
@@ -80,7 +80,7 @@
     <aside class="sidebar-panel">
       <div class="panel-header">
         <span class="panel-title">{{
-          activeOrg === 'agents' ? 'My Agents' :
+          activeOrg === 'agents' ? '我的助手' :
           activeOrg === 'groups' ? 'Group Chats' :
           activeOrg
         }}</span>
@@ -91,7 +91,7 @@
       <div v-if="showJoinParty" class="modal-backdrop" @click.self="closeJoinParty">
         <div class="modal-dialog">
           <div class="modal-header">
-            <span class="modal-title">Join Party</span>
+            <span class="modal-title">加入组织</span>
             <button class="modal-close" @click="closeJoinParty">✕</button>
           </div>
 
@@ -113,7 +113,7 @@
               class="modal-create-btn"
               :disabled="joinPartyLoading"
               @click="handleJoinParty"
-            >{{ joinPartyLoading ? 'Joining...' : 'Join Party' }}</button>
+            >{{ joinPartyLoading ? '加入中...' : '加入组织' }}</button>
           </div>
         </div>
       </div>
@@ -597,7 +597,7 @@ const handleJoinParty = async () => {
   joinPartySuccess.value = ''
   try {
     await joinParty(joinPartyUrl.value)
-    joinPartySuccess.value = 'Successfully joined the party!'
+    joinPartySuccess.value = '成功加入组织！'
     setTimeout(() => {
       closeJoinParty()
     }, 1500)
@@ -643,7 +643,7 @@ const handleCreateGroup = async () => {
 /* ── Org rail ── */
 .org-rail {
   width: 64px;
-  background: var(--slack-aubergine);
+  background: var(--org-rail-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -665,7 +665,7 @@ const handleCreateGroup = async () => {
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -676,12 +676,12 @@ const handleCreateGroup = async () => {
 
 .org-icon:hover {
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.35);
 }
 
 .org-icon.active {
   border-radius: 14px;
-  background: var(--slack-purple);
+  background: var(--slack-aubergine);
 }
 
 .org-emoji { font-size: 20px; }
@@ -705,7 +705,7 @@ const handleCreateGroup = async () => {
   height: 8px;
   border-radius: 50%;
   background: #ccc;
-  border: 1.5px solid var(--slack-aubergine);
+  border: 1.5px solid var(--org-rail-bg);
 }
 
 .org-online-dot.online { background: var(--slack-green); }
@@ -724,7 +724,7 @@ const handleCreateGroup = async () => {
 /* ── Panel ── */
 .sidebar-panel {
   flex: 1;
-  background: var(--slack-purple);
+  background: var(--sidebar-panel-bg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -741,7 +741,7 @@ const handleCreateGroup = async () => {
 
 .panel-title {
   flex: 1;
-  color: #fff;
+  color: #333;
   font-size: 15px;
   font-weight: 700;
   text-transform: capitalize;
@@ -749,18 +749,18 @@ const handleCreateGroup = async () => {
 
 /* ── Group Chats org icon accent ── */
 .group-chats-icon {
-  background: rgba(255, 112, 67, 0.2);
+  background: rgba(71, 118, 230, 0.2);
 }
 
 .group-chats-icon:hover,
 .group-chats-icon.active {
-  background: rgba(255, 112, 67, 0.38);
+  background: rgba(71, 118, 230, 0.38);
 }
 
 .org-double-lobster {
   font-size: 13px;
   line-height: 1;
-  letter-spacing: -3px;
+  letter-spacing: 0;
 }
 
 /* ── Panel empty state ── */
@@ -777,14 +777,14 @@ const handleCreateGroup = async () => {
 }
 
 .panel-empty-state-title {
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(0, 0, 0, 0.45);
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 8px;
 }
 
 .panel-empty-state-hint {
-  color: rgba(255, 255, 255, 0.28);
+  color: rgba(0, 0, 0, 0.28);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -795,7 +795,7 @@ const handleCreateGroup = async () => {
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.25);
   border: none;
   display: flex;
   align-items: center;
@@ -808,7 +808,7 @@ const handleCreateGroup = async () => {
 .new-group-rail-btn:hover,
 .new-group-rail-btn.active {
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .new-group-rail-icon {
@@ -1094,7 +1094,7 @@ const handleCreateGroup = async () => {
 
 .panel-item:hover { background: rgba(255, 255, 255, 0.1); }
 
-.panel-item.active { background: var(--slack-aubergine); }
+.panel-item.active { background: rgba(255, 255, 255, 0.15); }
 
 .item-avatar {
   width: 28px;
@@ -1138,7 +1138,7 @@ const handleCreateGroup = async () => {
 
 .item-name {
   flex: 1;
-  color: #e8e8e8;
+  color: #333;
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
@@ -1157,7 +1157,7 @@ const handleCreateGroup = async () => {
 }
 
 .panel-item.active .item-name {
-  color: #fff;
+  color: #000;
   font-weight: 700;
 }
 
@@ -1199,12 +1199,12 @@ const handleCreateGroup = async () => {
 
 .profile-icon {
   position: relative;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.3);
   cursor: default;
 }
 
 .profile-icon:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .profile-letter {
