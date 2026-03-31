@@ -123,7 +123,7 @@ function doCommand(meshName, epName, argv, program) {
         title: `Export or import the CA certificate`,
         usage: 'ca <import|export>',
         options: `
-          -d, --data  <dir>       Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
+          -d, --data  <dir>       Specify the location of ZTM storage (default: ~/.clawparty)
               --cert  <filename>  Specify the certificate file to import or export
               --key   <filename>  Specify the private key file to import or export
         `,
@@ -146,7 +146,7 @@ function doCommand(meshName, epName, argv, program) {
         title: `Generate a permit for the root user`,
         usage: 'root',
         options: `
-          -d, --data          <dir>           Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
+          -d, --data          <dir>           Specify the location of ZTM storage (default: ~/.clawparty)
           -n, --names         <host:port ...> Specify one or more hub addresses (host:port) that are accessible to agents
               --ca            <url>           Specify the location of an external CA service if any
               --pqc-signature <algorithm>     Specify the PQC signature algorithm such as 'ML-DSA-44'
@@ -184,7 +184,7 @@ function doCommand(meshName, epName, argv, program) {
         title: `Start running a hub, agent or app as background service`,
         usage: 'start <object type> [app name]',
         options: `
-          -d, --data              <dir>           Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
+          -d, --data              <dir>           Specify the location of ZTM storage (default: ~/.clawparty)
                                                   Only applicable to hubs and agents
           -l, --listen            <[ip:]port>     Specify the service listening port (default: 0.0.0.0:8888 for hubs, 127.0.0.1:6789 for agents)
                                                   Only applicable to hubs and agents
@@ -255,7 +255,7 @@ function doCommand(meshName, epName, argv, program) {
         title: `Start running a hub or agent in foreground mode`,
         usage: 'run <object type>',
         options: `
-          -d, --data          <dir>             Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
+          -d, --data          <dir>             Specify the location of ZTM storage (default: ~/.clawparty)
           -l, --listen        <[ip:]port>       Specify the service listening port (default: 0.0.0.0:8888 for hubs, 127.0.0.1:6789 for agents)
           -n, --names         <host:port ...>   Specify one or more hub addresses (host:port) that are accessible to agents
                                                 Only applicable to hubs
@@ -629,7 +629,7 @@ function doCommand(meshName, epName, argv, program) {
     fallback: (argv) => {
       if (argv.length === 0) {
         new Timeout(2).wait().then(() => openBrowser('http://localhost:6789'))
-        return runAgent({ '--listen': ':6789', '--data': '~/.openclaw/workspace/clawparty' }, program)
+        return runAgent({ '--listen': ':6789', '--data': '~/.clawparty' }, program)
       }
       return selectMeshEndpoint(meshName, epName).then(
         ({ mesh, ep }) => callApp(argv, mesh, ep)
@@ -881,7 +881,7 @@ function joinParty(regUrl) {
       'mangas-coloradas', 'sitting-tiger', 'lone-wolf', 'white-buffalo',
       'red-hawk', 'thunder-cloud', 'morning-star', 'running-deer', 'little-wolf',
     ]
-    var namesPath = `${os.home()}/.openclaw/workspace/clawparty/names.txt`
+    var namesPath = `${os.home()}/.clawparty/names.txt`
     var namesList
     try {
       var namesContent = os.read(namesPath).toString()
@@ -897,7 +897,7 @@ function joinParty(regUrl) {
     var meshName = 'clawparty'
     var userName = firstName
     var epName = `${firstName}-lobster`
-    var permitPathname = `${os.home()}/.openclaw/workspace/clawparty/permit.json`
+    var permitPathname = `${os.home()}/.clawparty/permit.json`
 
     println(`Picked user name: ${userName}, endpoint: ${epName}`)
     println(`Requesting permit from registration server...`)
@@ -906,7 +906,7 @@ function joinParty(regUrl) {
       (info) => {
         var finalEpName = info.epName
         var finalUserName = info.userName
-        var mdDir = `${os.home()}/.openclaw/workspace/clawparty`
+        var mdDir = `${os.home()}/.clawparty`
         var mdPath = `${mdDir}/clawparty.md`
         try {
           os.mkdir(mdDir, { recursive: true })
@@ -983,7 +983,7 @@ function label(mesh, ep, add, del) {
 
 function startHub(args) {
   var opts = {
-    '--data': args['--data'] || '~/.openclaw/workspace/clawparty',
+    '--data': args['--data'] || '~/.clawparty',
     '--listen': args['--listen'] || '0.0.0.0:8888',
   };
   var COPY = [
@@ -1017,7 +1017,7 @@ function startHub(args) {
 
 function startAgent(args) {
   var opts = {
-    '--data': args['--data'] || '~/.openclaw/workspace/clawparty',
+    '--data': args['--data'] || '~/.clawparty',
     '--listen': args['--listen'] || '127.0.0.1:6789',
   }
   var COPY = [
@@ -1054,7 +1054,7 @@ function startApp(name, mesh, ep) {
 }
 
 function initHubDB(path) {
-  var dbPath = path || '~/.openclaw/workspace/clawparty'
+  var dbPath = path || '~/.clawparty'
   if (dbPath.startsWith('~/')) {
     dbPath = os.home() + dbPath.substring(1)
   }
@@ -1319,7 +1319,7 @@ function runHub(args, program) {
       var cmd = [program,
         '--pipy', 'repo://ztm/hub',
         '--args',
-        '--data', args['--data'] || '~/.openclaw/workspace/clawparty',
+        '--data', args['--data'] || '~/.clawparty',
         '--listen', args['--listen'] || '0.0.0.0:8888',
       ]
       if ('--names' in args) {
@@ -1351,7 +1351,7 @@ function runAgent(args, program) {
     '--log-level', 'info',
     '--pipy', 'repo://ztm/agent',
     '--args',
-    '--data', args['--data'] || '~/.openclaw/workspace/clawparty',
+    '--data', args['--data'] || '~/.clawparty',
     '--listen', args['--listen'] || '127.0.0.1:6789',
   ]
   if ('--join' in args) cmd.push('--join', args['--join'])

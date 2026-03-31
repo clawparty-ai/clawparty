@@ -838,8 +838,15 @@ const parseMessages = (data) => {
     } else if (props.chat?.isGroup) {
       senderDisplay = resolveEpDisplayName(displaySender)
     } else {
-      // 对方的消息：使用 resolveEpDisplayName 显示格式 "ep-name/agent-name"
-      senderDisplay = resolveEpDisplayName(displaySender)
+      // 对方的消息：显示 ep-name/agentName（如果消息中包含 agentName）
+      const peerAgentId = item.message?.agentName
+      if (peerAgentId) {
+        const peerAgent = (openclawAgents.value || []).find(a => a.id === peerAgentId)
+        const peerAgentDisplayName = peerAgent ? (peerAgent.identityName || peerAgent.name) : peerAgentId
+        senderDisplay = displaySender + '/' + peerAgentDisplayName
+      } else {
+        senderDisplay = resolveEpDisplayName(displaySender)
+      }
     }
     // Resolve file URLs for image messages
     const rawFiles = item.message?.files || null
