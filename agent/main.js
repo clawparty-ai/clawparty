@@ -15,7 +15,7 @@ try {
     commands: [{
       title: 'ZTM Agent',
       options: `
-        -d, --data              <dir>         Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
+        -d, --data              <dir>         Specify the location of ZTM storage (default: ~/.clawparty)
         -l, --listen            <[ip:]port>   Specify the agent's listening port (default: 127.0.0.1:6789)
             --api-token         <token>       Require this token for all /api requests (default: enjoy-party)
             --no-auth                         Skip API authentication (not recommended for production)
@@ -36,7 +36,7 @@ try {
           listen = '127.0.0.1' + listen
         }
 
-        var dbPath = args['--data'] || '~/.openclaw/workspace/clawparty'
+        var dbPath = args['--data'] || '~/.clawparty'
         if (dbPath.startsWith('~/')) {
           dbPath = os.home() + dbPath.substring(1)
         }
@@ -948,7 +948,7 @@ function main(listen, apiToken, noAuth) {
           'red-hawk', 'thunder-cloud', 'morning-star', 'running-deer', 'little-wolf',
         ]
         var namesList = DEFAULT_NAMES
-        var namesPath = os.home() + '/.openclaw/workspace/clawparty/names.txt'
+        var namesPath = os.home() + '/.clawparty/names.txt'
         try {
           var namesContent = os.read(namesPath).toString()
           var parsed = namesContent.split('\n').map(n => n.trim()).filter(n => n.length > 0)
