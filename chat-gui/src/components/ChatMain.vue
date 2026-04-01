@@ -593,14 +593,14 @@ const buildChatHtml = () => {
       border-left: none;
     }
     .message.sent .message-bubble {
-      background: #4a154b;
+      background: #0A2E6F;
       color: #ffffff;
     }
     .message.sent .message-bubble::before {
       left: auto;
       right: -6px;
       border-right: none;
-      border-left: 6px solid #4a154b;
+      border-left: 6px solid #0A2E6F;
       border-right-color: transparent;
     }
     .message-bubble.system-hint {
