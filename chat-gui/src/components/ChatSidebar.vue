@@ -880,7 +880,7 @@ const handleCreateGroup = async () => {
 }
 
 .modal-dialog {
-  background: #1a1d21;
+  background: #ffffff;
   border-radius: 12px;
   width: 460px;
   max-width: 92vw;
@@ -901,7 +901,7 @@ const handleCreateGroup = async () => {
 
 .modal-title {
   flex: 1;
-  color: #fff;
+  color: #333333;
   font-size: 17px;
   font-weight: 700;
 }
@@ -911,7 +911,7 @@ const handleCreateGroup = async () => {
   height: 28px;
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(0, 0, 0, 0.5);
   font-size: 16px;
   cursor: pointer;
   border-radius: 6px;
@@ -922,8 +922,8 @@ const handleCreateGroup = async () => {
 }
 
 .modal-close:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: rgba(0, 0, 0, 0.1);
+  color: #333333;
 }
 
 .modal-search {
@@ -935,20 +935,20 @@ const handleCreateGroup = async () => {
   width: 100%;
   box-sizing: border-box;
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 7px;
-  color: #fff;
+  color: #333333;
   font-size: 14px;
   outline: none;
   transition: border-color 0.15s;
 }
 
-.search-input::placeholder { color: rgba(255, 255, 255, 0.35); }
+.search-input::placeholder { color: rgba(0, 0, 0, 0.35); }
 
 .search-input:focus {
-  border-color: rgba(255, 255, 255, 0.35);
-  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .modal-list {
@@ -959,7 +959,7 @@ const handleCreateGroup = async () => {
 
 .modal-section-label {
   padding: 8px 10px 4px;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(0, 0, 0, 0.4);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -991,17 +991,17 @@ const handleCreateGroup = async () => {
 }
 
 .modal-item .item-name {
-  color: #e8e8e8;
+  color: #000000;
 }
 
 .modal-item .item-subname {
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(0, 0, 0, 0.6);
 }
 
 .modal-empty {
   padding: 32px 0;
   text-align: center;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(0, 0, 0, 0.35);
   font-size: 14px;
 }
 
@@ -1009,30 +1009,30 @@ const handleCreateGroup = async () => {
   display: flex;
   align-items: center;
   padding: 12px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
   gap: 10px;
   flex-shrink: 0;
 }
 
 .modal-count {
   flex: 1;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(0, 0, 0, 0.45);
   font-size: 13px;
 }
 
 .modal-cancel-btn {
   padding: 7px 16px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.1);
   border: none;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(0, 0, 0, 0.8);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.1s;
 }
 
-.modal-cancel-btn:hover { background: rgba(255, 255, 255, 0.18); }
+.modal-cancel-btn:hover { background: rgba(0, 0, 0, 0.18); }
 
 .modal-create-btn {
   padding: 7px 18px;
@@ -1129,7 +1129,7 @@ const handleCreateGroup = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(0, 0, 0, 0.5);
+  color: #0A2E6F;
   font-size: 11px;
   font-weight: 700;
   margin-right: 6px;
@@ -1139,10 +1139,10 @@ const handleCreateGroup = async () => {
 }
 
 .item-hash:hover {
-  color: rgba(0, 0, 0, 0.9);
+  color: #0A2E6F;
 }
 
-.panel-item.active .item-hash { color: rgba(0, 0, 0, 0.9); }
+.panel-item.active .item-hash { color: #0A2E6F; }
 
 .item-name {
   flex: 1;
