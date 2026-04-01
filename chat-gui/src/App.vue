@@ -1287,7 +1287,7 @@ const submitToken = async () => {
   }
   
   .mobile-agent-item .openclaw-avatar {
-    background: linear-gradient(135deg, #ff6b6b, #ffa500);
+    background: linear-gradient(135deg, #cecece, #cecece);
     font-size: 18px;
   }
   
