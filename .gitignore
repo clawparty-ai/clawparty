@@ -23,3 +23,6 @@ ztm-work/
 tests/reports/
 tests/test-result-*.log
 tests/tmp/
+
+# Session notes
+session-add-sse-support.md
