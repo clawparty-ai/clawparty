@@ -1121,7 +1121,7 @@ const handleCreateGroup = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(0, 0, 0, 0.5);
   font-size: 11px;
   font-weight: 700;
   margin-right: 6px;
@@ -1131,10 +1131,10 @@ const handleCreateGroup = async () => {
 }
 
 .item-hash:hover {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(0, 0, 0, 0.9);
 }
 
-.panel-item.active .item-hash { color: rgba(255, 255, 255, 0.9); }
+.panel-item.active .item-hash { color: rgba(0, 0, 0, 0.9); }
 
 .item-name {
   flex: 1;
