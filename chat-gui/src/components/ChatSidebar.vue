@@ -298,8 +298,7 @@
                 <span v-if="chat.updated > 0 && renamingChatId !== chat.id" class="unread-badge">{{ chat.updated > 99 ? '99+' : chat.updated }}</span>
                 <button v-if="chat.creator === currentMeshAgentUsername" class="group-action-btn" @click.stop="startRename(chat)" title="Rename">✎</button>
                 <button v-if="chat.creator === currentMeshAgentUsername" class="group-action-btn" @click.stop="openEditMembers(chat)" title="Edit members">
-									<svg t="1775022664441" class="icon" viewBox="0 0 1152 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="3524" width="18" height="18"><path d="M768 770.62144l0-52.77696c70.49216-39.7312 128-138.77248 128-237.83424 0-159.06816 0-288.01024-192-288.01024s-192 128.94208-192 288.01024c0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l896 0c0-128.96256-166.89152-235.64288-384-253.37856z" fill="#ffffff" p-id="3525" data-spm-anchor-id="a313x.search_index.0.i3.4b4d3a810fYL5Y" class="selected"></path><path d="M327.18848 795.32032c55.31648-36.1472 124.08832-63.63136 199.7824-80.40448-15.0528-17.77664-28.71296-37.62176-40.48896-59.02336-30.4128-55.23456-46.4896-116.06016-46.4896-175.90272 0-86.03648 0-167.30112 30.59712-233.75872 29.696-64.512 83.12832-104.48896 159.232-119.48032-16.91648-76.47232-61.93152-126.75072-181.82144-126.75072-192 0-192 128.94208-192 288.01024 0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l278.99904 0c14.52032-12.9024 30.59712-25.16992 48.18944-36.67968z" fill="#ffffff" p-id="3526" data-spm-anchor-id="a313x.search_index.0.i4.4b4d3a810fYL5Y" class="selected"></path></svg>
-									
+									<svg t="1775022664441" class="icon" viewBox="0 0 1152 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="3524" width="18" height="18"><path d="M768 770.62144l0-52.77696c70.49216-39.7312 128-138.77248 128-237.83424 0-159.06816 0-288.01024-192-288.01024s-192 128.94208-192 288.01024c0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l896 0c0-128.96256-166.89152-235.64288-384-253.37856z" fill="#515151" p-id="3525" data-spm-anchor-id="a313x.search_index.0.i3.4b4d3a810fYL5Y" class="selected"></path><path d="M327.18848 795.32032c55.31648-36.1472 124.08832-63.63136 199.7824-80.40448-15.0528-17.77664-28.71296-37.62176-40.48896-59.02336-30.4128-55.23456-46.4896-116.06016-46.4896-175.90272 0-86.03648 0-167.30112 30.59712-233.75872 29.696-64.512 83.12832-104.48896 159.232-119.48032-16.91648-76.47232-61.93152-126.75072-181.82144-126.75072-192 0-192 128.94208-192 288.01024 0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l278.99904 0c14.52032-12.9024 30.59712-25.16992 48.18944-36.67968z" fill="#515151" p-id="3526" data-spm-anchor-id="a313x.search_index.0.i4.4b4d3a810fYL5Y" class="selected"></path></svg>
 								</button>
               </div>
               <!-- Expanded members list -->
@@ -1309,14 +1308,16 @@ const handleCreateGroup = async () => {
 .group-action-btn {
   background: none;
   border: none;
-  color: #aaa;
+  /* color: #aaa; */
   cursor: pointer;
   font-size: 12px;
   padding: 0 3px;
   flex-shrink: 0;
   line-height: 1;
 }
-.group-action-btn:hover { color: #fff; }
+.group-action-btn:hover { 
+	/* color: #fff; */
+}
 
 .group-rename-input {
   flex: 1;
@@ -1332,7 +1333,6 @@ const handleCreateGroup = async () => {
 
 .group-members-list {
   padding: 4px 0 4px 28px;
-  background: #fff;
 }
 
 .group-member-item {
