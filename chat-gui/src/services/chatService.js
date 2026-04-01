@@ -88,6 +88,19 @@ export const openclawService = {
   }
 }
 
+export const picoclawService = {
+  checkHealth() {
+    return api.get('/picoclaw/health')
+  },
+  
+  sendMessage(message, sessionId) {
+    return api.post('/picoclaw/chat', { 
+      message, 
+      session_id: sessionId 
+    })
+  }
+}
+
 export const chatService = {
   getChats(meshName) {
     return api.get(`/meshes/${meshName}/apps/ztm/chat/api/chats`)
