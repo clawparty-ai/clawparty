@@ -30,7 +30,9 @@
         @click="activeOrg = 'groups'"
         title="Group Chats"
       >
-        <span class="org-double-lobster">👥</span>
+        <span class="org-double-lobster">
+					<svg t="1775022664441" class="icon" viewBox="0 0 1152 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="3524" width="18" height="18"><path d="M768 770.62144l0-52.77696c70.49216-39.7312 128-138.77248 128-237.83424 0-159.06816 0-288.01024-192-288.01024s-192 128.94208-192 288.01024c0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l896 0c0-128.96256-166.89152-235.64288-384-253.37856z" fill="#ffffff" p-id="3525" data-spm-anchor-id="a313x.search_index.0.i3.4b4d3a810fYL5Y" class="selected"></path><path d="M327.18848 795.32032c55.31648-36.1472 124.08832-63.63136 199.7824-80.40448-15.0528-17.77664-28.71296-37.62176-40.48896-59.02336-30.4128-55.23456-46.4896-116.06016-46.4896-175.90272 0-86.03648 0-167.30112 30.59712-233.75872 29.696-64.512 83.12832-104.48896 159.232-119.48032-16.91648-76.47232-61.93152-126.75072-181.82144-126.75072-192 0-192 128.94208-192 288.01024 0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l278.99904 0c14.52032-12.9024 30.59712-25.16992 48.18944-36.67968z" fill="#ffffff" p-id="3526" data-spm-anchor-id="a313x.search_index.0.i4.4b4d3a810fYL5Y" class="selected"></path></svg>
+				</span>
         <span class="org-active-bar" v-if="activeOrg === 'groups'"></span>
       </div>
 
@@ -43,7 +45,9 @@
         @click="activeOrg = 'agents'"
         title="My Agents"
       >
-        <span class="org-emoji">👤</span>
+        <span class="org-emoji">
+					<svg t="1775022567064" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2473" width="18" height="18"><path d="M963.764706 963.764706v60.235294H60.235294v-60.235294c0-232.869647 202.270118-421.647059 451.764706-421.647059 249.494588 0 451.764706 188.777412 451.764706 421.647059zM752.941176 240.941176A240.941176 240.941176 0 1 1 271.058824 240.941176a240.941176 240.941176 0 0 1 481.882352 0z" fill="#ffffff" p-id="2474" data-spm-anchor-id="a313x.search_index.0.i0.4b4d3a810fYL5Y" class="selected"></path></svg>
+				</span>
         <span class="org-active-bar" v-if="activeOrg === 'agents'"></span>
       </div>
 
@@ -293,7 +297,10 @@
                 </template>
                 <span v-if="chat.updated > 0 && renamingChatId !== chat.id" class="unread-badge">{{ chat.updated > 99 ? '99+' : chat.updated }}</span>
                 <button v-if="chat.creator === currentMeshAgentUsername" class="group-action-btn" @click.stop="startRename(chat)" title="Rename">✎</button>
-                <button v-if="chat.creator === currentMeshAgentUsername" class="group-action-btn" @click.stop="openEditMembers(chat)" title="Edit members">👥</button>
+                <button v-if="chat.creator === currentMeshAgentUsername" class="group-action-btn" @click.stop="openEditMembers(chat)" title="Edit members">
+									<svg t="1775022664441" class="icon" viewBox="0 0 1152 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="3524" width="18" height="18"><path d="M768 770.62144l0-52.77696c70.49216-39.7312 128-138.77248 128-237.83424 0-159.06816 0-288.01024-192-288.01024s-192 128.94208-192 288.01024c0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l896 0c0-128.96256-166.89152-235.64288-384-253.37856z" fill="#ffffff" p-id="3525" data-spm-anchor-id="a313x.search_index.0.i3.4b4d3a810fYL5Y" class="selected"></path><path d="M327.18848 795.32032c55.31648-36.1472 124.08832-63.63136 199.7824-80.40448-15.0528-17.77664-28.71296-37.62176-40.48896-59.02336-30.4128-55.23456-46.4896-116.06016-46.4896-175.90272 0-86.03648 0-167.30112 30.59712-233.75872 29.696-64.512 83.12832-104.48896 159.232-119.48032-16.91648-76.47232-61.93152-126.75072-181.82144-126.75072-192 0-192 128.94208-192 288.01024 0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l278.99904 0c14.52032-12.9024 30.59712-25.16992 48.18944-36.67968z" fill="#ffffff" p-id="3526" data-spm-anchor-id="a313x.search_index.0.i4.4b4d3a810fYL5Y" class="selected"></path></svg>
+									
+								</button>
               </div>
               <!-- Expanded members list -->
               <div v-if="expandedGroups.has(chat.id)" class="group-members-list">
@@ -665,7 +672,7 @@ const handleCreateGroup = async () => {
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.25);
+  background: #4095fe;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -676,7 +683,7 @@ const handleCreateGroup = async () => {
 
 .org-icon:hover {
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.35);
+  background: #1d6cff;
 }
 
 .org-icon.active {
@@ -717,7 +724,7 @@ const handleCreateGroup = async () => {
   transform: translateY(-50%);
   width: 4px;
   height: 24px;
-  background: #fff;
+  background: #4095fe;
   border-radius: 0 3px 3px 0;
 }
 
@@ -749,12 +756,12 @@ const handleCreateGroup = async () => {
 
 /* ── Group Chats org icon accent ── */
 .group-chats-icon {
-  background: rgba(71, 118, 230, 0.2);
+  background: #4095fe;
 }
 
 .group-chats-icon:hover,
 .group-chats-icon.active {
-  background: rgba(71, 118, 230, 0.38);
+  background: #1d6cff;
 }
 
 .org-double-lobster {
@@ -795,7 +802,7 @@ const handleCreateGroup = async () => {
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.25);
+  background: #4095fe;
   border: none;
   display: flex;
   align-items: center;
@@ -808,7 +815,7 @@ const handleCreateGroup = async () => {
 .new-group-rail-btn:hover,
 .new-group-rail-btn.active {
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.4);
+  background: #1d6cff;
 }
 
 .new-group-rail-icon {
@@ -1207,12 +1214,12 @@ const handleCreateGroup = async () => {
 
 .profile-icon {
   position: relative;
-  background: rgba(255, 255, 255, 0.3);
+  background: #4095fe;
   cursor: default;
 }
 
 .profile-icon:hover {
-  background: rgba(255, 255, 255, 0.4);
+  background: #1d6cff;
 }
 
 .profile-letter {

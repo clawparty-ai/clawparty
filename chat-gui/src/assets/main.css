@@ -1,26 +1,26 @@
 :root {
-  --bg-primary: #f8f8f8;
-  --bg-secondary: #ffffff;
-  --bg-sidebar: #0A2E6F;
-  --sidebar-panel-bg: #F5F5F5;
-  --org-rail-bg: #0A2E6F;
-  --bg-chat: #ffffff;
+  --bg-primary: #f3f6fc;
+  --bg-secondary: #f3f6fc;
+  --bg-sidebar: #1D6CFF;
+  --sidebar-panel-bg: #ffffff;
+  --org-rail-bg: #f3f6fc;
+  --bg-chat: #f3f6fc;
   --bg-input: #ffffff;
   --bg-hover: rgba(0, 0, 0, 0.04);
   --bg-active: rgba(0, 0, 0, 0.08);
   
-  --slack-purple: #4776E6;
-  --slack-aubergine: #0A2E6F;
+  --slack-purple: #4095fe;
+  --slack-aubergine: #4095fe;
   --slack-green: #2eb67d;
   --slack-blue: #1d9bd1;
   --slack-red: #e01e5a;
   --slack-yellow: #ecb22e;
   
-  --text-primary: #1d1c1d;
-  --text-secondary: #616061;
-  --text-muted: #1d1c1d;
-  --text-dim: #616061;
-  --text-link: #1264a3;
+  --text-primary: #4d4d4d;
+  --text-secondary: #797979;
+  --text-muted: #4d4d4d;
+  --text-dim: #797979;
+  --text-link: #3F61A4;
   
   --border-subtle: rgba(0, 0, 0, 0.07);
   --border-light: rgba(0, 0, 0, 0.15);
@@ -77,7 +77,8 @@ button {
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 2px;
+	height: 2px;
 }
 
 ::-webkit-scrollbar-track {

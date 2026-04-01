@@ -1189,6 +1189,7 @@ onUnmounted(() => {
   flex-direction: column;
   background: var(--bg-chat);
   min-width: 0;
+	z-index: 1;
 }
 
 .messages {
