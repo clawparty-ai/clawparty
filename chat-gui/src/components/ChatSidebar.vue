@@ -990,6 +990,14 @@ const handleCreateGroup = async () => {
   flex-shrink: 0;
 }
 
+.modal-item .item-name {
+  color: #e8e8e8;
+}
+
+.modal-item .item-subname {
+  color: rgba(255, 255, 255, 0.6);
+}
+
 .modal-empty {
   padding: 32px 0;
   text-align: center;
