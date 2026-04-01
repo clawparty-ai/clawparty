@@ -316,6 +316,9 @@ main() {
     # Run CLI tests
     run_tests_in_dir "$SCRIPT_DIR/cli" "CLI"
 
+    # Run Picoclaw tests
+    run_tests_in_dir "$SCRIPT_DIR/picoclaw" "Picoclaw"
+
     # Run cleanup
     CLEANUP_START=$(date +%s)
     if [ -f "$SCRIPT_DIR/cleanup.sh" ]; then

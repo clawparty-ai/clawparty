@@ -1059,6 +1059,76 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
+    '/api/picoclaw/health': {
+      'GET': function () {
+        var cmd = ['picoclaw', 'status']
+        console.info('[picoclaw cli]', cmd.join(' '))
+        var output = ''
+        return pipeline($=>$
+          .onStart(cmd)
+          .exec(() => cmd, {
+            stderr: true,
+            onExit: (code, err) => {
+              var status = code === 0 ? 'online' : 'offline'
+              return response(code === 0 ? 200 : 503, JSON.stringify({
+                status,
+                agent: 'picoclaw',
+                output: output.trim().slice(0, 500)
+              }))
+            }
+          })
+          .replaceMessage(msg => {
+            output += msg?.body?.toString?.() || ''
+            return new StreamEnd
+          })
+        ).spawn()
+      }
+    },
+
+    '/api/picoclaw/chat': {
+      'POST': function (_, req) {
+        var body
+        try {
+          body = JSON.decode(req.body)
+        } catch {
+          return response(400, JSON.stringify({ error: 'invalid JSON' }))
+        }
+        var message = body?.message || ''
+        var sessionId = body?.session_id || 'clawparty:' + Date.now()
+        if (!message) {
+          return response(400, JSON.stringify({ error: 'message is required' }))
+        }
+        console.info('[picoclaw chat] message:', message.slice(0, 100))
+        var cmd = ['picoclaw', 'agent', '-m', message, '-s', sessionId]
+        console.info('[picoclaw cli]', cmd.join(' ').slice(0, 200))
+        var output = ''
+        return pipeline($=>$
+          .onStart(cmd)
+          .exec(() => cmd, {
+            stderr: true,
+            onExit: (code, err) => {
+              if (code === 0) {
+                return response(200, JSON.stringify({
+                  agent: 'picoclaw',
+                  response: output.trim(),
+                  session_id: sessionId
+                }))
+              } else {
+                return response(500, JSON.stringify({
+                  error: err || 'Picoclaw command failed',
+                  output: output.trim()
+                }))
+              }
+            }
+          })
+          .replaceMessage(msg => {
+            output += msg?.body?.toString?.() || ''
+            return new StreamEnd
+          })
+        ).spawn()
+      }
+    },
+
     '/version': {
       'GET': function () {
         return ztmVersion.spawn().then(
