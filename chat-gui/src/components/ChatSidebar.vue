@@ -1332,7 +1332,7 @@ const handleCreateGroup = async () => {
 
 .group-members-list {
   padding: 4px 0 4px 28px;
-  background: rgba(0,0,0,0.15);
+  background: #fff;
 }
 
 .group-member-item {
@@ -1357,7 +1357,7 @@ const handleCreateGroup = async () => {
 
 .member-name {
   font-size: 12px;
-  color: #ccc;
+  color: #797979;
 }
 
 .group-member-empty {
