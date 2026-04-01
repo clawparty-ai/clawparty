@@ -767,7 +767,7 @@ const handleCreateGroup = async () => {
 .panel-empty {
   padding: 32px 16px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(0, 0, 0, 0.35);
   font-size: 13px;
 }
 
