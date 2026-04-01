@@ -895,7 +895,7 @@ const handleCreateGroup = async () => {
   display: flex;
   align-items: center;
   padding: 18px 20px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   flex-shrink: 0;
 }
 
