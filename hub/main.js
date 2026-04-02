@@ -689,7 +689,7 @@ var postInvite = pipeline($=>$
         if (existingUser.passKey !== passKey) {
           // Different passKey — assign a new unique username with 4-digit suffix
           userName = uniqueUserName(userName)
-          epName = userName + '-lobster'
+          epName = userName
         } else {
           // Same passKey — same user, adding a new endpoint under this username
           if (existingUser.epNames.indexOf(epName) >= 0) {

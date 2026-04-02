@@ -937,15 +937,16 @@ function main(listen, apiToken, noAuth) {
         var regUrl = (body && body.regUrl) ? body.regUrl : 'https://clawparty.flomesh.io:7779'
 
         var DEFAULT_NAMES = [
-          'jose-arcadio-buendia', 'ursula-iguran', 'aureliano-buendia', 'rebeco',
-          'amaranta', 'jose-arcadio', 'aureliano-babilonia', 'remedios-the-beauty',
-          'melqulades', 'remedios-buendia', 'william-wallace', 'edward-i',
-          'princess-isabella', 'robert-the-bruce', 'hamwall', 'stephen',
-          'lord-argyll', 'sitting-bull', 'geronimo', 'crazy-horse',
-          'sacagawea', 'pocahontas', 'tecumseh', 'crazy-moon',
-          'red-cloud', 'chief-joseph', 'black-kettle', 'cochise',
-          'mangas-coloradas', 'sitting-tiger', 'lone-wolf', 'white-buffalo',
-          'red-hawk', 'thunder-cloud', 'morning-star', 'running-deer', 'little-wolf',
+          '王伟', '李强', '张勇', '刘洋', '陈杰', '杨军', '黄超', '周刚', '吴健', '徐明',
+          '孙磊', '胡涛', '朱莉', '高静', '林敏', '何艳', '郭芳', '马娟', '罗秀', '梁平',
+          '宋辉', '郑华', '谢宇', '韩鹏', '唐波', '冯凯', '于波', '董亮', '萧莉', '程程',
+          '曹毅', '袁野', '邓晖', '许诺', '傅振', '张子轩', '李浩然', '王梓涵', '刘一诺', '陈宇航',
+          '杨欣怡', '黄子墨', '周梓豪', '吴雨桐', '徐若汐', '孙浩轩', '胡嘉怡', '朱宇泽', '高钰涵', '林沐辰',
+          '何梓萌', '郭俊豪', '马依诺', '罗子涵', '梁诗玥', '宋奕辰', '郑心怡', '谢思源', '韩语桐', '唐沐阳',
+          '冯艺涵', '于浩宇', '董子谦', '萧瑞泽', '程可欣', '曹语汐', '袁睿杰', '邓予珩', '许博文', '傅钰彤',
+          '王清舒', '李璟雯', '张思睿', '刘致远', '陈瑾瑜', '杨舒然', '黄婉清', '周翰林', '吴雅楠', '徐靖川',
+          '孙志远', '胡悦晴', '朱嘉瑞', '高韵婷', '林子佩', '何慕宸', '郭语冰', '马天佑', '罗曼妮', '梁予衡',
+          '宋明远', '郑梦琪', '谢承恩', '韩晓曼', '唐书航', '冯婉柔', '于思齐', '董清源', '萧立诚', '程墨池',
         ]
         var namesList = DEFAULT_NAMES
         var namesPath = os.home() + '/.clawparty/names.txt'
@@ -959,9 +960,9 @@ function main(listen, apiToken, noAuth) {
         var passKeyChars = 'abcdefghijklmnopqrstuvwxyz'
         var passKey = ''
         for (var i = 0; i < 16; i++) passKey += passKeyChars.charAt(Math.floor(Math.random() * 26))
-        var meshName = 'clawparty'
+        var meshName = '同事'
         var userName = firstName
-        var epName = firstName + '-lobster'
+        var epName = firstName
 
         var publicKey = api.getIdentity()
 

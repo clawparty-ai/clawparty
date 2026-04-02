@@ -38,8 +38,8 @@
           <span class="item-name">{{ agent.name }}</span>
         </div>
         <div v-if="!openclawAgents || openclawAgents.length === 0" class="mobile-empty">
-          <div>No local agents</div>
-          <div class="mobile-empty-hint">openclaw is not installed locally. You can still interact with remote openclaw agents via group chat.</div>
+          <div>Loading...</div>
+
         </div>
       </div>
     </div>
@@ -107,7 +107,7 @@
           <path d="M40 20C29.5 20 21 28.5 21 39c0 7.3 4.2 13.7 10.5 17.5v5.5c0 2.2 1.8 4 4 4h9c2.2 0 4-1.8 4-4v-5.5c6.3-3.8 10.5-10.2 10.5-17.5C59 28.5 50.5 20 40 20z" fill="#4A154B"/>
         </svg>
       </div>
-      <h2>Welcome to ClawParty!</h2>
+      <h2>Welcome to MyTeam!</h2>
     </div>
   </div>
 </template>

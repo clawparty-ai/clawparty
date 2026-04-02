@@ -100,7 +100,7 @@
             <input
               v-model="joinPartyUrl"
               class="search-input"
-              placeholder="https://clawparty.flomesh.io:7779"
+              placeholder="https://myteam.flomesh.io:7779"
               :disabled="joinPartyLoading"
             />
             <div v-if="joinPartyError" class="join-party-error">{{ joinPartyError }}</div>
@@ -325,8 +325,8 @@
             <span class="item-name">{{ agent.name }}</span>
           </div>
           <div v-if="openclawAgents.length === 0" class="panel-empty-state">
-            <div class="panel-empty-state-title">No local agents</div>
-            <div class="panel-empty-state-hint">openclaw is not installed locally. You can still interact with remote openclaw agents via group chat.</div>
+            <div class="panel-empty-state-title">Loading...</div>
+
           </div>
         </template>
 
@@ -735,6 +735,7 @@ const handleCreateGroup = async () => {
   padding: 0 12px 0 16px;
   display: flex;
   align-items: center;
+  background: #E8E8E8;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   flex-shrink: 0;
 }
