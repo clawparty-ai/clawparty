@@ -39,14 +39,9 @@ jobs:
     - name: Setup Rustup Target
       run: |
         rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
-    - name: Build child app
-      run: |
-        cd gui
-        yarn install
-        yarn build:apps
     - name: Build ztm
       run: |
-        cd gui
+        cd chat-gui
         ls /opt/hostedtoolcache/Java_Adopt_jdk/17.0.10-7
         export JAVA_HOME='/opt/hostedtoolcache/Java_Adopt_jdk/17.0.10-7/x64'
         ls /usr/local/lib/android/sdk
@@ -56,11 +51,11 @@ jobs:
         yarn build-ztm-android
     - name: fix tao android bug
       run: |
-        cd gui/src-tauri
+        cd chat-gui/src-tauri
         cargo update -p tao
     - name: Build apk
       run: |
-        cd gui
+        cd chat-gui
         export JAVA_HOME='/opt/hostedtoolcache/Java_Adopt_jdk/17.0.10-7/x64'
         export ANDROID_HOME='/usr/local/lib/android/sdk'
         export NDK_HOME="$ANDROID_HOME/ndk/$(ls -d $ANDROID_HOME/ndk/* | sort -V | tail -n 1 | xargs basename)"
