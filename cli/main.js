@@ -628,7 +628,6 @@ function doCommand(meshName, epName, argv, program) {
     ],
     fallback: (argv) => {
       if (argv.length === 0) {
-        new Timeout(2).wait().then(() => openBrowser('http://localhost:6789'))
         return runAgent({ '--listen': ':6789', '--data': '~/.clawparty' }, program)
       }
       return selectMeshEndpoint(meshName, epName).then(
