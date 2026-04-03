@@ -26,3 +26,7 @@ tests/tmp/
 
 # Session notes
 session-add-sse-support.md
+
+# console logs
+console-log*.log
+
