@@ -129,22 +129,15 @@ impl AppState {
     }
 
     pub fn refresh_sections(&mut self) {
-        match &self.active_org {
-            ActiveOrg::Mesh(_) => {
-                self.local_agents = self.openclaw_agents.clone();
-                self.group_chats = self.chats.iter().filter(|c| c.is_group).cloned().collect();
-                self.members = self.endpoints.clone();
-            }
-            ActiveOrg::Groups => {
-                self.local_agents.clear();
-                self.group_chats = self.chats.iter().filter(|c| c.is_group).cloned().collect();
-                self.members.clear();
-            }
-            ActiveOrg::Agents => {
-                self.local_agents = self.openclaw_agents.clone();
-                self.group_chats.clear();
-                self.members.clear();
-            }
+        // Local agents and group chats are always shown (independent of mesh)
+        self.local_agents = self.openclaw_agents.clone();
+        self.group_chats = self.chats.iter().filter(|c| c.is_group).cloned().collect();
+
+        // Remote agents (members) only shown when mesh is available
+        if self.current_mesh.is_some() {
+            self.members = self.endpoints.clone();
+        } else {
+            self.members.clear();
         }
     }
 

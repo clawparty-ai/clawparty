@@ -123,9 +123,19 @@ async fn main() -> anyhow::Result<()> {
                 state.add_log("ERROR", &format!("Failed to fetch meshes: {}", e));
             }
         }
+
+        // Always fetch openclaw agents (local agents)
+        let agents_result = {
+            let api_lock = state.api.lock().await;
+            api_lock.get_openclaw_agents().await
+        };
+        match agents_result {
+            Ok(agents) => state.openclaw_agents = agents,
+            Err(e) => state.add_log("ERROR", &format!("Failed to fetch agents: {}", e)),
+        }
     }
 
-    // Fetch chats and endpoints
+    // Fetch chats and endpoints (only if mesh is available)
     if let Some(ref mesh) = state.current_mesh {
         let mesh = mesh.clone();
         let chats_result = {
@@ -144,15 +154,6 @@ async fn main() -> anyhow::Result<()> {
         match endpoints_result {
             Ok(endpoints) => state.endpoints = endpoints,
             Err(e) => state.add_log("ERROR", &format!("Failed to fetch endpoints: {}", e)),
-        }
-
-        let agents_result = {
-            let api_lock = state.api.lock().await;
-            api_lock.get_openclaw_agents().await
-        };
-        match agents_result {
-            Ok(agents) => state.openclaw_agents = agents,
-            Err(e) => state.add_log("ERROR", &format!("Failed to fetch agents: {}", e)),
         }
     }
 
