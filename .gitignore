@@ -1,7 +1,7 @@
 .DS_Store
 .vscode/
 
-bin/
+/bin
 cli/version.json
 hub/version.json
 agent/version.json
