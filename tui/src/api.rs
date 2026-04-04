@@ -144,17 +144,21 @@ impl ApiClient {
             .await?;
         
         if resp.status().is_success() {
-            // Handle both array and string responses
             let text = resp.text().await?;
-            if text.starts_with('[') {
-                // Try to find the JSON array in the response
-                if let Ok(agents) = serde_json::from_str::<Vec<OpenclawAgent>>(&text) {
-                    return Ok(agents);
-                }
-            }
-            // Try to extract JSON array from mixed content
+            
+            // Find the JSON array by matching brackets
             if let Some(start) = text.find('[') {
-                if let Some(end) = text.rfind(']') {
+                let mut depth = 0;
+                let mut end = None;
+                for (i, ch) in text[start..].char_indices() {
+                    if ch == '[' { depth += 1; }
+                    if ch == ']' { depth -= 1; }
+                    if depth == 0 {
+                        end = Some(start + i);
+                        break;
+                    }
+                }
+                if let Some(end) = end {
                     if let Ok(agents) = serde_json::from_str::<Vec<OpenclawAgent>>(&text[start..=end]) {
                         return Ok(agents);
                     }
@@ -192,6 +196,39 @@ impl ApiClient {
             Ok(())
         } else {
             anyhow::bail!("Failed to send message: {}", resp.status())
+        }
+    }
+
+    pub async fn get_identity(&self) -> Result<String> {
+        let resp = self.client
+            .get(format!("{}/api/identity", self.base_url))
+            .send()
+            .await?;
+        
+        if resp.status().is_success() {
+            Ok(resp.text().await?)
+        } else {
+            anyhow::bail!("Failed to get identity: {}", resp.status())
+        }
+    }
+
+    pub async fn join_mesh(&self, mesh: &str, ep: &str, permit: &str) -> Result<()> {
+        let body = serde_json::json!({
+            "name": ep,
+            "permit": permit
+        });
+        let resp = self.client
+            .post(format!("{}/api/meshes/{}", self.base_url, mesh))
+            .json(&body)
+            .send()
+            .await?;
+        
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            let status = resp.status();
+            let err_text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to join mesh: {} - {}", status, err_text)
         }
     }
 }

@@ -19,7 +19,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io::{self, IsTerminal};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, timeout, Duration};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -209,7 +209,12 @@ async fn main() -> anyhow::Result<()> {
     let poll_state = state.clone();
     tokio::spawn(async move {
         loop {
-            sleep(Duration::from_secs(2)).await;
+            // Fast poll when in openclaw agent chat (streaming responses)
+            let poll_interval = {
+                let s = poll_state.read().await;
+                if s.current_openclaw_agent.is_some() { 500 } else { 2000 }
+            };
+            sleep(Duration::from_millis(poll_interval)).await;
 
             let (agent_running, current_mesh, current_chat, current_agent, current_peer) = {
                 let s = poll_state.read().await;
@@ -236,10 +241,21 @@ async fn main() -> anyhow::Result<()> {
                 s.api.clone()
             };
 
-            let api_lock = api_client.lock().await;
-            let chats = api_lock.get_chats(&mesh).await.ok();
-            let endpoints = api_lock.get_endpoints(&mesh).await.ok();
-            let agents = api_lock.get_openclaw_agents().await.ok();
+            // Each API call acquires and releases the lock independently
+            let chats = {
+                let l = api_client.lock().await;
+                l.get_chats(&mesh).await.ok()
+            };
+
+            let endpoints = {
+                let l = api_client.lock().await;
+                l.get_endpoints(&mesh).await.ok()
+            };
+
+            let agents = {
+                let l = api_client.lock().await;
+                l.get_openclaw_agents().await.ok()
+            };
 
             let mut messages = None;
             if let Some(chat_idx) = current_chat {
@@ -250,19 +266,29 @@ async fn main() -> anyhow::Result<()> {
                 if let Some(chat) = chat_info {
                     if chat.is_group {
                         if let (Some(creator), Some(group)) = (&chat.creator, &chat.group) {
-                            messages =
-                                api_lock.get_group_messages(&mesh, creator, group).await.ok();
+                            messages = {
+                                let l = api_client.lock().await;
+                                l.get_group_messages(&mesh, creator, group).await.ok()
+                            };
                         }
                     } else if let Some(peer) = &chat.peer {
-                        messages = api_lock.get_peer_messages(&mesh, peer).await.ok();
+                        messages = {
+                            let l = api_client.lock().await;
+                            l.get_peer_messages(&mesh, peer).await.ok()
+                        };
                     }
                 }
             } else if let Some(ref agent) = current_agent {
-                messages = api_lock.get_openclaw_messages(&agent.id).await.ok();
+                messages = {
+                    let l = api_client.lock().await;
+                    l.get_openclaw_messages(&agent.id).await.ok()
+                };
             } else if let Some(ref peer) = current_peer {
-                messages = api_lock.get_peer_messages(&mesh, peer).await.ok();
+                messages = {
+                    let l = api_client.lock().await;
+                    l.get_peer_messages(&mesh, peer).await.ok()
+                };
             }
-            drop(api_lock);
 
             {
                 let mut s = poll_state.write().await;
@@ -276,7 +302,13 @@ async fn main() -> anyhow::Result<()> {
                     s.openclaw_agents = a;
                 }
                 if let Some(m) = messages {
+                    let old_len = s.messages.len();
                     s.messages = m;
+                    let new_len = s.messages.len();
+                    // Only auto-scroll if user hasn't scrolled up, or new messages arrived
+                    if !s.user_scrolled_up || new_len > old_len {
+                        s.user_scrolled_up = false;
+                    }
                 }
                 s.refresh_sections();
             }
@@ -301,26 +333,53 @@ async fn main() -> anyhow::Result<()> {
                 let mut s = state.write().await;
 
                 match key.code {
-                    KeyCode::Char('q') => break,
-                    KeyCode::Up => {
+                    KeyCode::Char('q') => {
                         if s.active_panel != ActivePanel::Input {
-                            if s.selected_index > 0 {
-                                s.selected_index -= 1;
+                            break;
+                        }
+                        s.input_text.push('q');
+                    }
+                    KeyCode::Up => {
+                        match s.active_panel {
+                            ActivePanel::Sidebar => {
+                                if s.selected_index > 0 {
+                                    s.selected_index -= 1;
+                                }
                             }
+                            ActivePanel::Messages => {
+                                // Scrolling UP means increasing offset from bottom (going back in history)
+                                s.message_scroll = s.message_scroll.saturating_add(3);
+                                s.user_scrolled_up = true;
+                            }
+                            ActivePanel::Input => {}
                         }
                     }
                     KeyCode::Down => {
-                        if s.active_panel != ActivePanel::Input {
-                            let items = s.get_sidebar_items();
-                            if s.selected_index < items.len().saturating_sub(1) {
-                                s.selected_index += 1;
+                        match s.active_panel {
+                            ActivePanel::Sidebar => {
+                                let items = s.get_sidebar_items();
+                                if s.selected_index < items.len().saturating_sub(1) {
+                                    s.selected_index += 1;
+                                }
                             }
+                            ActivePanel::Messages => {
+                                // Scrolling DOWN means decreasing offset from bottom (going forward)
+                                s.message_scroll = s.message_scroll.saturating_sub(3);
+                                // If back at bottom, reset flag
+                                if s.message_scroll == 0 {
+                                    s.user_scrolled_up = false;
+                                }
+                            }
+                            ActivePanel::Input => {}
                         }
                     }
                     KeyCode::Enter => {
                         if s.active_panel == ActivePanel::Input && !s.input_text.is_empty() {
                             let text = s.input_text.clone();
                             s.input_text.clear();
+
+                            // Debug: log what was entered
+                            s.add_log("DEBUG", &format!("Input received: '{}'", text));
 
                             // Handle #exit command
                             if text.trim() == "#exit" {
@@ -330,82 +389,175 @@ async fn main() -> anyhow::Result<()> {
                                 return Ok(());
                             }
 
-                            s.add_log("DEBUG", &format!("Sending message: {}", text));
+                            // Handle #join-party command
+                            let trimmed = text.trim();
+                            if trimmed == "#join-party" || trimmed == "#join" {
+                                let api_client = s.api.clone();
+                                drop(s);
+                                state.write().await.add_log("INFO", "Joining clawparty...");
+                                
+                                let join_fut = async {
+                                    // Check if already joined
+                                    let meshes = {
+                                        let client = api_client.lock().await;
+                                        client.get_meshes().await?
+                                    };
+                                    if !meshes.is_empty() {
+                                        return Ok::<String, anyhow::Error>("Already joined clawparty!".to_string());
+                                    }
+                                    
+                                    // Generate username
+                                    let names = ["red-hawk", "thunder-cloud", "morning-star", "running-deer", "little-wolf",
+                                        "william-wallace", "princess-isabella", "sacagawea", "pocahontas", "crazy-moon",
+                                        "red-cloud", "chief-joseph", "white-buffalo", "morning-star", "sitting-bull"];
+                                    let mut rng = rand::rng();
+                                    let name_idx = rand::Rng::random_range(&mut rng, 0..names.len());
+                                    let username = names[name_idx];
+                                    let ep_name = format!("{}-lobster", username);
+                                    
+                                    // Get agent identity
+                                    let identity = {
+                                        let client = api_client.lock().await;
+                                        client.get_identity().await?
+                                    };
+                                    
+                                    // Post to registration server
+                                    let reg_url = "https://join.clawparty.ai/invite";
+                                    let mut pass_key = String::new();
+                                    let chars = b"abcdefghijklmnopqrstuvwxyz";
+                                    for _ in 0..16 {
+                                        let idx = rand::Rng::random_range(&mut rng, 0..chars.len());
+                                        pass_key.push(chars[idx] as char);
+                                    }
+                                    
+                                    let invite_body = serde_json::json!({
+                                        "PublicKey": identity,
+                                        "UserName": username,
+                                        "EpName": ep_name,
+                                        "PassKey": pass_key
+                                    });
+                                    
+                                    let reg_client = reqwest::Client::builder()
+                                        .danger_accept_invalid_certs(true)
+                                        .build()?;
+                                    let resp = reg_client
+                                        .post(reg_url)
+                                        .json(&invite_body)
+                                        .send()
+                                        .await?;
+                                    
+                                    if !resp.status().is_success() {
+                                        let err_text = resp.text().await.unwrap_or_default();
+                                        anyhow::bail!("Registration failed: {}", err_text);
+                                    }
+                                    
+                                    let result: serde_json::Value = resp.json().await?;
+                                    let final_username = result["UserName"].as_str().unwrap_or(username);
+                                    let final_ep_name = result["EpName"].as_str().unwrap_or(&ep_name);
+                                    let permit = result["Permit"].as_str().unwrap_or("");
+                                    
+                                    // Save permit to file
+                                    let permit_path = format!("{}/.clawparty/permit.json", 
+                                        std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+                                    std::fs::create_dir_all(format!("{}/.clawparty", 
+                                        std::env::var("HOME").unwrap_or_else(|_| ".".to_string())))?;
+                                    std::fs::write(&permit_path, permit)?;
+                                    
+                                    // Join mesh
+                                    {
+                                        let client = api_client.lock().await;
+                                        client.join_mesh("clawparty", final_ep_name, permit).await?;
+                                    }
+                                    
+                                    Ok(format!("Successfully joined clawparty as '{}' (endpoint: {})", 
+                                        final_username, final_ep_name))
+                                };
+                                
+                                match join_fut.await {
+                                    Ok(msg) => {
+                                        let mut s = state.write().await;
+                                        s.add_log("INFO", &msg);
+                                    }
+                                    Err(e) => {
+                                        let mut s = state.write().await;
+                                        s.add_log("ERROR", &format!("Join party failed: {}", e));
+                                    }
+                                }
+                                continue;
+                            }
 
-                            let send_result: anyhow::Result<()> = if let Some(chat_idx) =
-                                s.current_chat
-                            {
-                                if let Some(chat) = s.chats.get(chat_idx).cloned() {
-                                    if let Some(ref mesh) = s.current_mesh {
-                                        let mesh = mesh.clone();
-                                        if chat.is_group {
-                                            if let (Some(creator), Some(group)) =
-                                                (&chat.creator, &chat.group)
-                                            {
-                                                let c = creator.clone();
-                                                let g = group.clone();
-                                                let l = s.api.lock().await;
-                                                l.send_group_message(&mesh, &c, &g, &text).await
+                            // Collect what we need before dropping the lock
+                            let cur_chat = s.current_chat;
+                            let cur_agent = s.current_openclaw_agent.as_ref().map(|a| a.id.clone());
+                            let cur_peer = s.current_peer.clone();
+                            let cur_mesh = s.current_mesh.clone();
+                            let api_client = s.api.clone();
+                            let state_clone = state.clone();
+                            let text_clone = text.clone();
+                            drop(s);
+
+                            // Spawn send in a separate task to avoid blocking the main event loop
+                            tokio::spawn(async move {
+                                let send_fut = async {
+                                    if let Some(chat_idx) = cur_chat {
+                                        let s_read = state_clone.read().await;
+                                        let chat = s_read.chats.get(chat_idx).cloned();
+                                        drop(s_read);
+                                        if let Some(chat) = chat {
+                                            if let Some(ref mesh) = cur_mesh {
+                                                if chat.is_group {
+                                                    if let (Some(creator), Some(group)) = (&chat.creator, &chat.group) {
+                                                        let c = creator.clone();
+                                                        let g = group.clone();
+                                                        let l = api_client.lock().await;
+                                                        l.send_group_message(mesh, &c, &g, &text_clone).await
+                                                    } else {
+                                                        Err(anyhow::anyhow!("Invalid group chat"))
+                                                    }
+                                                } else if let Some(peer) = &chat.peer {
+                                                    let p = peer.clone();
+                                                    let l = api_client.lock().await;
+                                                    l.send_peer_message(mesh, &p, &text_clone).await
+                                                } else {
+                                                    Err(anyhow::anyhow!("Invalid chat"))
+                                                }
                                             } else {
-                                                Err(anyhow::anyhow!("Invalid group chat"))
+                                                Err(anyhow::anyhow!("No mesh selected"))
                                             }
-                                        } else if let Some(peer) = &chat.peer {
-                                            let p = peer.clone();
-                                            let l = s.api.lock().await;
-                                            l.send_peer_message(&mesh, &p, &text).await
                                         } else {
-                                            Err(anyhow::anyhow!("Invalid chat"))
+                                            Err(anyhow::anyhow!("Chat not found"))
+                                        }
+                                    } else if let Some(ref aid) = cur_agent {
+                                        let l = api_client.lock().await;
+                                        l.send_openclaw_message(aid, &text_clone).await
+                                    } else if let Some(ref peer) = cur_peer {
+                                        if let Some(ref mesh) = cur_mesh {
+                                            let l = api_client.lock().await;
+                                            l.send_peer_message(mesh, peer, &text_clone).await
+                                        } else {
+                                            Err(anyhow::anyhow!("No mesh selected"))
                                         }
                                     } else {
-                                        Err(anyhow::anyhow!("No mesh selected"))
+                                        Err(anyhow::anyhow!("No chat or agent selected"))
                                     }
-                                } else {
-                                    Err(anyhow::anyhow!("No chat selected"))
-                                }
-                            } else if let Some(ref agent) = s.current_openclaw_agent {
-                                let aid = agent.id.clone();
-                                let l = s.api.lock().await;
-                                l.send_openclaw_message(&aid, &text).await
-                            } else if let Some(ref peer) = s.current_peer {
-                                if let Some(ref mesh) = s.current_mesh {
-                                    let mesh = mesh.clone();
-                                    let p = peer.clone();
-                                    let l = s.api.lock().await;
-                                    l.send_peer_message(&mesh, &p, &text).await
-                                } else {
-                                    Err(anyhow::anyhow!("No mesh selected"))
-                                }
-                            } else {
-                                let chat_debug = format!(
-                                    "No chat/agent/peer: chat={:?}, agent={:?}, peer={:?}",
-                                    s.current_chat,
-                                    s.current_openclaw_agent.as_ref().map(|a| &a.id),
-                                    s.current_peer
-                                );
-                                s.add_log("ERROR", &chat_debug);
-                                Err(anyhow::anyhow!("No chat or agent selected"))
-                            };
+                                };
 
-                            drop(s);
-                            if let Err(e) = send_result {
-                                let mut s2 = state.write().await;
-                                s2.add_log("ERROR", &format!("Failed to send message: {}", e));
-                            } else {
-                                let mut s2 = state.write().await;
-                                s2.add_log("INFO", "Message sent");
-                            }
+                                let send_result = timeout(Duration::from_secs(10), send_fut).await;
+
+                                let mut s = state_clone.write().await;
+                                match send_result {
+                                    Ok(Ok(())) => s.add_log("INFO", "Message sent"),
+                                    Ok(Err(e)) => s.add_log("ERROR", &format!("Failed: {}", e)),
+                                    Err(_) => s.add_log("INFO", "Message sent (response pending)"),
+                                }
+                            });
                             continue;
                         }
 
-                        let panel = s.active_panel.clone();
-                        let input_len = s.input_text.len();
-                        s.add_log("DEBUG", &format!(
-                            "Enter pressed: panel={:?}, input_len={}",
-                            panel, input_len
-                        ));
-
+                        // Enter in sidebar selects item
                         let idx = s.selected_index;
                         s.select_item(idx);
+                        s.message_scroll = u16::MAX; // auto-scroll to bottom on new chat
 
                         if let Some(chat_idx) = s.current_chat {
                             if let Some(chat) = s.chats.get(chat_idx).cloned() {
@@ -460,12 +612,17 @@ async fn main() -> anyhow::Result<()> {
                     }
                     KeyCode::Tab => {
                         s.active_panel = match s.active_panel {
-                            ActivePanel::Sidebar => ActivePanel::Input,
+                            ActivePanel::Sidebar => ActivePanel::Messages,
                             ActivePanel::Messages => ActivePanel::Input,
                             ActivePanel::Input => ActivePanel::Sidebar,
                         };
                     }
-                    KeyCode::Backspace => {
+                    KeyCode::Backspace | KeyCode::Delete => {
+                        if s.active_panel == ActivePanel::Input {
+                            s.input_text.pop();
+                        }
+                    }
+                    KeyCode::Char('\x08') | KeyCode::Char('\x7f') => {
                         if s.active_panel == ActivePanel::Input {
                             s.input_text.pop();
                         }
@@ -476,10 +633,24 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                     KeyCode::Left => {
-                        s.active_panel = ActivePanel::Sidebar;
+                        if s.active_panel != ActivePanel::Input {
+                            s.active_panel = ActivePanel::Sidebar;
+                        }
                     }
                     KeyCode::Right => {
-                        s.active_panel = ActivePanel::Input;
+                        if s.active_panel != ActivePanel::Input {
+                            s.active_panel = ActivePanel::Input;
+                        }
+                    }
+                    KeyCode::PageUp => {
+                        s.message_scroll = s.message_scroll.saturating_add(10);
+                        s.user_scrolled_up = true;
+                    }
+                    KeyCode::PageDown => {
+                        s.message_scroll = s.message_scroll.saturating_sub(10);
+                        if s.message_scroll == 0 {
+                            s.user_scrolled_up = false;
+                        }
                     }
                     _ => {}
                 }

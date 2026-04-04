@@ -3,7 +3,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{
+        Block, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        Wrap,
+    },
     Frame,
 };
 
@@ -35,6 +38,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
             Constraint::Min(1),
             Constraint::Length(5),
             Constraint::Length(10),
+            Constraint::Length(1),
         ])
         .split(frame.area());
 
@@ -42,6 +46,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     render_main(frame, chunks[1], state);
     render_input(frame, chunks[2], state);
     render_logs(frame, chunks[3], state);
+    render_statusbar(frame, chunks[4], state);
 }
 
 fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -52,9 +57,9 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     };
 
     let status = if state.agent_running {
-        Span::styled("● Running", Style::default().fg(Color::Green))
+        Span::styled("Running", Style::default().fg(Color::Green))
     } else {
-        Span::styled("● Stopped", Style::default().fg(Color::Red))
+        Span::styled("Stopped", Style::default().fg(Color::Red))
     };
 
     let header = Paragraph::new(Line::from(vec![
@@ -94,7 +99,7 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState) {
     // Local Agents section header
     if !state.local_agents.is_empty() {
         list_items.push(ListItem::new(Line::from(Span::styled(
-            "── Local Agents ──",
+            "Local Agents",
             Style::default()
                 .fg(THEME_SECTION_HEADER)
                 .add_modifier(Modifier::BOLD),
@@ -123,7 +128,7 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState) {
     // Group Chats section header
     if !state.group_chats.is_empty() {
         list_items.push(ListItem::new(Line::from(Span::styled(
-            "── Group Chats ──",
+            "Group Chats",
             Style::default()
                 .fg(THEME_SECTION_HEADER)
                 .add_modifier(Modifier::BOLD),
@@ -145,7 +150,7 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState) {
     // Members section header
     if !state.members.is_empty() {
         list_items.push(ListItem::new(Line::from(Span::styled(
-            "── Remote Agents ──",
+            "Remote Agents",
             Style::default()
                 .fg(THEME_SECTION_HEADER)
                 .add_modifier(Modifier::BOLD),
@@ -174,11 +179,17 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState) {
         ActiveOrg::Agents => " Agents ",
     };
 
+    let sidebar_border_color = if state.active_panel == ActivePanel::Sidebar {
+        Color::Cyan
+    } else {
+        THEME_BORDER
+    };
+
     let list = List::new(list_items).block(
         Block::default()
             .borders(Borders::ALL)
             .title(title)
-            .border_style(Style::default().fg(THEME_BORDER))
+            .border_style(Style::default().fg(sidebar_border_color))
             .style(Style::default().bg(THEME_BG)),
     );
 
@@ -200,15 +211,23 @@ fn render_messages(frame: &mut Frame, area: Rect, state: &AppState) {
         " Messages ".to_string()
     };
 
-    let lines: Vec<Line> = state
-        .messages
-        .iter()
-        .map(|msg| {
+    let mut lines: Vec<Line> = Vec::new();
+
+    if state.messages.is_empty() {
+        lines.push(Line::raw(
+            "No messages yet. Select a chat to view messages.",
+        ));
+    } else {
+        for msg in &state.messages {
             let time = msg.time.as_deref().unwrap_or("");
             let sender = msg.sender.as_deref().unwrap_or("Unknown");
             let text = msg.text.as_deref().unwrap_or("");
 
-            Line::from(vec![
+            // Split text by newlines into multiple display lines
+            let text_lines: Vec<&str> = text.split('\n').collect();
+
+            // First line: [time] sender: content
+            lines.push(Line::from(vec![
                 Span::styled(format!("[{}] ", time), Style::default().fg(THEME_TIME)),
                 Span::styled(
                     format!("{}: ", sender),
@@ -216,27 +235,70 @@ fn render_messages(frame: &mut Frame, area: Rect, state: &AppState) {
                         .add_modifier(Modifier::BOLD)
                         .fg(THEME_SENDER),
                 ),
-                Span::raw(text),
-            ])
-        })
-        .collect();
+                Span::raw(text_lines[0].to_string()),
+            ]));
 
-    let messages = if lines.is_empty() {
-        Paragraph::new("No messages yet. Select a chat to view messages.")
+            // Remaining lines: indented
+            for extra in text_lines.iter().skip(1) {
+                lines.push(Line::from(Span::raw(format!("  {}", extra))));
+            }
+
+            // Blank line between messages
+            lines.push(Line::raw(""));
+        }
+    }
+
+    let total_lines = lines.len() as u16;
+    // Calculate visible height (area minus borders)
+    let visible = area.height.saturating_sub(2);
+    // message_scroll is offset from bottom (0 = at bottom)
+    let max_scroll = total_lines.saturating_sub(visible);
+    // scroll is position from top
+    let scroll = if state.user_scrolled_up {
+        // user scrolled up: show messages from position (total - visible - offset_from_bottom)
+        max_scroll.saturating_sub(state.message_scroll.min(max_scroll))
     } else {
-        Paragraph::new(lines)
+        // at bottom
+        max_scroll
+    };
+
+    let msg_border_color = if state.active_panel == ActivePanel::Messages {
+        Color::Cyan
+    } else {
+        THEME_BORDER
     };
 
     frame.render_widget(
-        messages.block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(Style::default().fg(THEME_BORDER))
-                .style(Style::default().bg(THEME_BG)),
-        ),
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((scroll, 0))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(title.clone())
+                    .border_style(Style::default().fg(msg_border_color))
+                    .style(Style::default().bg(THEME_BG)),
+            ),
         area,
     );
+
+    // Render scrollbar if content exceeds visible area
+    if total_lines > visible {
+        let mut scrollbar_state =
+            ScrollbarState::new(total_lines as usize).position(scroll as usize);
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("▲"))
+                .end_symbol(Some("▼"))
+                .track_symbol(Some("│"))
+                .thumb_symbol("█"),
+            area.inner(ratatui::layout::Margin {
+                vertical: 1,
+                horizontal: 0,
+            }),
+            &mut scrollbar_state,
+        );
+    }
 }
 
 fn render_input(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -293,4 +355,53 @@ fn render_logs(frame: &mut Frame, area: Rect, state: &AppState) {
     );
 
     frame.render_widget(logs, area);
+}
+
+fn render_statusbar(frame: &mut Frame, area: Rect, state: &AppState) {
+    let current_chat_name = state.current_conversation_name();
+    let chat_name = if current_chat_name == "No conversation selected" {
+        "No chat selected".to_string()
+    } else {
+        current_chat_name
+    };
+
+    let panel_name = match state.active_panel {
+        ActivePanel::Sidebar => "Sidebar",
+        ActivePanel::Messages => "Messages",
+        ActivePanel::Input => "Input",
+    };
+
+    let mesh_info = state.current_mesh.as_deref().unwrap_or("No mesh");
+
+    let hints = match state.active_panel {
+        ActivePanel::Sidebar => "↑↓: Navigate  Tab: Switch  Enter: Select  q: Quit",
+        ActivePanel::Messages => "↑↓: Scroll  PgUp/PgDn: Fast scroll  Tab: Switch",
+        ActivePanel::Input => "Enter: Send  Tab: Switch  #exit: Quit  #join-party: Join",
+    };
+
+    let status_line = Line::from(vec![
+        Span::styled(" ", Style::default().fg(Color::White)),
+        Span::styled(
+            chat_name,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" | ", Style::default().fg(THEME_BORDER)),
+        Span::styled(mesh_info, Style::default().fg(Color::Yellow)),
+        Span::styled(" | ", Style::default().fg(THEME_BORDER)),
+        Span::styled(
+            format!("[{}]", panel_name),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  ", Style::default()),
+        Span::styled(hints, Style::default().fg(THEME_TIME)),
+    ]);
+
+    frame.render_widget(
+        Paragraph::new(status_line).style(Style::default().bg(Color::DarkGray)),
+        area,
+    );
 }
