@@ -25,7 +25,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-package-lock.json
-yarn.lock
 /src-tauri/agent
 /src-tauri/target
