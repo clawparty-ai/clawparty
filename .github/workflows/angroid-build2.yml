@@ -56,6 +56,7 @@ jobs:
     - name: Build apk
       run: |
         cd chat-gui
+        rm -rf node_modules package-lock.json yarn.lock && npm install
         export JAVA_HOME='/opt/hostedtoolcache/Java_Adopt_jdk/17.0.10-7/x64'
         export ANDROID_HOME='/usr/local/lib/android/sdk'
         export NDK_HOME="$ANDROID_HOME/ndk/$(ls -d $ANDROID_HOME/ndk/* | sort -V | tail -n 1 | xargs basename)"
