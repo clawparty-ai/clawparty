@@ -330,6 +330,8 @@ async fn main() -> anyhow::Result<()> {
                                 return Ok(());
                             }
 
+                            s.add_log("DEBUG", &format!("Sending message: {}", text));
+
                             let send_result: anyhow::Result<()> = if let Some(chat_idx) =
                                 s.current_chat
                             {
@@ -394,6 +396,13 @@ async fn main() -> anyhow::Result<()> {
                             }
                             continue;
                         }
+
+                        let panel = s.active_panel.clone();
+                        let input_len = s.input_text.len();
+                        s.add_log("DEBUG", &format!(
+                            "Enter pressed: panel={:?}, input_len={}",
+                            panel, input_len
+                        ));
 
                         let idx = s.selected_index;
                         s.select_item(idx);
