@@ -50,6 +50,8 @@ pub struct AppState {
     pub group_chats: Vec<Chat>,
     pub members: Vec<Endpoint>,
     pub log_file: Option<std::fs::File>,
+    pub message_scroll: u16,
+    pub user_scrolled_up: bool,
 }
 
 impl AppState {
@@ -84,6 +86,8 @@ impl AppState {
             group_chats: Vec::new(),
             members: Vec::new(),
             log_file,
+            message_scroll: 0,
+            user_scrolled_up: false,
         }
     }
 
