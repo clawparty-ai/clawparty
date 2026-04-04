@@ -21,7 +21,7 @@
     "build-ztm-ios": "../build/IOS.sh && cp -Rf ../usr/local/lib/* ../chat-gui/src-ios/apple/Externals/arm64/release"
   },
   "dependencies": {
-    "@tauri-apps/api": "2.9.1",
+    "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-os": "~2",
     "@tauri-apps/plugin-shell": "2.3.4",
