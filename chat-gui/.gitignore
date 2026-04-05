@@ -25,6 +25,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
 /src-tauri/agent
 /src-tauri/target

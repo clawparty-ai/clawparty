@@ -1584,9 +1584,13 @@ onUnmounted(() => {
   .chat-main {
     flex: 1;
     width: 100%;
-    height: calc(100vh - 48px);
+    height: calc(100vh - 48px - env(safe-area-inset-top, 0));
     min-height: 0;
     overflow-x: hidden;
+  }
+  
+  .chat-header {
+    padding-top: 8px;
   }
   
   .message-body {

@@ -20,7 +20,7 @@ export default class ShellService {
 		let resourceDirPath = '';
 		if(pm == "android" ){
 			let resourceDirPath = await documentDir();//appLocalDataDir();
-			console.log(resourceDirPath)
+			console.log(resourceDirPath);
 			const args = [
 				"./main",
 				"--pipy",
@@ -42,7 +42,7 @@ export default class ShellService {
 			}).then((res)=>{
 				// store.commit('account/setPid', 1);
 				console.log(`[pipylib]Result: ${res}`);
-			});
+			})
 		} else if (!!pm && pm!='web') {
 			let resourceDirPath = await documentDir();//resourceDir();
 			let dbPath = await this.getDB();
