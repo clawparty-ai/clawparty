@@ -1,4 +1,5 @@
 use std::io::{BufRead, BufReader};
+use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use tokio::sync::mpsc;
 
@@ -33,6 +34,7 @@ impl AgentManager {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .stdin(Stdio::null())
+            .process_group(0)
             .spawn()
             .expect("Failed to start agent");
 
@@ -68,9 +70,13 @@ impl AgentManager {
     }
 
     pub fn stop(&mut self) {
-        if let Some(mut child) = self.process.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        if let Some(child) = self.process.take() {
+            let pid = child.id() as i32;
+            // Kill the entire process group (parent + all children)
+            let _ = unsafe { libc::kill(-pid, libc::SIGKILL) };
+            eprintln!("AgentManager: killed agent process group {}", pid);
+        } else {
+            eprintln!("AgentManager: no process to kill");
         }
     }
 }
