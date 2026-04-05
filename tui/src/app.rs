@@ -141,7 +141,22 @@ impl AppState {
     pub fn refresh_sections(&mut self) {
         // Local agents and group chats are always shown (independent of mesh)
         self.local_agents = self.openclaw_agents.clone();
-        self.group_chats = self.chats.iter().filter(|c| c.is_group).cloned().collect();
+        // Deduplicate group chats by group+creator
+        let mut seen = std::collections::HashSet::new();
+        self.group_chats = self
+            .chats
+            .iter()
+            .filter(|c| c.is_group)
+            .filter(|c| {
+                let key = format!(
+                    "{}:{}",
+                    c.creator.as_deref().unwrap_or(""),
+                    c.group.as_deref().unwrap_or("")
+                );
+                seen.insert(key)
+            })
+            .cloned()
+            .collect();
 
         // Remote agents (members) only shown when mesh is available
         if self.current_mesh.is_some() {

@@ -1,5 +1,6 @@
 import db from './db.js'
 import Mesh from './mesh.js'
+import templates from './templates.js'
 
 var rootDir = ''
 var agentListen = ''
@@ -20,6 +21,7 @@ function init(dirname, listen, proxy, pqc, p2pCfg) {
   proxyAddress = proxy
   pqcSettings = pqc
   p2pConfig = p2pCfg || {}
+  templates.init(rootDir, db)
   db.allMeshes().forEach(
     function (mesh) {
       var name = mesh.name
@@ -324,6 +326,22 @@ function pingEndpoint(mesh, ep) {
   return m.pingEndpoint(ep)
 }
 
+function getLocalTemplates() {
+  return templates.scanLocalTemplates()
+}
+
+function getSharedTemplates() {
+  return templates.scanSharedTemplates()
+}
+
+function installLocalTemplate(industry, agent, soulContent) {
+  return templates.installTemplate(industry, agent, 'local', soulContent)
+}
+
+function installSharedTemplate(industry, agent, soulContent) {
+  return templates.installTemplate(industry, agent, 'shared', soulContent)
+}
+
 export default {
   init,
   setIdentity,
@@ -360,4 +378,8 @@ export default {
   connectApp,
   getEndpointStats,
   pingEndpoint,
+  getLocalTemplates,
+  getSharedTemplates,
+  installLocalTemplate,
+  installSharedTemplate,
 }

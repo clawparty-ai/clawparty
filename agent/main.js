@@ -1129,6 +1129,45 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
+    '/api/agent-templates/local': {
+      'GET': function () {
+        return response(200, { industries: api.getLocalTemplates() })
+      },
+    },
+
+    '/api/agent-templates/shared': {
+      'GET': function () {
+        return response(200, { industries: api.getSharedTemplates() })
+      },
+    },
+
+    '/api/agent-templates/local/{industry}/{agent}/install': {
+      'POST': function ({ industry, agent }, req) {
+        industry = URL.decodeComponent(industry)
+        agent = URL.decodeComponent(agent)
+        var body = req.body?.toString?.() || '{}'
+        var json = null
+        try { json = JSON.parse(body) } catch {}
+        var soulContent = json?.soulContent || ''
+        console.log('[DEBUG install] local: industry=', industry, ', agent=', agent, ', soulContent len=', soulContent.length)
+        var result = api.installLocalTemplate(industry, agent, soulContent)
+        return response(result.success ? 200 : 400, result)
+      },
+    },
+
+    '/api/agent-templates/shared/{industry}/{agent}/install': {
+      'POST': function ({ industry, agent }, req) {
+        industry = URL.decodeComponent(industry)
+        agent = URL.decodeComponent(agent)
+        var body = req.body?.toString?.() || '{}'
+        var json = null
+        try { json = JSON.parse(body) } catch {}
+        var soulContent = json?.soulContent || ''
+        var result = api.installSharedTemplate(industry, agent, soulContent)
+        return response(result.success ? 200 : 400, result)
+      },
+    },
+
     '/version': {
       'GET': function () {
         return ztmVersion.spawn().then(
