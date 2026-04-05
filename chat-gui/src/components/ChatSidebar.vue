@@ -8,9 +8,9 @@
         class="new-group-rail-btn"
         :class="{ active: showJoinParty }"
         @click="toggleJoinParty"
-        title="Join Party"
+        title="加入组织"
       >
-        <span class="join-party-icon">🥂</span>
+        <span class="join-party-icon">🌐</span>
       </button>
 
       <!-- 1. Create group chat button -->
@@ -30,7 +30,9 @@
         @click="activeOrg = 'groups'"
         title="Group Chats"
       >
-        <span class="org-double-lobster">🦞🦞</span>
+        <span class="org-double-lobster">
+					<svg t="1775022664441" class="icon" viewBox="0 0 1152 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="3524" width="18" height="18"><path d="M768 770.62144l0-52.77696c70.49216-39.7312 128-138.77248 128-237.83424 0-159.06816 0-288.01024-192-288.01024s-192 128.94208-192 288.01024c0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l896 0c0-128.96256-166.89152-235.64288-384-253.37856z" fill="#ffffff" p-id="3525" data-spm-anchor-id="a313x.search_index.0.i3.4b4d3a810fYL5Y" class="selected"></path><path d="M327.18848 795.32032c55.31648-36.1472 124.08832-63.63136 199.7824-80.40448-15.0528-17.77664-28.71296-37.62176-40.48896-59.02336-30.4128-55.23456-46.4896-116.06016-46.4896-175.90272 0-86.03648 0-167.30112 30.59712-233.75872 29.696-64.512 83.12832-104.48896 159.232-119.48032-16.91648-76.47232-61.93152-126.75072-181.82144-126.75072-192 0-192 128.94208-192 288.01024 0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l278.99904 0c14.52032-12.9024 30.59712-25.16992 48.18944-36.67968z" fill="#ffffff" p-id="3526" data-spm-anchor-id="a313x.search_index.0.i4.4b4d3a810fYL5Y" class="selected"></path></svg>
+				</span>
         <span class="org-active-bar" v-if="activeOrg === 'groups'"></span>
       </div>
 
@@ -43,7 +45,9 @@
         @click="activeOrg = 'agents'"
         title="My Agents"
       >
-        <span class="org-emoji">🦞</span>
+        <span class="org-emoji">
+					<svg t="1775022567064" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2473" width="18" height="18"><path d="M963.764706 963.764706v60.235294H60.235294v-60.235294c0-232.869647 202.270118-421.647059 451.764706-421.647059 249.494588 0 451.764706 188.777412 451.764706 421.647059zM752.941176 240.941176A240.941176 240.941176 0 1 1 271.058824 240.941176a240.941176 240.941176 0 0 1 481.882352 0z" fill="#ffffff" p-id="2474" data-spm-anchor-id="a313x.search_index.0.i0.4b4d3a810fYL5Y" class="selected"></path></svg>
+				</span>
         <span class="org-active-bar" v-if="activeOrg === 'agents'"></span>
       </div>
 
@@ -78,9 +82,9 @@
 
     <!-- Right: member list panel -->
     <aside class="sidebar-panel">
-      <div class="panel-header">
+      <div class="panel-header" :class="{ 'agents-header': activeOrg === 'agents' }">
         <span class="panel-title">{{
-          activeOrg === 'agents' ? 'My Agents' :
+          activeOrg === 'agents' ? '我的助手' :
           activeOrg === 'groups' ? 'Group Chats' :
           activeOrg
         }}</span>
@@ -91,7 +95,7 @@
       <div v-if="showJoinParty" class="modal-backdrop" @click.self="closeJoinParty">
         <div class="modal-dialog">
           <div class="modal-header">
-            <span class="modal-title">Join Party</span>
+            <span class="modal-title">加入组织</span>
             <button class="modal-close" @click="closeJoinParty">✕</button>
           </div>
 
@@ -113,7 +117,7 @@
               class="modal-create-btn"
               :disabled="joinPartyLoading"
               @click="handleJoinParty"
-            >{{ joinPartyLoading ? 'Joining...' : 'Join Party' }}</button>
+            >{{ joinPartyLoading ? '加入中...' : '加入组织' }}</button>
           </div>
         </div>
       </div>
@@ -293,7 +297,9 @@
                 </template>
                 <span v-if="chat.updated > 0 && renamingChatId !== chat.id" class="unread-badge">{{ chat.updated > 99 ? '99+' : chat.updated }}</span>
                 <button v-if="chat.creator === currentMeshAgentUsername" class="group-action-btn" @click.stop="startRename(chat)" title="Rename">✎</button>
-                <button v-if="chat.creator === currentMeshAgentUsername" class="group-action-btn" @click.stop="openEditMembers(chat)" title="Edit members">👥</button>
+                <button v-if="chat.creator === currentMeshAgentUsername" class="group-action-btn" @click.stop="openEditMembers(chat)" title="Edit members">
+									<svg t="1775022664441" class="icon" viewBox="0 0 1152 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="3524" width="18" height="18"><path d="M768 770.62144l0-52.77696c70.49216-39.7312 128-138.77248 128-237.83424 0-159.06816 0-288.01024-192-288.01024s-192 128.94208-192 288.01024c0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l896 0c0-128.96256-166.89152-235.64288-384-253.37856z" fill="#515151" p-id="3525" data-spm-anchor-id="a313x.search_index.0.i3.4b4d3a810fYL5Y" class="selected"></path><path d="M327.18848 795.32032c55.31648-36.1472 124.08832-63.63136 199.7824-80.40448-15.0528-17.77664-28.71296-37.62176-40.48896-59.02336-30.4128-55.23456-46.4896-116.06016-46.4896-175.90272 0-86.03648 0-167.30112 30.59712-233.75872 29.696-64.512 83.12832-104.48896 159.232-119.48032-16.91648-76.47232-61.93152-126.75072-181.82144-126.75072-192 0-192 128.94208-192 288.01024 0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l278.99904 0c14.52032-12.9024 30.59712-25.16992 48.18944-36.67968z" fill="#515151" p-id="3526" data-spm-anchor-id="a313x.search_index.0.i4.4b4d3a810fYL5Y" class="selected"></path></svg>
+								</button>
               </div>
               <!-- Expanded members list -->
               <div v-if="expandedGroups.has(chat.id)" class="group-members-list">
@@ -597,7 +603,7 @@ const handleJoinParty = async () => {
   joinPartySuccess.value = ''
   try {
     await joinParty(joinPartyUrl.value)
-    joinPartySuccess.value = 'Successfully joined the party!'
+    joinPartySuccess.value = '成功加入组织！'
     setTimeout(() => {
       closeJoinParty()
     }, 1500)
@@ -643,7 +649,7 @@ const handleCreateGroup = async () => {
 /* ── Org rail ── */
 .org-rail {
   width: 64px;
-  background: var(--slack-aubergine);
+  background: var(--org-rail-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -665,7 +671,7 @@ const handleCreateGroup = async () => {
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.15);
+  background: #4095fe;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -676,12 +682,12 @@ const handleCreateGroup = async () => {
 
 .org-icon:hover {
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.25);
+  background: #1d6cff;
 }
 
 .org-icon.active {
   border-radius: 14px;
-  background: var(--slack-purple);
+  background: var(--slack-aubergine);
 }
 
 .org-emoji { font-size: 20px; }
@@ -705,7 +711,7 @@ const handleCreateGroup = async () => {
   height: 8px;
   border-radius: 50%;
   background: #ccc;
-  border: 1.5px solid var(--slack-aubergine);
+  border: 1.5px solid var(--org-rail-bg);
 }
 
 .org-online-dot.online { background: var(--slack-green); }
@@ -717,14 +723,14 @@ const handleCreateGroup = async () => {
   transform: translateY(-50%);
   width: 4px;
   height: 24px;
-  background: #fff;
+  background: #4095fe;
   border-radius: 0 3px 3px 0;
 }
 
 /* ── Panel ── */
 .sidebar-panel {
   flex: 1;
-  background: var(--slack-purple);
+  background: var(--sidebar-panel-bg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -739,9 +745,14 @@ const handleCreateGroup = async () => {
   flex-shrink: 0;
 }
 
+.agents-header {
+  background: rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
 .panel-title {
   flex: 1;
-  color: #fff;
+  color: #333;
   font-size: 15px;
   font-weight: 700;
   text-transform: capitalize;
@@ -749,25 +760,25 @@ const handleCreateGroup = async () => {
 
 /* ── Group Chats org icon accent ── */
 .group-chats-icon {
-  background: rgba(255, 112, 67, 0.2);
+  background: #4095fe;
 }
 
 .group-chats-icon:hover,
 .group-chats-icon.active {
-  background: rgba(255, 112, 67, 0.38);
+  background: #1d6cff;
 }
 
 .org-double-lobster {
   font-size: 13px;
   line-height: 1;
-  letter-spacing: -3px;
+  letter-spacing: 0;
 }
 
 /* ── Panel empty state ── */
 .panel-empty {
   padding: 32px 16px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(0, 0, 0, 0.35);
   font-size: 13px;
 }
 
@@ -777,14 +788,14 @@ const handleCreateGroup = async () => {
 }
 
 .panel-empty-state-title {
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(0, 0, 0, 0.45);
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 8px;
 }
 
 .panel-empty-state-hint {
-  color: rgba(255, 255, 255, 0.28);
+  color: rgba(0, 0, 0, 0.28);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -795,7 +806,7 @@ const handleCreateGroup = async () => {
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.15);
+  background: #4095fe;
   border: none;
   display: flex;
   align-items: center;
@@ -808,7 +819,7 @@ const handleCreateGroup = async () => {
 .new-group-rail-btn:hover,
 .new-group-rail-btn.active {
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.3);
+  background: #1d6cff;
 }
 
 .new-group-rail-icon {
@@ -880,7 +891,7 @@ const handleCreateGroup = async () => {
 }
 
 .modal-dialog {
-  background: #1a1d21;
+  background: #ffffff;
   border-radius: 12px;
   width: 460px;
   max-width: 92vw;
@@ -895,13 +906,13 @@ const handleCreateGroup = async () => {
   display: flex;
   align-items: center;
   padding: 18px 20px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   flex-shrink: 0;
 }
 
 .modal-title {
   flex: 1;
-  color: #fff;
+  color: #333333;
   font-size: 17px;
   font-weight: 700;
 }
@@ -911,7 +922,7 @@ const handleCreateGroup = async () => {
   height: 28px;
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(0, 0, 0, 0.5);
   font-size: 16px;
   cursor: pointer;
   border-radius: 6px;
@@ -922,8 +933,8 @@ const handleCreateGroup = async () => {
 }
 
 .modal-close:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: rgba(0, 0, 0, 0.1);
+  color: #333333;
 }
 
 .modal-search {
@@ -935,20 +946,20 @@ const handleCreateGroup = async () => {
   width: 100%;
   box-sizing: border-box;
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 7px;
-  color: #fff;
+  color: #333333;
   font-size: 14px;
   outline: none;
   transition: border-color 0.15s;
 }
 
-.search-input::placeholder { color: rgba(255, 255, 255, 0.35); }
+.search-input::placeholder { color: rgba(0, 0, 0, 0.35); }
 
 .search-input:focus {
-  border-color: rgba(255, 255, 255, 0.35);
-  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .modal-list {
@@ -959,7 +970,7 @@ const handleCreateGroup = async () => {
 
 .modal-section-label {
   padding: 8px 10px 4px;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(0, 0, 0, 0.4);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -990,10 +1001,18 @@ const handleCreateGroup = async () => {
   flex-shrink: 0;
 }
 
+.modal-item .item-name {
+  color: #000000;
+}
+
+.modal-item .item-subname {
+  color: rgba(0, 0, 0, 0.6);
+}
+
 .modal-empty {
   padding: 32px 0;
   text-align: center;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(0, 0, 0, 0.35);
   font-size: 14px;
 }
 
@@ -1001,30 +1020,30 @@ const handleCreateGroup = async () => {
   display: flex;
   align-items: center;
   padding: 12px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
   gap: 10px;
   flex-shrink: 0;
 }
 
 .modal-count {
   flex: 1;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(0, 0, 0, 0.45);
   font-size: 13px;
 }
 
 .modal-cancel-btn {
   padding: 7px 16px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.1);
   border: none;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(0, 0, 0, 0.8);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.1s;
 }
 
-.modal-cancel-btn:hover { background: rgba(255, 255, 255, 0.18); }
+.modal-cancel-btn:hover { background: rgba(0, 0, 0, 0.18); }
 
 .modal-create-btn {
   padding: 7px 18px;
@@ -1094,7 +1113,7 @@ const handleCreateGroup = async () => {
 
 .panel-item:hover { background: rgba(255, 255, 255, 0.1); }
 
-.panel-item.active { background: var(--slack-aubergine); }
+.panel-item.active { background: rgba(0, 0, 0, 0.1); }
 
 .item-avatar {
   width: 28px;
@@ -1111,7 +1130,7 @@ const handleCreateGroup = async () => {
 }
 
 .openclaw-avatar {
-  background: linear-gradient(135deg, #ff6b6b, #ffa500);
+  background: linear-gradient(135deg, #cecece, #cecece);
   font-size: 17px;
 }
 
@@ -1121,7 +1140,7 @@ const handleCreateGroup = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: #0A2E6F;
   font-size: 11px;
   font-weight: 700;
   margin-right: 6px;
@@ -1131,14 +1150,14 @@ const handleCreateGroup = async () => {
 }
 
 .item-hash:hover {
-  color: rgba(255, 255, 255, 0.9);
+  color: #0A2E6F;
 }
 
-.panel-item.active .item-hash { color: rgba(255, 255, 255, 0.9); }
+.panel-item.active .item-hash { color: #0A2E6F; }
 
 .item-name {
   flex: 1;
-  color: #e8e8e8;
+  color: #333;
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
@@ -1157,7 +1176,7 @@ const handleCreateGroup = async () => {
 }
 
 .panel-item.active .item-name {
-  color: #fff;
+  color: #000;
   font-weight: 700;
 }
 
@@ -1199,12 +1218,12 @@ const handleCreateGroup = async () => {
 
 .profile-icon {
   position: relative;
-  background: rgba(255, 255, 255, 0.2);
+  background: #4095fe;
   cursor: default;
 }
 
 .profile-icon:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: #1d6cff;
 }
 
 .profile-letter {
@@ -1296,14 +1315,16 @@ const handleCreateGroup = async () => {
 .group-action-btn {
   background: none;
   border: none;
-  color: #aaa;
+  /* color: #aaa; */
   cursor: pointer;
   font-size: 12px;
   padding: 0 3px;
   flex-shrink: 0;
   line-height: 1;
 }
-.group-action-btn:hover { color: #fff; }
+.group-action-btn:hover { 
+	/* color: #fff; */
+}
 
 .group-rename-input {
   flex: 1;
@@ -1319,7 +1340,6 @@ const handleCreateGroup = async () => {
 
 .group-members-list {
   padding: 4px 0 4px 28px;
-  background: rgba(0,0,0,0.15);
 }
 
 .group-member-item {
@@ -1344,7 +1364,7 @@ const handleCreateGroup = async () => {
 
 .member-name {
   font-size: 12px;
-  color: #ccc;
+  color: #797979;
 }
 
 .group-member-empty {

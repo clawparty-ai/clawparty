@@ -179,6 +179,8 @@ cd chat-gui && npm run build && echo "Build successful"
 - Use Pipy APIs directly where appropriate (`pipy.argv`, `pipy.exit`, `pipy.load`).
 - Use `JSON.decode` / `JSON.encode` in Pipy-side code.
 - **No regex**: PipyJS does not support `RegExp` APIs (`exec`, `match`, `test`, `replace(regex)`, `new RegExp`). Use string operations instead (`split`, `indexOf`, `charAt`, `substring`, `startsWith`, `endsWith`, `includes`).
+- **No locale methods**: PipyJS does not support `toLocaleTimeString()`, `toLocaleDateString()`, or similar locale-dependent Date methods. Format dates manually using `getHours()`, `getMinutes()`, etc. Example: `d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0')`
+- **No continue/break**: PipyJS does not support `continue` or `break` statements in loops. Use `if` blocks to wrap logic instead of `if (!condition) continue`.
 
 ### Comments
 - Keep comments minimal.

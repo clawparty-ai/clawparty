@@ -181,7 +181,7 @@ const myDisplayNameWithAgent = computed(() => {
     return myName
   }
   const agent = openclawAgents.value.find(a => a.id === currentPeerConfig.value.autoReplyAgent)
-  const agentName = agent ? agent.name : currentPeerConfig.value.autoReplyAgent
+  const agentName = agent ? (agent.identityName || agent.name) : currentPeerConfig.value.autoReplyAgent
   return myName + '/' + agentName
 })
 
@@ -593,14 +593,14 @@ const buildChatHtml = () => {
       border-left: none;
     }
     .message.sent .message-bubble {
-      background: #4a154b;
+      background: #0A2E6F;
       color: #ffffff;
     }
     .message.sent .message-bubble::before {
       left: auto;
       right: -6px;
       border-right: none;
-      border-left: 6px solid #4a154b;
+      border-left: 6px solid #0A2E6F;
       border-right-color: transparent;
     }
     .message-bubble.system-hint {
@@ -815,7 +815,8 @@ const renderMarkdown = (text) => {
 }
 
 const isMessageSent = (msg) => {
-  return msg.isSent || msg.sender === props.currentUserName
+  // Rely on isSent flag set by parseMessages or API
+  return msg.isSent === true
 }
 
 const openImagePreview = (url) => {
@@ -837,8 +838,15 @@ const parseMessages = (data) => {
     } else if (props.chat?.isGroup) {
       senderDisplay = resolveEpDisplayName(displaySender)
     } else {
-      // 对方的消息：使用 resolveEpDisplayName 显示格式 "ep-name/agent-name"
-      senderDisplay = resolveEpDisplayName(displaySender)
+      // 对方的消息：显示 ep-name/agentName（如果消息中包含 agentName）
+      const peerAgentId = item.message?.agentName
+      if (peerAgentId) {
+        const peerAgent = (openclawAgents.value || []).find(a => a.id === peerAgentId)
+        const peerAgentDisplayName = peerAgent ? (peerAgent.identityName || peerAgent.name) : peerAgentId
+        senderDisplay = displaySender + '/' + peerAgentDisplayName
+      } else {
+        senderDisplay = resolveEpDisplayName(displaySender)
+      }
     }
     // Resolve file URLs for image messages
     const rawFiles = item.message?.files || null
@@ -890,11 +898,13 @@ const approveGroupRequest = async (msg) => {
   try {
     if (msg.isPeerRequest) {
       // Peer chat: enable auto-reply with selected agent
-      const agentName = msg.selectedAgent || 'main'
-      await chatService.approvePeerAutoReply(props.meshName, msg.peer, agentName)
+      const agentId = msg.selectedAgent || 'main'
+      const agent = (openclawAgents.value || []).find(a => a.id === agentId)
+      const peerAgentName = agent ? (agent.identityName || agent.name) : agentId
+      await chatService.approvePeerAutoReply(props.meshName, msg.peer, agentId, peerAgentName)
       msg.isPeerRequest = false
       msg.isSystemHint = false
-      msg.text = `Auto-reply enabled for "${msg.peer}" via agent "${agentName}".`
+      msg.text = `Auto-reply enabled for "${msg.peer}" via agent "${peerAgentName}".`
     } else if (msg.isGroupEpRequest) {
       // ZTM EP member: enable auto-reply for this group with the selected agent
       const agentName = msg.selectedAgent || 'main'
@@ -1179,6 +1189,7 @@ onUnmounted(() => {
   flex-direction: column;
   background: var(--bg-chat);
   min-width: 0;
+	z-index: 1;
 }
 
 .messages {
