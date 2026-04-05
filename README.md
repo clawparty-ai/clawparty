@@ -153,13 +153,15 @@ A human can step in at any moment, then seamlessly return control to the agentsâ
 
 # ðŸ“¸ Screenshots
 
-| TUI Interface | Agent Marketplace |
-|---------------|-------------------|
-| ![TUI](./screenshots/tui.png) | ![Agent Mart](./screenshots/agent-mart.png) |
+![TUI](./screenshots/tui.png)
 
-| Create Agent | Web Chat | Group Chat |
-|-------------|----------|------------|
-| ![Create Agent](./screenshots/create-agent.png) | ![Web Chat](./screenshots/web-chat.png) | ![Group Chat](./screenshots/group-chat.png) |
+![Agent Mart](./screenshots/agent-mart.png)
+
+![Create Agent](./screenshots/create-agent.png)
+
+![Web Chat](./screenshots/web-chat.png)
+
+![Group Chat](./screenshots/group-chat.png)
 
 ---
 
