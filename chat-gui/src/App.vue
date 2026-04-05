@@ -23,6 +23,8 @@
       @select="selectChat"
       @selectOpenclaw="selectOpenclawAgent"
       @changeOrg="(org) => { mobileActiveOrg = org; activeChat = null; activeOpenclawAgent = null; }"
+      @openLocalTemplates="openLocalTemplates"
+      @openSharedTemplates="openSharedTemplates"
     />
     <!-- Mobile agents list view -->
     <div v-if="isMobile && activeChat === null && mobileActiveOrg === 'agents'" class="mobile-agents-view">
@@ -113,12 +115,28 @@
       <h2>Welcome to ClawParty!</h2>
     </div>
   </div>
+
+  <TemplatePicker
+    :show="showLocalTemplates"
+    source="local"
+    :installedAgentIds="installedAgentIds"
+    @close="showLocalTemplates = false"
+    @installed="handleTemplateInstalled"
+  />
+  <TemplatePicker
+    :show="showSharedTemplates"
+    source="shared"
+    :installedAgentIds="installedAgentIds"
+    @close="showSharedTemplates = false"
+    @installed="handleTemplateInstalled"
+  />
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, provide, computed } from 'vue'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
+import TemplatePicker from './components/TemplatePicker.vue'
 import { meshService, chatService, openclawService, setApiToken, getApiToken } from './services/chatService'
 import ShellService from './services/ShellService'
 import { platform } from '@tauri-apps/plugin-os';
@@ -143,6 +161,8 @@ const isMobile = ref(window.innerWidth <= 768)
 const mobileActiveOrg = ref('agents')
 const users = ref([])
 const localOpenclawAvailable = ref(false)
+const showLocalTemplates = ref(false)
+const showSharedTemplates = ref(false)
 let appStarted = false
 let chatsPollTimer = null
 let usersPollTimer = null
@@ -1003,6 +1023,24 @@ const updateGroupMembers = async (chat, members) => {
   }
 }
 
+const openLocalTemplates = () => {
+  showLocalTemplates.value = true
+  showSharedTemplates.value = false
+}
+
+const openSharedTemplates = () => {
+  showSharedTemplates.value = true
+  showLocalTemplates.value = false
+}
+
+const handleTemplateInstalled = async () => {
+  await fetchOpenclawAgents()
+}
+
+const installedAgentIds = computed(() => {
+  return openclawAgents.value.map(a => a.id)
+})
+
 provide('switchMesh', switchMesh)
 provide('meshes', meshes)
 provide('openclawAgents', openclawAgents)
@@ -1027,6 +1065,7 @@ const resolveEpDisplayName = (username) => {
   if (ep) return ep.username + "/" + ep.name
   return username
 }
+provide('activeOpenclawAgent', activeOpenclawAgent)
 provide('resolveEpDisplayName', resolveEpDisplayName)
 
 const startChatsPolling = () => {
