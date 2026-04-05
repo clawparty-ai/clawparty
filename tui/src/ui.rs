@@ -1,14 +1,13 @@
 use crate::app::{ActiveOrg, ActivePanel, AppState};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect, Size},
+    prelude::StatefulWidget,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        Block, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
-        Wrap,
-    },
+    widgets::{Block, Borders, List, ListItem, Paragraph},
     Frame,
 };
+use tui_scrollview::ScrollView;
 
 // Theme colors optimized for black background
 const THEME_HEADER_FG: Color = Color::Green;
@@ -25,7 +24,7 @@ const THEME_LOG_WARN: Color = Color::Yellow;
 const THEME_LOG_ERROR: Color = Color::Red;
 const THEME_BG: Color = Color::Black;
 
-pub fn render(frame: &mut Frame, state: &AppState) {
+pub fn render(frame: &mut Frame, state: &mut AppState) {
     // Fill entire screen with black background
     let bg = ratatui::widgets::Paragraph::new("").style(Style::default().bg(THEME_BG));
     frame.render_widget(bg, frame.area());
@@ -82,7 +81,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(header, area);
 }
 
-fn render_main(frame: &mut Frame, area: Rect, state: &AppState) {
+fn render_main(frame: &mut Frame, area: Rect, state: &mut AppState) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
@@ -92,11 +91,10 @@ fn render_main(frame: &mut Frame, area: Rect, state: &AppState) {
     render_messages(frame, chunks[1], state);
 }
 
-fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState) {
+fn render_sidebar(frame: &mut Frame, area: Rect, state: &mut AppState) {
     let mut list_items: Vec<ListItem> = Vec::new();
     let mut global_idx = 0;
 
-    // Local Agents section header
     if !state.local_agents.is_empty() {
         list_items.push(ListItem::new(Line::from(Span::styled(
             "Local Agents",
@@ -125,7 +123,6 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState) {
         }
     }
 
-    // Group Chats section header
     if !state.group_chats.is_empty() {
         list_items.push(ListItem::new(Line::from(Span::styled(
             "Group Chats",
@@ -147,7 +144,6 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState) {
         }
     }
 
-    // Members section header
     if !state.members.is_empty() {
         list_items.push(ListItem::new(Line::from(Span::styled(
             "Remote Agents",
@@ -185,18 +181,36 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState) {
         THEME_BORDER
     };
 
-    let list = List::new(list_items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(title)
-            .border_style(Style::default().fg(sidebar_border_color))
-            .style(Style::default().bg(THEME_BG)),
-    );
+    let total_items = list_items.len() as u16;
+    let visible_height = area.height.saturating_sub(2);
 
-    frame.render_widget(list, area);
+    if total_items > visible_height {
+        let content_size = Size::new(area.width, total_items);
+        let mut scroll_view = ScrollView::new(content_size);
+
+        let list = List::new(list_items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(Style::default().fg(sidebar_border_color))
+                .style(Style::default().bg(THEME_BG)),
+        );
+
+        scroll_view.render_widget(list, Rect::new(0, 0, area.width, total_items));
+        scroll_view.render(area, frame.buffer_mut(), &mut state.sidebar_scroll);
+    } else {
+        let list = List::new(list_items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(Style::default().fg(sidebar_border_color))
+                .style(Style::default().bg(THEME_BG)),
+        );
+        frame.render_widget(list, area);
+    }
 }
 
-fn render_messages(frame: &mut Frame, area: Rect, state: &AppState) {
+fn render_messages(frame: &mut Frame, area: Rect, state: &mut AppState) {
     let title = if let Some(chat_idx) = state.current_chat {
         if let Some(chat) = state.chats.get(chat_idx) {
             format!(" {} ", chat.display_name())
@@ -223,10 +237,8 @@ fn render_messages(frame: &mut Frame, area: Rect, state: &AppState) {
             let sender = msg.sender.as_deref().unwrap_or("Unknown");
             let text = msg.text.as_deref().unwrap_or("");
 
-            // Split text by newlines into multiple display lines
             let text_lines: Vec<&str> = text.split('\n').collect();
 
-            // First line: [time] sender: content
             lines.push(Line::from(vec![
                 Span::styled(format!("[{}] ", time), Style::default().fg(THEME_TIME)),
                 Span::styled(
@@ -238,29 +250,16 @@ fn render_messages(frame: &mut Frame, area: Rect, state: &AppState) {
                 Span::raw(text_lines[0].to_string()),
             ]));
 
-            // Remaining lines: indented
             for extra in text_lines.iter().skip(1) {
                 lines.push(Line::from(Span::raw(format!("  {}", extra))));
             }
 
-            // Blank line between messages
             lines.push(Line::raw(""));
         }
     }
 
     let total_lines = lines.len() as u16;
-    // Calculate visible height (area minus borders)
-    let visible = area.height.saturating_sub(2);
-    // message_scroll is offset from bottom (0 = at bottom)
-    let max_scroll = total_lines.saturating_sub(visible);
-    // scroll is position from top
-    let scroll = if state.user_scrolled_up {
-        // user scrolled up: show messages from position (total - visible - offset_from_bottom)
-        max_scroll.saturating_sub(state.message_scroll.min(max_scroll))
-    } else {
-        // at bottom
-        max_scroll
-    };
+    let visible_height = area.height.saturating_sub(2);
 
     let msg_border_color = if state.active_panel == ActivePanel::Messages {
         Color::Cyan
@@ -268,36 +267,29 @@ fn render_messages(frame: &mut Frame, area: Rect, state: &AppState) {
         THEME_BORDER
     };
 
-    frame.render_widget(
-        Paragraph::new(lines)
-            .wrap(Wrap { trim: false })
-            .scroll((scroll, 0))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(title.clone())
-                    .border_style(Style::default().fg(msg_border_color))
-                    .style(Style::default().bg(THEME_BG)),
-            ),
-        area,
-    );
+    if total_lines > visible_height {
+        let content_size = Size::new(area.width, total_lines);
+        let mut scroll_view = ScrollView::new(content_size);
 
-    // Render scrollbar if content exceeds visible area
-    if total_lines > visible {
-        let mut scrollbar_state =
-            ScrollbarState::new(total_lines as usize).position(scroll as usize);
-        frame.render_stateful_widget(
-            Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .begin_symbol(Some("▲"))
-                .end_symbol(Some("▼"))
-                .track_symbol(Some("│"))
-                .thumb_symbol("█"),
-            area.inner(ratatui::layout::Margin {
-                vertical: 1,
-                horizontal: 0,
-            }),
-            &mut scrollbar_state,
+        let paragraph = Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title.clone())
+                .border_style(Style::default().fg(msg_border_color))
+                .style(Style::default().bg(THEME_BG)),
         );
+
+        scroll_view.render_widget(paragraph, Rect::new(0, 0, area.width, total_lines));
+        scroll_view.render(area, frame.buffer_mut(), &mut state.messages_scroll);
+    } else {
+        let paragraph = Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title.clone())
+                .border_style(Style::default().fg(msg_border_color))
+                .style(Style::default().bg(THEME_BG)),
+        );
+        frame.render_widget(paragraph, area);
     }
 }
 
@@ -320,7 +312,7 @@ fn render_input(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(input, area);
 }
 
-fn render_logs(frame: &mut Frame, area: Rect, state: &AppState) {
+fn render_logs(frame: &mut Frame, area: Rect, state: &mut AppState) {
     let lines: Vec<Line> = state
         .logs
         .iter()
@@ -346,15 +338,33 @@ fn render_logs(frame: &mut Frame, area: Rect, state: &AppState) {
         })
         .collect();
 
-    let logs = Paragraph::new(lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" Logs ")
-            .border_style(Style::default().fg(THEME_BORDER))
-            .style(Style::default().bg(THEME_BG)),
-    );
+    let total_lines = lines.len() as u16;
+    let visible_height = area.height.saturating_sub(2);
 
-    frame.render_widget(logs, area);
+    if total_lines > visible_height {
+        let content_size = Size::new(area.width, total_lines);
+        let mut scroll_view = ScrollView::new(content_size);
+
+        let paragraph = Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Logs ")
+                .border_style(Style::default().fg(THEME_BORDER))
+                .style(Style::default().bg(THEME_BG)),
+        );
+
+        scroll_view.render_widget(paragraph, Rect::new(0, 0, area.width, total_lines));
+        scroll_view.render(area, frame.buffer_mut(), &mut state.logs_scroll);
+    } else {
+        let paragraph = Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Logs ")
+                .border_style(Style::default().fg(THEME_BORDER))
+                .style(Style::default().bg(THEME_BG)),
+        );
+        frame.render_widget(paragraph, area);
+    }
 }
 
 fn render_statusbar(frame: &mut Frame, area: Rect, state: &AppState) {

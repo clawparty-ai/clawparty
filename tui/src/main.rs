@@ -202,6 +202,7 @@ async fn main() -> anyhow::Result<()> {
         while let Some(line) = log_rx.recv().await {
             let mut s = log_state.write().await;
             s.add_log("AGENT", &line);
+            s.logs_scroll.scroll_to_bottom();
         }
     });
 
@@ -305,9 +306,8 @@ async fn main() -> anyhow::Result<()> {
                     let old_len = s.messages.len();
                     s.messages = m;
                     let new_len = s.messages.len();
-                    // Only auto-scroll if user hasn't scrolled up, or new messages arrived
-                    if !s.user_scrolled_up || new_len > old_len {
-                        s.user_scrolled_up = false;
+                    if new_len > old_len {
+                        s.messages_scroll.scroll_to_bottom();
                     }
                 }
                 s.refresh_sections();
@@ -319,8 +319,8 @@ async fn main() -> anyhow::Result<()> {
     loop {
         let state_clone = state.clone();
         terminal.draw(move |frame| {
-            if let Ok(s) = state_clone.try_read() {
-                ui::render(frame, &s);
+            if let Ok(mut s) = state_clone.try_write() {
+                ui::render(frame, &mut s);
             }
         })?;
 
@@ -342,14 +342,10 @@ async fn main() -> anyhow::Result<()> {
                     KeyCode::Up => {
                         match s.active_panel {
                             ActivePanel::Sidebar => {
-                                if s.selected_index > 0 {
-                                    s.selected_index -= 1;
-                                }
+                                s.sidebar_scroll.scroll_up();
                             }
                             ActivePanel::Messages => {
-                                // Scrolling UP means increasing offset from bottom (going back in history)
-                                s.message_scroll = s.message_scroll.saturating_add(3);
-                                s.user_scrolled_up = true;
+                                s.messages_scroll.scroll_up();
                             }
                             ActivePanel::Input => {}
                         }
@@ -357,18 +353,10 @@ async fn main() -> anyhow::Result<()> {
                     KeyCode::Down => {
                         match s.active_panel {
                             ActivePanel::Sidebar => {
-                                let items = s.get_sidebar_items();
-                                if s.selected_index < items.len().saturating_sub(1) {
-                                    s.selected_index += 1;
-                                }
+                                s.sidebar_scroll.scroll_down();
                             }
                             ActivePanel::Messages => {
-                                // Scrolling DOWN means decreasing offset from bottom (going forward)
-                                s.message_scroll = s.message_scroll.saturating_sub(3);
-                                // If back at bottom, reset flag
-                                if s.message_scroll == 0 {
-                                    s.user_scrolled_up = false;
-                                }
+                                s.messages_scroll.scroll_down();
                             }
                             ActivePanel::Input => {}
                         }
@@ -557,7 +545,7 @@ async fn main() -> anyhow::Result<()> {
                         // Enter in sidebar selects item
                         let idx = s.selected_index;
                         s.select_item(idx);
-                        s.message_scroll = u16::MAX; // auto-scroll to bottom on new chat
+                        s.messages_scroll.scroll_to_bottom();
 
                         if let Some(chat_idx) = s.current_chat {
                             if let Some(chat) = s.chats.get(chat_idx).cloned() {
@@ -643,14 +631,10 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                     KeyCode::PageUp => {
-                        s.message_scroll = s.message_scroll.saturating_add(10);
-                        s.user_scrolled_up = true;
+                        s.messages_scroll.scroll_page_up();
                     }
                     KeyCode::PageDown => {
-                        s.message_scroll = s.message_scroll.saturating_sub(10);
-                        if s.message_scroll == 0 {
-                            s.user_scrolled_up = false;
-                        }
+                        s.messages_scroll.scroll_page_down();
                     }
                     _ => {}
                 }

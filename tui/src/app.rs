@@ -4,6 +4,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tui_scrollview::ScrollViewState;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ActivePanel {
@@ -50,8 +51,9 @@ pub struct AppState {
     pub group_chats: Vec<Chat>,
     pub members: Vec<Endpoint>,
     pub log_file: Option<std::fs::File>,
-    pub message_scroll: u16,
-    pub user_scrolled_up: bool,
+    pub sidebar_scroll: ScrollViewState,
+    pub messages_scroll: ScrollViewState,
+    pub logs_scroll: ScrollViewState,
 }
 
 impl AppState {
@@ -86,8 +88,9 @@ impl AppState {
             group_chats: Vec::new(),
             members: Vec::new(),
             log_file,
-            message_scroll: 0,
-            user_scrolled_up: false,
+            sidebar_scroll: ScrollViewState::new(),
+            messages_scroll: ScrollViewState::new(),
+            logs_scroll: ScrollViewState::new(),
         }
     }
 
