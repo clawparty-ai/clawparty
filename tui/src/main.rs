@@ -342,7 +342,11 @@ async fn main() -> anyhow::Result<()> {
                     KeyCode::Up => {
                         match s.active_panel {
                             ActivePanel::Sidebar => {
-                                s.sidebar_scroll.scroll_up();
+                                if s.selected_index > 0 {
+                                    s.selected_index -= 1;
+                                    let idx = s.selected_index;
+                                    s.select_item(idx);
+                                }
                             }
                             ActivePanel::Messages => {
                                 s.messages_scroll.scroll_up();
@@ -353,7 +357,12 @@ async fn main() -> anyhow::Result<()> {
                     KeyCode::Down => {
                         match s.active_panel {
                             ActivePanel::Sidebar => {
-                                s.sidebar_scroll.scroll_down();
+                                let items_len = s.get_sidebar_items().len();
+                                if s.selected_index + 1 < items_len {
+                                    s.selected_index += 1;
+                                    let idx = s.selected_index;
+                                    s.select_item(idx);
+                                }
                             }
                             ActivePanel::Messages => {
                                 s.messages_scroll.scroll_down();

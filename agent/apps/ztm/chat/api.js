@@ -603,6 +603,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       console.info('[newGroupChat] skip dismissed group:', creator, group)
       return null
     }
+    var existing = findGroupChat(creator, group)
+    if (existing) {
+      console.info('[newGroupChat] group already exists:', creator, group)
+      return existing
+    }
     var chat = {
       creator,
       group,
@@ -829,6 +834,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         } else {
           infoPromise = Promise.resolve()
         }
+        if (!chat) chat = findGroupChat(creator, group)
         return infoPromise.then(function () {
           if (!chat) return
           var gcid = chat.gcid
@@ -974,6 +980,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             gcid: chat.gcid || '',
             name: chat.name,
             members: chat.members || [],
+            is_group: true,
             time: chat.updateTime,
             updated,
             latest,
