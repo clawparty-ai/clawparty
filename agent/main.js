@@ -15,7 +15,7 @@ try {
     commands: [{
       title: 'ZTM Agent',
       options: `
-        -d, --data              <dir>         Specify the location of ZTM storage (default: ~/.openclaw/workspace/clawparty)
+        -d, --data              <dir>         Specify the location of ZTM storage (default: ~/.clawparty)
         -l, --listen            <[ip:]port>   Specify the agent's listening port (default: 127.0.0.1:6789)
             --api-token         <token>       Require this token for all /api requests (default: enjoy-party)
             --no-auth                         Skip API authentication (not recommended for production)
@@ -36,7 +36,7 @@ try {
           listen = '127.0.0.1' + listen
         }
 
-        var dbPath = args['--data'] || '~/.openclaw/workspace/clawparty'
+        var dbPath = args['--data'] || '~/.clawparty'
         if (dbPath.startsWith('~/')) {
           dbPath = os.home() + dbPath.substring(1)
         }
@@ -778,6 +778,33 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
+    '/api/openclaw/{agent}/chat-log': {
+      'GET': function ({ agent }) {
+        agent = URL.decodeComponent(agent)
+        try {
+          var limit = 200
+          // Only return user and response messages (exclude system/tool messages)
+          var logs = db.getChatLog('', 'openclaw', agent, limit, ['user', 'response'])
+          // Convert to message format compatible with GUI
+          var messages = logs.map(log => {
+            var d = new Date(log.time * 1000)
+            var timeStr = d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0')
+            return {
+              text: log.content || '',
+              time: timeStr,
+              sender: log.sender,
+              isSent: log.msgType === 'user' || log.sender === 'user',
+              timestamp: log.time * 1000
+            }
+          }).reverse() // Reverse to show oldest first
+          return response(200, JSON.stringify(messages))
+        } catch (e) {
+          console.error('[openclaw chat-log] Error:', e)
+          return response(500, JSON.stringify([]))
+        }
+      }
+    },
+
     '/api/openclaws': {
       'GET': function () {
         return response(200, db.allOpenclaws())
@@ -828,10 +855,37 @@ function main(listen, apiToken, noAuth) {
           return response(200, JSON.stringify({ warning: 'duplicated cli call' }))
         }
         db.addCliLog(agent, sessionId, messageMd5)
+        // Log user message to chat_log
+        try {
+          db.logChat('', 'openclaw', agent, agent, null, 'user', 'message', message, null, sessionId, false, 'user')
+          console.info('[chat_log] write user message:', agent, 'msg_type=user, len=', message.length)
+        } catch (e) {
+          console.error('[openclaw chat] Failed to log user message:', e)
+        }
         var cmd = ['openclaw', 'agent', '--agent', agent, '--message', message, '--session-id', sessionId, '--json']
         console.info('[openclaw cli]', cmd.join(' ').slice(0, 200))
         return openclawAgentMessage.spawn(cmd).then(
-          output => response(200, output.split('\n').join('')),
+          output => {
+            var cleanOutput = output.split('\n').join('')
+            // Log agent response to chat_log
+            try {
+              var respData = null
+              try { respData = JSON.parse(cleanOutput) } catch {}
+              var payloads = respData?.payloads || respData?.result?.payloads || []
+              for (var i = 0; i < payloads.length; i++) {
+                var p = payloads[i]
+                var text = p?.text
+                if (text) {
+                  var msgType = 'response'
+                  if (p?.role === 'tool' || p?.role === 'system') {
+                    msgType = 'system'
+                  }
+                  db.logChat('', 'openclaw', agent, agent, null, agent, 'message', text, null, sessionId, false, msgType)
+                }
+              }
+            } catch (e) {}
+            return response(200, cleanOutput)
+          },
           output => response(500, output.split('\n').join(''))
         )
       }
@@ -894,7 +948,7 @@ function main(listen, apiToken, noAuth) {
           'red-hawk', 'thunder-cloud', 'morning-star', 'running-deer', 'little-wolf',
         ]
         var namesList = DEFAULT_NAMES
-        var namesPath = os.home() + '/.openclaw/workspace/clawparty/names.txt'
+        var namesPath = os.home() + '/.clawparty/names.txt'
         try {
           var namesContent = os.read(namesPath).toString()
           var parsed = namesContent.split('\n').map(n => n.trim()).filter(n => n.length > 0)
@@ -1002,6 +1056,76 @@ function main(listen, apiToken, noAuth) {
     '/ok': {
       'GET': function () {
         return response(200, 'OK')
+      }
+    },
+
+    '/api/picoclaw/health': {
+      'GET': function () {
+        var cmd = ['picoclaw', 'status']
+        console.info('[picoclaw cli]', cmd.join(' '))
+        var output = ''
+        return pipeline($=>$
+          .onStart(cmd)
+          .exec(() => cmd, {
+            stderr: true,
+            onExit: (code, err) => {
+              var status = code === 0 ? 'online' : 'offline'
+              return response(code === 0 ? 200 : 503, JSON.stringify({
+                status,
+                agent: 'picoclaw',
+                output: output.trim().slice(0, 500)
+              }))
+            }
+          })
+          .replaceMessage(msg => {
+            output += msg?.body?.toString?.() || ''
+            return new StreamEnd
+          })
+        ).spawn()
+      }
+    },
+
+    '/api/picoclaw/chat': {
+      'POST': function (_, req) {
+        var body
+        try {
+          body = JSON.decode(req.body)
+        } catch {
+          return response(400, JSON.stringify({ error: 'invalid JSON' }))
+        }
+        var message = body?.message || ''
+        var sessionId = body?.session_id || 'clawparty:' + Date.now()
+        if (!message) {
+          return response(400, JSON.stringify({ error: 'message is required' }))
+        }
+        console.info('[picoclaw chat] message:', message.slice(0, 100))
+        var cmd = ['picoclaw', 'agent', '-m', message, '-s', sessionId]
+        console.info('[picoclaw cli]', cmd.join(' ').slice(0, 200))
+        var output = ''
+        return pipeline($=>$
+          .onStart(cmd)
+          .exec(() => cmd, {
+            stderr: true,
+            onExit: (code, err) => {
+              if (code === 0) {
+                return response(200, JSON.stringify({
+                  agent: 'picoclaw',
+                  response: output.trim(),
+                  session_id: sessionId
+                }))
+              } else {
+                return response(500, JSON.stringify({
+                  error: err || 'Picoclaw command failed',
+                  output: output.trim()
+                }))
+              }
+            }
+          })
+          .replaceMessage(msg => {
+            output += msg?.body?.toString?.() || ''
+            return new StreamEnd
+          })
+        ).spawn()
       }
     },
 

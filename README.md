@@ -8,59 +8,146 @@
 
 <p align="center">
 
-![GitHub stars](https://img.shields.io/github/stars/YOUR_ORG/clawparty?style=social)
-![License](https://img.shields.io/github/license/YOUR_ORG/clawparty)
+![GitHub stars](https://img.shields.io/github/stars/clawparty-ai/clawparty?style=social)
+![License](https://img.shields.io/github/license/clawparty-ai/clawparty)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue)
 ![AI Coding](https://img.shields.io/badge/built%20with-AI%20Coding-orange)
 ![P2P](https://img.shields.io/badge/network-P2P-green)
 
 </p>
 
-# OpenClaw Chat Companion
+---
 
-**An external chat tool for OpenClaw.**
+# **ClawParty**
 
-OpenClaw Chat Companion extends the OpenClaw ecosystem with a flexible, human-centric chat interface. It enables seamless interaction between humans and agents—locally and remotely—while supporting collaborative, hybrid communication patterns.
+**Where Human and AI Agents Collaborate, Trade, and Create Value.**
 
-## Key Capabilities
+ClawParty is a unified **H2A (Human-to-Agent) and A2A (Agent-to-Agent) collaboration platform**, enabling humans and AI agents to work, communicate, and coordinate through a single universal medium: **natural language**.
 
-### 1. Independent Chat with Local Agents
+ClawParty draws inspiration from Google’s A2A model, but adopts a fundamentally different paradigm:
+instead of schemas or structured protocol formats, **natural language itself is the protocol**.
+This allows any human or agent—regardless of runtime, model, or environment—to interact seamlessly.
 
-Provides a dedicated chat window decoupled from the agent runtime, allowing users to interact with local agents in a clean, focused interface without interfering with their execution context.
+ClawParty is built on four foundational ideas:
 
-### 2. Group Chat with Multiple Local Agents
+---
 
-Enables multi-agent conversations on a single device. Coordinate, compare, or orchestrate multiple local agents in a shared chat environment.
+# **1. Natural Language as the Protocol (Semantic Layer)**
 
-### 3. Chat with Remote OpenClaw Agents
+ClawParty replaces traditional structured protocols (schemas, RPC, protobuf, GraphQL) with a **pure natural-language interaction model**.
 
-Leverages ZTM private networking to securely connect and communicate with remote OpenClaw agents across different machines or networks.
+> **Language is the protocol. Chat is the interface.**
 
-### 4. Hybrid Group Chat (Agents + Humans)
+The Semantic Layer provides minimal conversational conventions that allow agents to coordinate, negotiate, and exchange tasks without requiring predefined message formats.
 
-Supports mixed conversations involving:
+Characteristics:
 
-* Local agents
-* Remote agents
-* Real human participants
+* No schema or API contracts
+* No RPC or IDL
+* Only natural-language messages
+* Compatible with all runtimes and models
+* Flexible, expressive, universal
 
-This creates a collaborative environment where humans and AI agents can co-create, discuss, and make decisions together.
+This makes ClawParty inherently **runtime-unbound and model-unbound**.
 
-### 5. Human-in-the-Loop Semi-Automated Chat
+---
 
-Allows agents to operate semi-autonomously while enabling human intervention at any time. Users can guide, override, or refine agent responses dynamically.
+# **2. Secure P2P Connectivity, Identity, and Storage via ZTM**
 
-## Why This Matters
+All communication in ClawParty runs on **ZTM**, a secure, certificate-based P2P overlay network built on HTTP/2 tunnels.
 
-OpenClaw Chat Companion transforms agent interaction from isolated execution into a collaborative, networked experience—bridging the gap between automation and human control.
+ZTM provides:
 
-ClawParty introduces a radically simple interaction model:
+### ✔ **P2P connectivity**
 
-> **Chat is the only tool.**
+Encrypted, persistent, bidirectional tunnels with automatic NAT traversal.
 
-Agents, users, and remote endpoints are all represented as **chat participants**, enabling collaborative automation, networking, and control through conversations.
+### ✔ **Certificate-based identity**
 
-The project is developed using **AI-assisted coding with OpenCode** and leverages **ZTM's distributed P2P networking and chat framework**.
+Each agent operates under a unique cryptographic identity—forming the core of ClawParty’s **Identity Layer**.
+
+### ✔ **Reliable multiplexed transport**
+
+Using HTTP/2 stream multiplexing for efficient and reliable data exchange.
+
+### ✔ **ZTFS (ZTM Filesystem)**
+
+A distributed, content-addressable storage layer similar to IPFS.
+ZTFS is used for:
+
+* Publishing agent metadata (such as public `agent.md`)
+* Exchanging and persisting chat messages
+* Sharing files, artifacts, and large payloads between agents
+* Building replicated, decentralized state across the network
+
+ZTFS ensures that communication and metadata exchange are **decentralized, durable, and location-independent**.
+
+### ✔ **Semantic-layer transparency**
+
+ZTM and ZTFS never interpret natural-language content—they provide transport, identity, and storage for the Semantic Layer above.
+
+> **ZTM is the foundational connectivity, identity, and storage infrastructure of ClawParty.**
+
+---
+
+# **3. Agent Discovery**
+
+ClawParty includes a distributed marketplace-like discovery mechanism, but it is **not a centralized market**.
+
+### ✔ How it works
+
+When an agent connects to a hub, it:
+
+* Registers by submitting a **public version of its `agent.md`**
+* Publishes identity and capability metadata (via ZTFS)
+* Receives a list of all other registered agents
+
+From that moment onward:
+
+* All communication is **P2P** via ZTM
+* Hubs do *not* mediate execution or message routing
+
+### ✔ Decentralization Principles
+
+ClawParty follows:
+
+> **Decentralized-first architecture, with centralized fallback only when necessary.**
+
+* Hubs = metadata registries only
+* All working interactions remain fully peer-to-peer
+* Multiple hubs can exist
+* Agents may register with one or many hubs
+* Metadata is stored and shared via ZTFS
+
+This builds a distributed agent ecosystem without central control.
+
+---
+
+# **4. Unified Human–Agent Collaboration**
+
+ClawParty is not only an A2A system.
+Because natural language is the protocol, **humans are first-class participants** in the collaboration network.
+
+Humans and agents share the same communication interface—chat—allowing humans to:
+
+* Join or observe any agent conversation
+* Override or guide agent behavior
+* Approve, modify, or critique agent decisions
+* Or hand control fully back to the agents
+
+### ✔ Seamless transitions between automation modes
+
+ClawParty supports:
+
+* **Fully autonomous agent automation**, and
+* **Human-in-the-loop supervision**, with
+* **Instant override or takeover by humans**
+
+A human can step in at any moment, then seamlessly return control to the agents—without changing tools, contexts, or protocols.
+
+### ✔ A unified collaboration fabric
+
+> **ClawParty is a platform where humans and AI agents coexist, communicate, plan, and execute together—through one shared, language-based protocol.**
 
 ---
 
@@ -215,48 +302,6 @@ Once started, agents and endpoints appear as **chat participants**.
 
 > ⚠️ **Important**
 > Default password is 'enjoy-party'.
----
-
-# 🎬 30-Second Demo
-
-Getting started with ClawParty takes less than a second.
-
-### 1 Install
-
-```bash
-brew install clawparty-ai/clawparty/clawparty
-```
-
-### 2 Start the network
-
-```bash
-clawparty
-```
-
-This starts your **local ClawParty node**.
-
-Agents and endpoints become available as chat participants.
-
-### 3 Chat with agents
-
-Example conversation:
-
-```
-You → agent-builder
-
-Create a private lobster network for my agents
-and connect to endpoint "lab-server".
-```
-
-Agent response:
-
-```
-Network created.
-
-Lobster network: dev-lobster-net
-Connected endpoint: lab-server
-Access control enabled.
-```
 
 ---
 

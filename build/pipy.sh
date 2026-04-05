@@ -11,8 +11,6 @@ if [ ! -f "$ZTM_DIR/pipy/CMakeLists.txt" ]; then
   exit 1
 fi
 
-rm -rf "$ZTM_DIR/pipy/build"
-
 mkdir -p "$ZTM_DIR/pipy/build"
 cd "$ZTM_DIR/pipy/build"
 
@@ -114,9 +112,6 @@ then
   if [ -z "$BUILD_ZTM_SHARED" ]
   then
     bin/ztm version
-    pushd bin
-    ln -sfn ztm clawparty
-    popd
 
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
       OS_NAME=generic_linux

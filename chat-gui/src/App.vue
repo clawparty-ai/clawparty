@@ -22,7 +22,7 @@
       :activeChat="activeChat"
       @select="selectChat"
       @selectOpenclaw="selectOpenclawAgent"
-      @changeOrg="(org) => { mobileActiveOrg = org; activeChat = null; }"
+      @changeOrg="(org) => { mobileActiveOrg = org; activeChat = null; activeOpenclawAgent = null; }"
     />
     <!-- Mobile agents list view -->
     <div v-if="isMobile && activeChat === null && mobileActiveOrg === 'agents'" class="mobile-agents-view">
@@ -88,8 +88,8 @@
     <ChatMain
       v-if="(activeChat !== null && activeChat < chats.length) || activeOpenclawAgent"
       :chat="activeOpenclawAgent || chats[activeChat]"
-      :meshName="activeOpenclawAgent ? null : currentMesh"
-      :currentUserName="activeOpenclawAgent ? activeOpenclawAgent.agentId : currentMeshAgentUsername"
+      :meshName="(activeOpenclawAgent && activeOpenclawAgent.agentId !== 'main') ? null : currentMesh"
+      :currentUserName="currentMeshAgentUsername"
       :sending="sending"
       :openclawSessions="openclawSessions"
       :showBackButton="isMobile"
@@ -107,7 +107,7 @@
       <div class="empty-icon">
         <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
           <circle cx="40" cy="40" r="40" fill="#E8E8E8"/>
-          <path d="M40 20C29.5 20 21 28.5 21 39c0 7.3 4.2 13.7 10.5 17.5v5.5c0 2.2 1.8 4 4 4h9c2.2 0 4-1.8 4-4v-5.5c6.3-3.8 10.5-10.2 10.5-17.5C59 28.5 50.5 20 40 20z" fill="#4A154B"/>
+          <path d="M40 20C29.5 20 21 28.5 21 39c0 7.3 4.2 13.7 10.5 17.5v5.5c0 2.2 1.8 4 4 4h9c2.2 0 4-1.8 4-4v-5.5c6.3-3.8 10.5-10.2 10.5-17.5C59 28.5 50.5 20 40 20z" fill="#1D6CFF"/>
         </svg>
       </div>
       <h2>Welcome to ClawParty!</h2>
@@ -309,6 +309,7 @@ const fetchChats = async () => {
 }
 
 const selectChat = (index) => {
+  activeOpenclawAgent.value = null
   activeChat.value = index
   if (chats.value[index]) {
     chats.value[index].updated = 0
@@ -316,28 +317,27 @@ const selectChat = (index) => {
 }
 
 const sendMessage = async () => {
-  if (!newMessage.value.trim() || activeChat.value === null || sending.value) return
+  if (!newMessage.value.trim() || (!activeOpenclawAgent.value && activeChat.value === null) || sending.value) return
   
-  const chat = chats.value[activeChat.value]
+  const chat = activeOpenclawAgent.value || chats.value[activeChat.value]
   const text = newMessage.value
   sending.value = true
   
   try {
-    if (chat.isOpenclaw) {
-      if (!chat.messages) chat.messages = []
-      sending.value = false
-      const now = new Date()
-      const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
-      
-      setTimeout(()=>{
-        chat.messages.push({
-          text: '',
-          time: time,
-          sender: chat.name,
-          timestamp: now.getTime(),
-          isTyping: true
-        })
-      },300)
+      if (chat.isOpenclaw) {
+        if (!chat.messages) chat.messages = []
+        const now = new Date()
+        const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+        
+        setTimeout(()=>{
+          chat.messages.push({
+            text: '',
+            time: time,
+            sender: chat.name,
+            timestamp: now.getTime(),
+            isTyping: true
+          })
+        },300)
       
       // Detect #"group name" or #'group name' token — send message to that group as this agent
       const groupTokenMatch = text.match(/#["']([^"']+)["']/)
@@ -423,7 +423,8 @@ const sendMessage = async () => {
     time: time,
     sender: currentMeshAgentUsername.value,
     timestamp: now.getTime(),
-    isTemp: true
+    isTemp: true,
+    isSent: true
   })
   
   chat.lastMessage = text
@@ -434,8 +435,8 @@ const sendMessage = async () => {
 
 const handleSendImages = async (imageFiles) => {
   if (!imageFiles || imageFiles.length === 0) return
-  if (activeChat.value === null) return
-  const chat = chats.value[activeChat.value]
+  if (!activeOpenclawAgent.value && activeChat.value === null) return
+  const chat = activeOpenclawAgent.value || chats.value[activeChat.value]
 
   if (chat.isOpenclaw) {
     // Local openclaw agent: save pictures to agent workspace and show in chat
@@ -566,8 +567,8 @@ const handleSendImages = async (imageFiles) => {
 
 const handleSendFiles = async (files) => {
   if (!files || files.length === 0) return
-  if (activeChat.value === null) return
-  const chat = chats.value[activeChat.value]
+  if (!activeOpenclawAgent.value && activeChat.value === null) return
+  const chat = activeOpenclawAgent.value || chats.value[activeChat.value]
 
   // OpenCLaw agent: save files to agent workspace
   if (chat.isOpenclaw) {
@@ -766,6 +767,7 @@ const selectUser = async (user) => {
 }
 
 const selectOpenclawAgent = async (agent) => {
+  activeChat.value = null
   // 直接设置活动 openclaw agent，不添加到 chats 列表
   activeOpenclawAgent.value = {
     agentId: agent.id,
@@ -811,44 +813,79 @@ const selectOpenclawAgent = async (agent) => {
 
 const loadSessionHistory = async (chat, agentId, sessionId) => {
   try {
-    const historyResponse = await openclawService.getSessionHistory(agentId, sessionId)
-    let historyData = null
-    try {
-      historyData = JSON.parse(`[${historyResponse.data.replaceAll('\n',',')}{}]`)
-    } catch (e) {
-      console.error('Failed to parse history:', e)
-    }
-    chat.messages = [];
-    historyData.filter((n)=>n.type=='message').forEach((n,i)=>{
-      const text = n.message.content.filter((n)=>n.type=='text')[0]?.text;
-      if(!!text){
-        chat.messages.push(
-        { 
-          "text": n.message.content.filter((n)=>n.type=='text')[0]?.text, 
-          "time": new Date(n.message.timestamp).toLocaleTimeString(), 
-          "sender": n.message.role, "isSent": n.message.role=='user', "timestamp": n.message.timestamp }
-        )
-      }
-    })
+    // Load chat history from chat_log database instead of session JSONL files
+    const response = await openclawService.getChatLog(agentId)
+    const messages = Array.isArray(response.data) ? response.data : []
+    chat.messages = messages.map(msg => ({
+      text: msg.text || '',
+      time: msg.time || '',
+      sender: msg.sender || '',
+      isSent: msg.isSent || false,
+      timestamp: msg.timestamp || 0
+    }))
     chat.sessionId = sessionId
   } catch (error) {
-    console.error('Failed to load session history:', error)
+    console.error('Failed to load chat log:', error)
+    // Fallback: try session history if chat-log fails
+    try {
+      const historyResponse = await openclawService.getSessionHistory(agentId, sessionId)
+      let historyData = null
+      try {
+        historyData = JSON.parse(`[${historyResponse.data.replaceAll('\n',',')}{}]`)
+      } catch (e) {
+        console.error('Failed to parse history:', e)
+      }
+      chat.messages = [];
+      if (historyData) {
+        historyData.filter((n)=>n.type=='message').forEach((n,i)=>{
+          const text = n.message.content.filter((n)=>n.type=='text')[0]?.text;
+          if(!!text){
+            chat.messages.push({
+              "text": text,
+              "time": new Date(n.message.timestamp).toLocaleTimeString(),
+              "sender": n.message.role,
+              "isSent": n.message.role=='user',
+              "timestamp": n.message.timestamp
+            })
+          }
+        })
+      }
+      chat.sessionId = sessionId
+    } catch (fallbackError) {
+      console.error('Failed to load session history fallback:', fallbackError)
+    }
   }
 }
 
 const switchOpenclawSession = async (chat, sessionId) => {
   try {
-    const response = await openclawService.getSessionHistory(chat.agentId, sessionId)
-    let data = null
-    try {
-      data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
-    } catch (e) {
-      console.error('Failed to parse history:', e)
-    }
-    chat.messages = data?.messages || []
+    // Load chat history from chat_log database
+    const response = await openclawService.getChatLog(chat.agentId)
+    const messages = Array.isArray(response.data) ? response.data : []
+    chat.messages = messages.map(msg => ({
+      text: msg.text || '',
+      time: msg.time || '',
+      sender: msg.sender || '',
+      isSent: msg.isSent || false,
+      timestamp: msg.timestamp || 0
+    }))
     chat.sessionId = sessionId
   } catch (error) {
-    console.error('Failed to fetch message history:', error)
+    console.error('Failed to fetch chat log:', error)
+    // Fallback to session history
+    try {
+      const response = await openclawService.getSessionHistory(chat.agentId, sessionId)
+      let data = null
+      try {
+        data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
+      } catch (e) {
+        console.error('Failed to parse history:', e)
+      }
+      chat.messages = data?.messages || []
+      chat.sessionId = sessionId
+    } catch (fallbackError) {
+      console.error('Failed to fetch session history fallback:', fallbackError)
+    }
   }
 }
 
@@ -984,7 +1021,7 @@ const resolveEpDisplayName = (username) => {
   if (!username) return username
   // 优先从 openclawAgents 获取 identityName（人可读的名字）
   const agent = openclawAgents.value.find(a => a.id === username)
-  if (agent) return username + "/" + agent.name
+  if (agent) return username + "/" + (agent.identityName || agent.name)
   // 如果不是本地 agent，使用 mesh 用户的 name
   const ep = users.value.find(u => u.username === username)
   if (ep) return ep.username + "/" + ep.name
@@ -1260,7 +1297,7 @@ const submitToken = async () => {
   }
   
   .mobile-agent-item .openclaw-avatar {
-    background: linear-gradient(135deg, #ff6b6b, #ffa500);
+    background: linear-gradient(135deg, #cecece, #cecece);
     font-size: 18px;
   }
   

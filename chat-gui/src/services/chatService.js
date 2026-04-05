@@ -71,6 +71,10 @@ export const openclawService = {
     })
   },
 
+  getChatLog(agentId) {
+    return api.get(`/openclaw/${agentId}/chat-log`)
+  },
+
   uploadPicture(agentId, fileData, fileName) {
     return api.post(`/openclaw/agents/${agentId}/pictures?name=${encodeURIComponent(fileName)}`, fileData, {
       headers: { 'Content-Type': 'application/octet-stream' },
@@ -81,6 +85,19 @@ export const openclawService = {
   getPictureUrl(agentId, fileName) {
     const token = getToken() ? `?token=${encodeURIComponent(getToken())}` : ''
     return `/api/openclaw/agents/${agentId}/pictures/${encodeURIComponent(fileName)}${token}`
+  }
+}
+
+export const picoclawService = {
+  checkHealth() {
+    return api.get('/picoclaw/health')
+  },
+  
+  sendMessage(message, sessionId) {
+    return api.post('/picoclaw/chat', { 
+      message, 
+      session_id: sessionId 
+    })
   }
 }
 
@@ -161,10 +178,11 @@ export const chatService = {
     return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${encodeURIComponent(creator)}/${encodeURIComponent(groupId)}`, { name, members })
   },
 
-  approvePeerAutoReply(meshName, peer, agentName) {
+  approvePeerAutoReply(meshName, peer, agentName, peerAgentName) {
     return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${peer}/auto-reply`, {
       autoReply: true,
-      autoReplyAgent: agentName || 'main'
+      autoReplyAgent: agentName || 'main',
+      peerAgentName: peerAgentName || agentName || 'main'
     })
   },
 

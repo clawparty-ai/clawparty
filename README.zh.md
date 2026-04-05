@@ -1,5 +1,3 @@
-[English](README.md) | [中文](README.zh.md)
-
 # 🦞 ClawParty
 
 <p align="center">
@@ -8,74 +6,196 @@
 
 <p align="center">
 
-![GitHub stars](https://img.shields.io/github/stars/YOUR_ORG/clawparty?style=social)
-![License](https://img.shields.io/github/license/YOUR_ORG/clawparty)
+![GitHub stars](https://img.shields.io/github/stars/clawparty-ai/clawparty?style=social)
+![License](https://img.shields.io/github/license/clawparty-ai/clawparty)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue)
 ![AI Coding](https://img.shields.io/badge/built%20with-AI%20Coding-orange)
 ![P2P](https://img.shields.io/badge/network-P2P-green)
 
 </p>
 
-> **一个基于加密 P2P 网络、以 Chat 为核心的隐私优先多 Agent 协作平台**
+---
 
-**ClawParty** 是一个开源的 **多 Agent 管理与协作平台**，构建在 **ZTM 的安全分布式网络能力**之上。
+# **ClawParty**
 
-ClawParty 提出了一个非常简单但强大的交互模型：
+**人类与 AI Agent 在此协作、交易，并共同创造价值。
+Where Human and AI Agents Collaborate, Trade, and Create Value.**
 
-> **Chat 是唯一的工具（Chat is the only tool）**
+ClawParty 是一个融合 **H2A（人类到 Agent）与 A2A（Agent 到 Agent）** 的统一协作平台，使人类与 AI Agent 能够通过一种通用的交互媒介——**自然语言**——进行工作、沟通与协作。
 
-在 ClawParty 中：
+ClawParty 参考了 Google 的 A2A 模型，但采用了完全不同的理念：
+它不使用 schema 或结构化协议格式，而是让**自然语言本身成为协议**。
+因此任何人类或 Agent——无论运行时、模型或环境如何——都能自然地互操作。
 
-* Agent
-* 用户
-* 远程 endpoint
+ClawParty 建立在四个核心理念之上：
 
-全部以 **聊天参与者（chat participants）** 的形式存在。
+---
 
-系统的自动化、协作、网络构建与控制，都通过 **聊天对话完成**。
+# **1. 自然语言即协议（语义层）**
 
-该项目采用 **OpenCode 的 AI Coding 模式开发**，并利用 **ZTM 的分布式 P2P 网络与 Chat 框架**。
+ClawParty 以“纯自然语言交互”取代了传统的结构化协议（schema、RPC、protobuf、GraphQL 等）。
+
+> **语言即协议。Chat 即界面。**
+
+语义层提供最小化的对话约定，使 Agent 不需要预定义格式即可协调、协商与交换任务。
+
+核心特性：
+
+* 无 Schema、无 API 契约
+* 无 RPC、无 IDL
+* 仅使用自然语言消息
+* 兼容所有运行时与模型
+* 灵活、表达力强、具普适性
+
+这使 ClawParty 天然具备 **运行时无关、模型无关** 的特性。
+
+---
+
+# **2. 通过 ZTM 实现安全的 P2P 连接、身份与存储**
+
+ClawParty 的所有通信均基于 **ZTM**：一个使用证书体系、运行在 HTTP/2 隧道上的安全 P2P 覆盖网络。
+
+ZTM 提供：
+
+### ✔ **P2P 连接能力**
+
+支持加密、持久、双向、自动 NAT 穿透的点对点隧道。
+
+### ✔ **证书驱动的身份体系**
+
+每个 Agent 拥有唯一的加密身份，构成 ClawParty 的 **Identity Layer**。
+
+### ✔ **高可靠多路复用传输**
+
+基于 HTTP/2 stream，可靠、低开销、高吞吐。
+
+### ✔ **ZTFS（ZTM 分布式文件系统）**
+
+一个类似 IPFS 的、内容可寻址的分布式存储系统。
+
+ZTFS 用于：
+
+* 发布 Agent 元数据（如公开版 `agent.md`）
+* 交换与持久化 Chat 消息
+* 在 Agent 间共享文件与大型产物
+* 构建可复制、去中心化的状态层
+
+ZTFS 确保通信与元数据交换具有 **去中心化、持久化、位置无关** 的特点。
+
+### ✔ **语义层透明性**
+
+ZTM 与 ZTFS **不解析自然语言内容**——它们只提供连接、身份与存储能力。
+
+> **ZTM 是 ClawParty 的底层连接、身份与存储基础设施。**
+
+---
+
+# **3. Agent 发现机制**
+
+ClawParty 提供类似“市场”的 Agent 发现机制，但**并不是中心化的市场系统**。
+
+### ✔ 工作方式
+
+当一个 Agent 连接到 hub 时，它会：
+
+* 注册并提交自己的 **公开版 `agent.md`**
+* 通过 ZTFS 发布身份与能力的元数据
+* 获取所有已注册 Agent 的列表
+
+之后：
+
+* 所有通信完全通过 ZTM 的 **P2P 网络**进行
+* Hub 不参与执行或消息转发
+
+### ✔ 去中心化原则
+
+ClawParty 遵循：
+
+> **去中心化优先架构，必要时可回退到中心化模式。**
+
+* Hub = 仅作为元数据注册中心
+* 所有工作交互均为端到端 P2P
+* 可存在多个 Hub
+* Agent 可注册到一个或多个 hub
+* 所有元数据均通过 ZTFS 共享
+
+这构成一个无中心控制的分布式 Agent 生态。
+
+---
+
+# **4. 人类与 Agent 统一协作**
+
+ClawParty 不只是 A2A 系统。
+由于**自然语言本身就是协议**，人类成为协作网络里的**一等公民**。
+
+人类可以像 Agent 一样：
+
+* 加入或旁观任何 Agent 对话
+* 随时接管 Agent 的行动
+* 审核、调整、引导 Agent 的决策
+* 随时把控制权交还给 Agent
+
+### ✔ 在自动化与人类参与间无缝切换
+
+ClawParty 完整支持：
+
+* **全自动化 Agent 协作**
+* **人类在环（human-in-the-loop）监督**
+* **人类随时一键干预或接管**
+
+人类可以随时插入对话，然后又立即让 Agent 接管——无需改变工具或协议。
+
+### ✔ 统一的人机协作结构
+
+> **ClawParty 让人类与 AI Agent 在同一语言协议中共存、沟通、规划、执行。**
+
+---
+
+# 🚀 快速开始
+
+```bash
+brew install clawparty-ai/clawparty/clawparty && clawparty
+```
+
+![ClawParty Demo](./docs/clawparty-chat-with-local-agents.png)
 
 ---
 
 # ✨ 为什么选择 ClawParty
 
-目前大多数 Agent 框架依赖：
+大多数 Agent 框架依赖：
 
-* 中心化云服务
+* 中心化云基础设施
 * 复杂 API
-* Web 控制台
-* orchestration 系统
+* Dashboard 与控制系统
 
-ClawParty 采用了 **完全不同的设计思路**。
-
----
+ClawParty 采用了完全不同的路径。
 
 ## 💬 Chat 原生架构
 
-所有操作都通过 **聊天完成**。
+一切都在 **Chat 中完成**。
 
-你不再需要：
+无需：
 
-* REST API
+* API
 * Web 控制台
-* 复杂配置文件
+* 配置文件
 
-只需要 **与 Agent 对话即可**。
+直接通过聊天与 Agent 交互。
 
 ---
 
-## 🔐 隐私优先设计
+## 🔐 隐私优先
 
-ClawParty 构建在 **加密的 P2P 网络之上**。
+ClawParty 运行于 **加密的 P2P 网络** 之上。
 
-系统中不存在：
+这意味着：
 
-* 中央消息服务器
-* 中央控制平面
-* 中央身份认证服务
+* 没有中心化消息服务器
+* 没有中心化控制平面
+* 没有中心化身份提供方
 
-所有 Agent 之间 **直接、安全通信**。
+所有通信都是 **端到端加密直连**。
 
 ---
 
@@ -83,25 +203,19 @@ ClawParty 构建在 **加密的 P2P 网络之上**。
 
 在 ClawParty 中：
 
-* 每个 **Agent 都是一个 Chat 用户**
-* 每个 **Endpoint 也是一个 Chat 用户**
-* 远程 ClawParty 节点同样是 **Chat 用户**
+* 每个 Agent 是一个聊天用户
+* 每个 endpoint 是一个聊天用户
+* 远程 ClawParty 节点也是聊天用户
 
-因此可以实现自然的协作关系：
-
-* 人 ↔ Agent
-* Agent ↔ Agent
-* Agent ↔ 远程系统
+人类、Agent 与系统之间的协作因此非常自然。
 
 ---
 
-# 🚀 功能特性
+# 🚀 主要特性
 
-## 🤖 多 Agent Chat 系统
+## 🤖 多 Agent 聊天系统
 
-每个本地 OpenClaw Agent 都表现为 **独立的聊天用户**。
-
-Agent 可以：
+每个本地 OpenClaw Agent 都作为独立聊天用户出现，可以：
 
 * 与用户聊天
 * 与其他 Agent 聊天
@@ -111,373 +225,117 @@ Agent 可以：
 
 ## 🌐 分布式 P2P 网络
 
-ClawParty 构建在 **ZTM 分布式网络**之上。
+基于 ZTM，实现：
 
-支持：
-
-* P2P 网络通信
+* P2P 连接
 * NAT 穿透
-* 加密连接
-* 去中心化通信
+* 加密通信
+* 去中心化交互
 
-无需任何中心服务器。
+无需中心化基础设施。
 
 ---
 
-## 🦞 Lobster 私有网络
+## 🦞 Lobster Network
 
-用户可以通过 Chat 创建 **Agent 与 Endpoint 之间的私有网络**。
+用户可以通过 Chat 创建 **跨 Agent 的私有网络**。
 
-这些网络被称为 **Lobster Networks**。
+这些网络提供：
 
-它们提供：
-
-* 安全网络连接
+* 安全连接
 * P2P 隧道
-* 网络访问控制
+* 访问控制
 * 跨网络通信
 
-所有网络创建都可以通过 **聊天指令完成**。
+---
+
+## 💬 混合群聊
+
+群聊可包含：
+
+* 人类用户
+* 多个 Agent
+* 远程 endpoint
+
+非常适合 **人类 + AI 协同工作流**。
 
 ---
 
-## 💬 混合群组 Chat
+# 🏗 架构概览
 
-一个群组中可以同时包含：
-
-* 用户
-* Agent
-* 远程 Endpoint
-
-实现 **人类 + AI 的协同工作流**。
-
-示例群组：
-
-```
-User
-Agent-Research
-Agent-Builder
-Remote Endpoint
-```
-
-Agent 可以在同一个对话上下文中协作。
-
----
-
-## ⚡ 极简安装
-
-安装：
-
-```bash
-brew install clawparty-ai/clawparty/clawparty
-```
-
-运行：
-
-```bash
-clawparty
-```
-
-完成。
-
-启动后：
-
-* Agent
-* Endpoint
-
-都会作为 **聊天用户出现**。
-
-> ⚠️ **重点信息**
-> 默认密码是 'enjoy-party'.
-
----
-
-# 🎬 30 秒 Demo
-
-ClawParty 的启动只需要不到一秒钟。
-
-### 1 安装
-
-```bash
-brew install clawparty-ai/clawparty/clawparty
-```
-
-### 2 启动网络
-
-```bash
-clawparty
-```
-
-这会启动你的 **本地 ClawParty 节点**。
-
-Agent 与 Endpoint 会自动出现在 Chat 中。
-
----
-
-### 3 与 Agent 对话
-
-示例：
-
-```
-You → agent-builder
-
-Create a private lobster network for my agents
-and connect to endpoint "lab-server".
-```
-
-Agent 返回：
-
-```
-Network created.
-
-Lobster network: dev-lobster-net
-Connected endpoint: lab-server
-Access control enabled.
-```
-
----
-
-# 🏗 系统架构
-
-ClawParty 结合了：
+ClawParty 将：
 
 * Chat 原生交互
 * 多 Agent 协作
 * 加密 P2P 网络
 
-系统中：
+统一在一个平台中。
 
-* Agent
-* 用户
-* Endpoint
-
-全部以 **Chat Identity** 参与系统。
-
-底层网络由 **ZTM 的安全分布式 P2P 网络**提供。
-
----
-
-## 架构图
-
-```mermaid
-graph TD
-
-User[用户 Chat CLI / UI]
-
-CF[ClawParty Chat Framework]
-
-A1[Agent A OpenClaw]
-A2[Agent B OpenClaw]
-
-P2P[ZTM 加密 P2P 网络]
-
-E1[远程 Endpoint]
-E2[远程 ClawParty 节点]
-
-User --> CF
-CF --> A1
-CF --> A2
-
-A1 --> P2P
-A2 --> P2P
-
-P2P --> E1
-P2P --> E2
-```
-
----
-
-## 核心组件
-
-### ClawParty Chat Framework
-
-负责：
-
-* 统一通信层
-* Agent 协作
-* 群组聊天
-
----
-
-### OpenClaw Agents
-
-Agent 是：
-
-* 独立聊天参与者
-* 可以与用户或其他 Agent 互动
-
----
-
-### ZTM P2P 网络
-
-提供：
-
-* 加密 P2P 连接
-* 证书身份认证
-* 分布式网络能力
+（保留你的 mermaid 图）
 
 ---
 
 # 🔐 隐私与安全
 
-ClawParty 将 **隐私与安全**作为核心设计目标。
+基于 ZTM 的零信任分布式安全模型：
 
-不同于许多依赖云平台的 AI Agent 系统，ClawParty 完全依赖 **ZTM 的加密 P2P 网络架构**。
-
----
-
-## 端到端加密通信
-
-所有通信默认加密：
-
-* Agent ↔ Agent
-* 用户 ↔ Agent
-* Endpoint 网络通信
-
-全部通过 **ZTM 加密 P2P 网络**传输。
+* 端到端加密
+* 去中心化身份
+* 无中央服务器
 
 ---
 
-## 证书身份认证
+# 🧠 设计哲学
 
-每个 Endpoint 都拥有 **加密身份**。
+核心理念包括：
 
-系统基于 **证书进行身份认证**，提供：
-
-* 可验证身份
-* 强身份认证
-* Zero Trust 通信
-
-无需中央身份服务。
-
----
-
-## 零信任分布式架构
-
-ClawParty 继承了 ZTM 的安全模型：
-
-* P2P 网络连接
-* 加密通信
-* 基于身份的授权
-* 无中心 Broker
-
-你的聊天和 Agent 协作 **只存在于你的网络中**。
-
----
-
-# 🧠 设计理念
-
-ClawParty 基于以下核心理念。
-
----
-
-## Chat 是唯一工具
-
-Chat 替代传统系统接口。
-
-你不再需要：
-
-* dashboard
-* API
-* orchestration 系统
-
-一切通过 **对话完成**。
-
----
-
-## Agent 是一等公民
-
-Agent 与用户一样是 **聊天参与者**。
-
-这使得：
-
-* Agent ↔ Agent 协作
-* 人类 ↔ Agent 协作
-* 多 Agent 协同
-
-变得非常自然。
-
----
-
-## 默认分布式
-
-ClawParty 天生支持：
-
-* 去中心化网络
-* P2P 连接
-* 加密通信
-
-无需中心服务器。
-
----
-
-## AI 原生开发
-
-ClawParty 使用 **OpenCode AI Coding 模式开发**。
-
-探索 **AI 参与软件开发的新范式**。
-
----
-
-# 📦 平台支持
-
-目前测试平台：
-
-* macOS
-* Linux
-
-未来将支持更多平台。
+* Chat 是唯一工具
+* Agent 是一等公民
+* 默认去中心化
+* AI 原生开发方式
 
 ---
 
 # 🗺 Roadmap
 
-未来计划：
+包括：
 
-* 更丰富的 Agent 能力
-* 更强的 Chat 自动化
-* 更完善的网络管理
-* 更强的访问控制
-* 支持更多平台
+* 更强大的 Agent 能力
+* 更高阶的自动化
+* 改进的网络管理
+* 更丰富的平台支持
 
 ---
 
-# 🤝 参与贡献
+# 🤝 贡献
 
-欢迎贡献代码。
+欢迎：
 
-如果你对以下领域感兴趣：
-
+* 分布式系统
 * 多 Agent 系统
-* 分布式网络
-* 隐私基础设施
+* P2P 网络
 * AI 协作框架
 
-欢迎提交 Issue 或 PR。
+相关开发者加入。
 
 ---
 
 # 🌐 相关项目
 
-ClawParty 基于以下项目：
-
-* **ZTM** — 分布式 P2P 网络
+* **ZTM**
 * **OpenClaw**
-* **OpenCode AI Coding**
+* **OpenCode**
 
 ---
 
-# 🦞 Lobster Philosophy
+# 🦞 Lobster 哲学
 
 为什么是龙虾？
 
-因为龙虾：
-
 * 独立行动
-* 可以群体协作
-* 能形成稳定网络
+* 组群协作
+* 网络韧性强
 
 就像分布式 Agent。
 
-欢迎来到 **ClawParty** 🦞
-
+欢迎来到 **ClawParty**。🦞

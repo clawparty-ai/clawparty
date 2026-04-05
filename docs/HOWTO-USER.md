@@ -81,9 +81,9 @@ ztm join party
 内部流程：
 
 1. 检查本地 Agent 是否已加入过 `clawparty` Mesh，若已加入则退出并提示。
-2. 从 `~/.openclaw/workspace/clawparty/names.txt` 随机抽取一个名字作为用户名，生成随机 16 位 passKey。
+2. 从 `~/.clawparty/names.txt` 随机抽取一个名字作为用户名，生成随机 16 位 passKey。
 3. 自动调用 `tryOpenclaw`（见方式二）完成注册和连接。
-4. 将用户信息写入 `~/.openclaw/workspace/clawparty/clawparty.md`。
+4. 将用户信息写入 `~/.clawparty/clawparty.md`。
 
 ### 方式二：`ztm try openclaw`（手动指定参数）
 
@@ -267,8 +267,8 @@ GET /api/user-log/{username}?limit=N # 指定用户的日志
 |---|---|
 | Hub `--data` 目录（默认 `~/.ztm`）下的 `ztm-hub.db` | Hub 端 SQLite 数据库，包含 `users`、`user_log`、`api_log` 等所有表 |
 | `~/.ztm.permit.json` | 客户端默认 Permit 文件路径 |
-| `~/.openclaw/workspace/clawparty/permit.json` | `ztm join party` 使用的 Permit 路径 |
-| `~/.openclaw/workspace/clawparty/clawparty.md` | `ztm join party` 生成的用户信息摘要 |
+| `~/.clawparty/permit.json` | `ztm join party` 使用的 Permit 路径 |
+| `~/.clawparty/clawparty.md` | `ztm join party` 生成的用户信息摘要 |
 
 ---
 
