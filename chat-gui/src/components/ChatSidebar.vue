@@ -82,7 +82,7 @@
 
     <!-- Right: member list panel -->
     <aside class="sidebar-panel">
-      <div class="panel-header">
+      <div class="panel-header" :class="{ 'agents-header': activeOrg === 'agents' }">
         <span class="panel-title">{{
           activeOrg === 'agents' ? '我的助手' :
           activeOrg === 'groups' ? 'Group Chats' :
@@ -745,6 +745,11 @@ const handleCreateGroup = async () => {
   flex-shrink: 0;
 }
 
+.agents-header {
+  background: rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
 .panel-title {
   flex: 1;
   color: #333;
@@ -1108,7 +1113,7 @@ const handleCreateGroup = async () => {
 
 .panel-item:hover { background: rgba(255, 255, 255, 0.1); }
 
-.panel-item.active { background: rgba(255, 255, 255, 0.15); }
+.panel-item.active { background: rgba(0, 0, 0, 0.1); }
 
 .item-avatar {
   width: 28px;
