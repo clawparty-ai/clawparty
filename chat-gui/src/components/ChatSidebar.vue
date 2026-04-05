@@ -602,7 +602,7 @@ const handleJoinParty = async () => {
       closeJoinParty()
     }, 1500)
   } catch (err) {
-    const msg = err?.response?.data?.message || err?.message || 'Failed to join party'
+    const msg = err?.response?.data?.message || err?.message || `${err?.status}${err?.statusText}` || 'Failed to join party'
     joinPartyError.value = msg
   } finally {
     joinPartyLoading.value = false
