@@ -1,3 +1,4 @@
+use crate::agent::AgentManager;
 use crate::api::ApiClient;
 use crate::models::*;
 use std::fs::OpenOptions;
@@ -54,6 +55,7 @@ pub struct AppState {
     pub sidebar_scroll: ScrollViewState,
     pub messages_scroll: ScrollViewState,
     pub logs_scroll: ScrollViewState,
+    pub agent_mgr: Option<AgentManager>,
 }
 
 impl AppState {
@@ -91,6 +93,7 @@ impl AppState {
             sidebar_scroll: ScrollViewState::new(),
             messages_scroll: ScrollViewState::new(),
             logs_scroll: ScrollViewState::new(),
+            agent_mgr: None,
         }
     }
 

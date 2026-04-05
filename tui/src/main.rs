@@ -101,8 +101,8 @@ async fn main() -> anyhow::Result<()> {
         } else {
             state.add_log("ERROR", "Agent failed to start within timeout");
         }
-        // Keep agent_mgr alive
-        std::mem::forget(agent_mgr);
+        // Store agent manager in state for cleanup on exit
+        state.agent_mgr = Some(agent_mgr);
     }
 
     // Fetch initial data if agent is running
@@ -371,7 +371,17 @@ async fn main() -> anyhow::Result<()> {
 
                             // Handle #exit command
                             if text.trim() == "#exit" {
-                                drop(s);
+                                s.add_log("INFO", "Exiting...");
+                                // Stop the agent before exiting
+                                if let Some(mut mgr) = s.agent_mgr.take() {
+                                    s.add_log("INFO", "Stopping agent process...");
+                                    mgr.stop();
+                                    drop(s);
+                                    drop(mgr);
+                                } else {
+                                    s.add_log("INFO", "No agent process to stop (agent was already running)");
+                                    drop(s);
+                                }
                                 disable_raw_mode()?;
                                 io::stdout().execute(LeaveAlternateScreen)?;
                                 return Ok(());
@@ -644,6 +654,16 @@ async fn main() -> anyhow::Result<()> {
 
     disable_raw_mode()?;
     io::stdout().execute(LeaveAlternateScreen)?;
+
+    // Stop the agent before exiting
+    if let Ok(mut s) = state.try_write() {
+        if let Some(mut mgr) = s.agent_mgr.take() {
+            eprintln!("TUI: stopping agent process");
+            mgr.stop();
+            drop(s);
+            drop(mgr);
+        }
+    }
 
     Ok(())
 }
