@@ -88,6 +88,10 @@
           activeOrg === 'groups' ? 'Group Chats' :
           activeOrg
         }}</span>
+        <div v-if="activeOrg === 'agents'" class="panel-header-actions">
+          <button class="add-agent-btn" @click="$emit('openLocalTemplates')" title="添加本地 Agent">+A</button>
+          <button class="add-agent-btn shared-btn" @click="$emit('openSharedTemplates')" title="添加共享 Agent">#A</button>
+        </div>
       </div>
 
     <!-- Join Party modal -->
@@ -324,7 +328,7 @@
             v-for="agent in openclawAgents"
             :key="agent.id"
             class="panel-item"
-            :class="{ active: getChatIndex(agent.id, true) === activeChat }"
+            :class="{ active: activeOpenclawAgent?.agentId === agent.id }"
             @click="$emit('selectOpenclaw', agent)"
           >
             <div class="item-avatar openclaw-avatar">{{ agent.emoji }}</div>
@@ -397,6 +401,7 @@ const createGroupChat = inject('createGroupChat')
 const renameGroupChat = inject('renameGroupChat')
 const updateGroupMembers = inject('updateGroupMembers')
 const currentMeshAgentUsername = inject('currentMeshAgentUsername')
+const activeOpenclawAgent = inject('activeOpenclawAgent')
 const joinParty = inject('joinParty')
 const resolveEpDisplayName = inject('resolveEpDisplayName')
 const localOpenclawAvailable = inject('localOpenclawAvailable')
@@ -495,7 +500,7 @@ const handleUpdateMembers = async () => {
 // Active org
 const activeOrg = ref('agents')
 
-const emit = defineEmits(['select', 'selectOpenclaw', 'changeOrg'])
+const emit = defineEmits(['select', 'selectOpenclaw', 'changeOrg', 'openLocalTemplates', 'openSharedTemplates'])
 
 watch(currentMesh, (val) => {
   if (val && activeOrg.value !== 'agents') activeOrg.value = val
@@ -756,6 +761,33 @@ const handleCreateGroup = async () => {
   font-size: 15px;
   font-weight: 700;
   text-transform: capitalize;
+}
+
+.panel-header-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.add-agent-btn {
+  padding: 3px 8px;
+  background: var(--slack-green);
+  border: none;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  font-family: monospace;
+}
+
+.add-agent-btn:hover {
+  opacity: 0.85;
+}
+
+.shared-btn {
+  background: #4095fe;
 }
 
 /* ── Group Chats org icon accent ── */
