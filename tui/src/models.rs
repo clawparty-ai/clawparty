@@ -57,6 +57,14 @@ pub struct MessageBody {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NestedMessage {
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub sender: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     #[serde(default)]
     pub time: Option<String>,
@@ -69,6 +77,36 @@ pub struct Message {
     #[serde(default)]
     #[serde(rename = "isSent")]
     pub is_sent: Option<bool>,
+    // For group/peer messages API which has nested message object
+    #[serde(default)]
+    pub message: Option<NestedMessage>,
+}
+
+impl Message {
+    pub fn get_text(&self) -> &str {
+        // First try nested message.text, then fallback to flat text field
+        if let Some(ref nested) = self.message {
+            if let Some(ref text) = nested.text {
+                return text.as_str();
+            }
+        }
+        self.text.as_deref().unwrap_or("")
+    }
+
+    pub fn get_sender(&self) -> &str {
+        // First try nested message.sender, then fallback to flat sender field
+        if let Some(ref nested) = self.message {
+            if let Some(ref sender) = nested.sender {
+                return sender.as_str();
+            }
+        }
+        self.sender.as_deref().unwrap_or("Unknown")
+    }
+
+    pub fn get_time(&self) -> &str {
+        // If time is a number (timestamp), format it; otherwise return as-is
+        self.time.as_deref().unwrap_or("")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

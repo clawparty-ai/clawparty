@@ -13,6 +13,7 @@ pub enum ActivePanel {
     #[allow(dead_code)]
     Messages,
     Input,
+    Logs,
 }
 
 #[allow(dead_code)]
@@ -219,11 +220,9 @@ impl AppState {
             "groups" => {
                 if item.index < self.group_chats.len() {
                     let group = &self.group_chats[item.index];
-                    if let Some(orig_idx) = self
-                        .chats
-                        .iter()
-                        .position(|c| c.is_group && c.group == group.group)
-                    {
+                    if let Some(orig_idx) = self.chats.iter().position(|c| {
+                        c.is_group && c.group == group.group && c.creator == group.creator
+                    }) {
                         self.current_chat = Some(orig_idx);
                         self.current_openclaw_agent = None;
                         self.current_peer = None;
