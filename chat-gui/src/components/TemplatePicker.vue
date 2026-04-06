@@ -17,6 +17,8 @@ const installing = ref({})
 const error = ref('')
 const editingAgent = ref(null)
 const editorContent = ref('')
+const agentName = ref('')
+const showDuplicateConfirm = ref(false)
 
 watch(() => props.show, async (val) => {
   if (val) {
@@ -59,18 +61,24 @@ const handleInstall = async (agent) => {
   installing.value[agent.slug] = true
   try {
     const response = props.source === 'local'
-      ? await templateService.installLocalTemplate(selectedIndustry.value.slug, agent.slug, editorContent.value)
-      : await templateService.installSharedTemplate(selectedIndustry.value.slug, agent.slug, editorContent.value)
+      ? await templateService.installLocalTemplate(selectedIndustry.value.slug, agent.slug, editorContent.value, agentName.value)
+      : await templateService.installSharedTemplate(selectedIndustry.value.slug, agent.slug, editorContent.value, agentName.value)
     if (response.data.success) {
       emit('installed', response.data)
       editingAgent.value = null
       editorContent.value = ''
+      agentName.value = ''
     } else {
       error.value = response.data.message || 'Install failed'
     }
   } catch (e) {
     console.error('Install failed:', e)
-    error.value = 'Install failed'
+    const serverMessage = e?.response?.data?.message
+    if (serverMessage === 'Agent already exists') {
+      showDuplicateConfirm.value = true
+    } else {
+      error.value = serverMessage || 'Install failed'
+    }
   } finally {
     installing.value[agent.slug] = false
   }
@@ -79,15 +87,28 @@ const handleInstall = async (agent) => {
 const handleSelect = (agent) => {
   editingAgent.value = agent
   editorContent.value = agent.systemPrompt || ''
+  agentName.value = agent.name || ''
 }
 
 const handleCancelEdit = () => {
   editingAgent.value = null
   editorContent.value = ''
+  agentName.value = ''
 }
 
 const handleClose = () => {
   emit('close')
+}
+
+const handleCancelDuplicate = () => {
+  showDuplicateConfirm.value = false
+  editingAgent.value = null
+  editorContent.value = ''
+  agentName.value = ''
+}
+
+const handleBackToEdit = () => {
+  showDuplicateConfirm.value = false
 }
 </script>
 
@@ -153,6 +174,14 @@ const handleClose = () => {
               <span class="editor-title">{{ editingAgent.name }} - SOUL.md</span>
               <button class="editor-close" @click="handleCancelEdit">✕</button>
             </div>
+            <div class="agent-name-input">
+              <label>Agent Name</label>
+              <input
+                v-model="agentName"
+                type="text"
+                placeholder="Enter agent name..."
+              />
+            </div>
             <textarea
               v-model="editorContent"
               class="editor-textarea"
@@ -168,6 +197,17 @@ const handleClose = () => {
               >
                 {{ installing[editingAgent.slug] ? '安装中...' : '安装' }}
               </button>
+            </div>
+          </div>
+
+          <!-- Duplicate Agent Confirm Dialog -->
+          <div v-if="showDuplicateConfirm" class="confirm-dialog">
+            <div class="confirm-content">
+              <p>已经有同名 agent 安装，是否用新的名字安装新的 agent？</p>
+              <div class="confirm-actions">
+                <button class="cancel-btn" @click="handleCancelDuplicate">不再安装</button>
+                <button class="confirm-btn" @click="handleBackToEdit">返回并修改名字</button>
+              </div>
             </div>
           </div>
 
@@ -471,6 +511,31 @@ const handleClose = () => {
   color: #333;
 }
 
+.agent-name-input {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.agent-name-input label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+}
+
+.agent-name-input input {
+  padding: 8px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.agent-name-input input:focus {
+  outline: none;
+  border-color: #4095fe;
+}
+
 .editor-textarea {
   flex: 1;
   width: 100%;
@@ -531,5 +596,35 @@ const handleClose = () => {
 .confirm-btn.installing {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.confirm-dialog {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.confirm-content {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 400px;
+  text-align: center;
+}
+
+.confirm-content p {
+  margin: 0 0 20px;
+  font-size: 14px;
+  color: #333;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
 }
 </style>

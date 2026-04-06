@@ -71,13 +71,26 @@ function open(pathname) {
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS openclaws (
-      name    TEXT PRIMARY KEY,
-      type    TEXT NOT NULL DEFAULT 'openclaw',
-      api_url TEXT NOT NULL,
-      token   TEXT NOT NULL DEFAULT 'join-party',
-      soul_content TEXT
+      agent_name    TEXT PRIMARY KEY,
+      template_name TEXT NOT NULL,
+      type          TEXT NOT NULL DEFAULT 'openclaw',
+      api_url       TEXT NOT NULL,
+      token         TEXT NOT NULL DEFAULT 'join-party',
+      soul_content  TEXT
     )
   `)
+
+  // Migration: add agent_name and template_name columns if they don't exist
+  try {
+    db.exec('ALTER TABLE openclaws ADD COLUMN agent_name TEXT')
+  } catch {}
+  try {
+    db.exec('ALTER TABLE openclaws ADD COLUMN template_name TEXT')
+  } catch {}
+  // Migrate existing data: copy name to agent_name and template_name
+  try {
+    db.exec('UPDATE openclaws SET agent_name = name, template_name = name WHERE agent_name IS NULL')
+  } catch {}
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS chat_peer (
@@ -527,21 +540,22 @@ function logApi(clientIp, api, reqHeaders, reqBody, resHeaders, resBody) {
 }
 
 function allOpenclaws() {
-  return db.sql('SELECT name, type, api_url, token, soul_content FROM openclaws').exec()
+  return db.sql('SELECT agent_name, template_name, type, api_url, token, soul_content FROM openclaws').exec()
 }
 
-function setOpenclaw(name, openclaw) {
+function setOpenclaw(agentName, templateName, openclaw) {
   var type = openclaw?.type || 'openclaw'
   var apiURL = openclaw?.api_url || ''
   var token = openclaw?.token || 'join-party'
   var soulContent = openclaw?.soul_content || ''
 
-  db.sql('INSERT OR REPLACE INTO openclaws(name, type, api_url, token, soul_content) VALUES(?, ?, ?, ?, ?)')
-    .bind(1, name)
-    .bind(2, type)
-    .bind(3, apiURL)
-    .bind(4, token)
-    .bind(5, soulContent)
+  db.sql('INSERT OR REPLACE INTO openclaws(agent_name, template_name, type, api_url, token, soul_content) VALUES(?, ?, ?, ?, ?, ?)')
+    .bind(1, agentName)
+    .bind(2, templateName)
+    .bind(3, type)
+    .bind(4, apiURL)
+    .bind(5, token)
+    .bind(6, soulContent)
     .exec()
 }
 

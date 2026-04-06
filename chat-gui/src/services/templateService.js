@@ -11,15 +11,17 @@ export const templateService = {
     return api.get('/agent-templates/shared')
   },
 
-  installLocalTemplate(industry, agent, soulContent = '') {
+  installLocalTemplate(industry, agent, soulContent = '', agentName = '') {
     return api.post(`/agent-templates/local/${encodeURIComponent(industry)}/${encodeURIComponent(agent)}/install`, {
       soulContent,
+      agentName,
     })
   },
 
-  installSharedTemplate(industry, agent, soulContent = '') {
+  installSharedTemplate(industry, agent, soulContent = '', agentName = '') {
     return api.post(`/agent-templates/shared/${encodeURIComponent(industry)}/${encodeURIComponent(agent)}/install`, {
       soulContent,
+      agentName,
     })
   },
 }

@@ -828,14 +828,15 @@ function main(listen, apiToken, noAuth) {
           return response(400, { status: 400, message: 'api_url is required' })
         }
 
-        db.setOpenclaw(name, {
+        db.setOpenclaw(name, name, {
           type: body?.type || 'openclaw',
           api_url: apiURL,
           token: body?.token || 'join-party',
         })
 
         return response(201, {
-          name,
+          agent_name: name,
+          template_name: name,
           type: body?.type || 'openclaw',
           api_url: apiURL,
           token: body?.token || 'join-party',
@@ -1149,8 +1150,9 @@ function main(listen, apiToken, noAuth) {
         var json = null
         try { json = JSON.parse(body) } catch {}
         var soulContent = json?.soulContent || ''
-        console.log('[DEBUG install] local: industry=', industry, ', agent=', agent, ', soulContent len=', soulContent.length)
-        var result = api.installLocalTemplate(industry, agent, soulContent)
+        var agentName = json?.agentName || ''
+        console.log('[DEBUG install] local: industry=', industry, ', agent=', agent, ', agentName=', agentName)
+        var result = api.installLocalTemplate(industry, agent, soulContent, agentName)
         return response(result.success ? 200 : 400, result)
       },
     },
@@ -1163,7 +1165,8 @@ function main(listen, apiToken, noAuth) {
         var json = null
         try { json = JSON.parse(body) } catch {}
         var soulContent = json?.soulContent || ''
-        var result = api.installSharedTemplate(industry, agent, soulContent)
+        var agentName = json?.agentName || ''
+        var result = api.installSharedTemplate(industry, agent, soulContent, agentName)
         return response(result.success ? 200 : 400, result)
       },
     },
