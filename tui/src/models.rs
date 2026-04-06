@@ -1,4 +1,44 @@
-use serde::{Deserialize, Serialize};
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize};
+
+#[derive(Debug, Clone, Serialize)]
+pub enum TimeValue {
+    String(String),
+    Number(u64),
+}
+
+impl<'de> Deserialize<'de> for TimeValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TimeValueVisitor;
+
+        impl<'de> de::Visitor<'de> for TimeValueVisitor {
+            type Value = TimeValue;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string or a number")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<TimeValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(TimeValue::String(value.to_owned()))
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<TimeValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(TimeValue::Number(value))
+            }
+        }
+
+        deserializer.deserialize_any(TimeValueVisitor)
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Mesh {
@@ -67,7 +107,7 @@ pub struct NestedMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     #[serde(default)]
-    pub time: Option<String>,
+    pub time: Option<TimeValue>,
     #[serde(default)]
     pub sender: Option<String>,
     #[serde(default)]
@@ -103,9 +143,18 @@ impl Message {
         self.sender.as_deref().unwrap_or("Unknown")
     }
 
-    pub fn get_time(&self) -> &str {
-        // If time is a number (timestamp), format it; otherwise return as-is
-        self.time.as_deref().unwrap_or("")
+    pub fn get_time(&self) -> String {
+        // Handle both string and number time formats
+        match &self.time {
+            Some(TimeValue::String(s)) => s.clone(),
+            Some(TimeValue::Number(n)) => {
+                // Convert timestamp to HH:MM format
+                let d = std::time::UNIX_EPOCH + std::time::Duration::from_millis(*n);
+                let datetime: chrono::DateTime<chrono::Local> = d.into();
+                datetime.format("%H:%M").to_string()
+            }
+            None => String::new(),
+        }
     }
 }
 
