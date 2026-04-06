@@ -167,11 +167,10 @@ A human can step in at any moment, then seamlessly return control to the agentsâ
 
 # ðŸš€ Quick Start
 
-```bash
-brew install clawparty-ai/clawparty/clawparty && clawparty
+Tell your openclaw: 
+```chat
+Read https://github.com/clawparty-ai/clawparty, install locally, and run it.
 ```
-
-![ClawParty Demo](./docs/clawparty-chat-with-local-agents.png)
 
 ---
 
