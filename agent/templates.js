@@ -319,6 +319,29 @@ function slugToName(slug) {
   return result
 }
 
+function extractAgentName(soulContent) {
+  if (!soulContent) return ''
+  var lines = soulContent.split('\n')
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim()
+    // Format 1: "# Agent: Name"
+    if (line.indexOf('# Agent:') === 0 || line.indexOf('# agent:') === 0) {
+      return line.substring(8).trim()
+    }
+    // Format 2: "# Name - Description" or "# Name – Description"
+    var dashIdx = line.indexOf(' - ')
+    if (dashIdx < 0) dashIdx = line.indexOf(' – ')
+    if (dashIdx > 0) {
+      var name = line.substring(1, dashIdx).trim()
+      if (name.length > 0 && name.indexOf('#') === 0) {
+        name = name.substring(1).trim()
+      }
+      return name
+    }
+  }
+  return ''
+}
+
 function translateToChinese(text) {
   if (!text) return ''
   // Skip translation if text already contains Chinese characters
@@ -465,8 +488,8 @@ function scanSharedTemplates() {
   return scanTemplatesInDir(sharedTemplateDir, 'shared')
 }
 
-function installTemplate(industry, agentSlug, source, soulContent) {
-  console.log('[DEBUG installTemplate] industry:', industry, ', agent:', agentSlug, ', source:', source, ', soulContent length:', soulContent ? soulContent.length : 0)
+function installTemplate(industry, agentSlug, source, soulContent, agentName) {
+  console.log('[DEBUG installTemplate] industry:', industry, ', agent:', agentSlug, ', source:', source, ', agentName:', agentName)
   var baseDir = source === 'shared' ? sharedTemplateDir : templateDir
   var agentPath = os.path.join(baseDir, industry, agentSlug)
   var soulZhPath = os.path.join(agentPath, 'SOUL-zh.md')
@@ -482,16 +505,16 @@ function installTemplate(industry, agentSlug, source, soulContent) {
   var openclaws = dbApi.allOpenclaws()
   var exists = false
   openclaws.forEach(function (oc) {
-    if (oc.name === agentSlug) exists = true
+    if (oc.agent_name === agentName) exists = true
   })
   if (exists) return { success: false, message: 'Agent already exists' }
-  dbApi.setOpenclaw(agentSlug, {
+  var name = agentName || slugToName(agentSlug)
+  dbApi.setOpenclaw(name, agentSlug, {
     type: 'openclaw',
     api_url: 'http://127.0.0.1:6789',
     token: 'join-party',
     soul_content: content,
   })
-  var name = slugToName(agentSlug)
   return {
     success: true,
     agentId: agentSlug,

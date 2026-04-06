@@ -334,12 +334,12 @@ function getSharedTemplates() {
   return templates.scanSharedTemplates()
 }
 
-function installLocalTemplate(industry, agent, soulContent) {
-  return templates.installTemplate(industry, agent, 'local', soulContent)
+function installLocalTemplate(industry, agent, soulContent, agentName) {
+  return templates.installTemplate(industry, agent, 'local', soulContent, agentName)
 }
 
-function installSharedTemplate(industry, agent, soulContent) {
-  return templates.installTemplate(industry, agent, 'shared', soulContent)
+function installSharedTemplate(industry, agent, soulContent, agentName) {
+  return templates.installTemplate(industry, agent, 'shared', soulContent, agentName)
 }
 
 export default {
