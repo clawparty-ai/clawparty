@@ -233,9 +233,9 @@ fn render_messages(frame: &mut Frame, area: Rect, state: &mut AppState) {
         ));
     } else {
         for msg in &state.messages {
-            let time = msg.time.as_deref().unwrap_or("");
-            let sender = msg.sender.as_deref().unwrap_or("Unknown");
-            let text = msg.text.as_deref().unwrap_or("");
+            let time = msg.get_time();
+            let sender = msg.get_sender();
+            let text = msg.get_text();
 
             let text_lines: Vec<&str> = text.split('\n').collect();
 
@@ -313,6 +313,13 @@ fn render_input(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 fn render_logs(frame: &mut Frame, area: Rect, state: &mut AppState) {
+    let is_focused = state.active_panel == ActivePanel::Logs;
+    let border_color = if is_focused {
+        Color::Cyan
+    } else {
+        THEME_BORDER
+    };
+
     let lines: Vec<Line> = state
         .logs
         .iter()
@@ -349,7 +356,7 @@ fn render_logs(frame: &mut Frame, area: Rect, state: &mut AppState) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(" Logs ")
-                .border_style(Style::default().fg(THEME_BORDER))
+                .border_style(Style::default().fg(border_color))
                 .style(Style::default().bg(THEME_BG)),
         );
 
@@ -360,7 +367,7 @@ fn render_logs(frame: &mut Frame, area: Rect, state: &mut AppState) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(" Logs ")
-                .border_style(Style::default().fg(THEME_BORDER))
+                .border_style(Style::default().fg(border_color))
                 .style(Style::default().bg(THEME_BG)),
         );
         frame.render_widget(paragraph, area);
@@ -379,6 +386,7 @@ fn render_statusbar(frame: &mut Frame, area: Rect, state: &AppState) {
         ActivePanel::Sidebar => "Sidebar",
         ActivePanel::Messages => "Messages",
         ActivePanel::Input => "Input",
+        ActivePanel::Logs => "Logs",
     };
 
     let mesh_info = state.current_mesh.as_deref().unwrap_or("No mesh");
@@ -387,6 +395,7 @@ fn render_statusbar(frame: &mut Frame, area: Rect, state: &AppState) {
         ActivePanel::Sidebar => "↑↓: Navigate  Tab: Switch  Enter: Select  q: Quit",
         ActivePanel::Messages => "↑↓: Scroll  PgUp/PgDn: Fast scroll  Tab: Switch",
         ActivePanel::Input => "Enter: Send  Tab: Switch  #exit: Quit  #join-party: Join",
+        ActivePanel::Logs => "↑↓: Scroll  Tab: Switch",
     };
 
     let status_line = Line::from(vec![

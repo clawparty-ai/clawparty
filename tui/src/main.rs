@@ -352,6 +352,9 @@ async fn main() -> anyhow::Result<()> {
                                 s.messages_scroll.scroll_up();
                             }
                             ActivePanel::Input => {}
+                            ActivePanel::Logs => {
+                                s.logs_scroll.scroll_up();
+                            }
                         }
                     }
                     KeyCode::Down => {
@@ -368,6 +371,9 @@ async fn main() -> anyhow::Result<()> {
                                 s.messages_scroll.scroll_down();
                             }
                             ActivePanel::Input => {}
+                            ActivePanel::Logs => {
+                                s.logs_scroll.scroll_down();
+                            }
                         }
                     }
                     KeyCode::Enter => {
@@ -621,7 +627,8 @@ async fn main() -> anyhow::Result<()> {
                         s.active_panel = match s.active_panel {
                             ActivePanel::Sidebar => ActivePanel::Messages,
                             ActivePanel::Messages => ActivePanel::Input,
-                            ActivePanel::Input => ActivePanel::Sidebar,
+                            ActivePanel::Input => ActivePanel::Logs,
+                            ActivePanel::Logs => ActivePanel::Sidebar,
                         };
                     }
                     KeyCode::Backspace | KeyCode::Delete => {
