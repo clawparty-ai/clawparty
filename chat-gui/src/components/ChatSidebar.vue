@@ -678,9 +678,17 @@ const handleDeleteAgent = async (agent) => {
   if (!confirm(`Are you sure you want to delete agent "${agent.name}"? This action cannot be undone.`)) return
   
   try {
-    // Send delete command to main agent
-    const { openclawService } = await import('../services/chatService')
-    await openclawService.sendMessage('main', `/delete agent ${agent.name}`)
+    // Find main agent and select it first
+    const mainAgent = openclawAgents.value.find(a => a.id === 'main')
+    if (mainAgent) {
+      emit('selectOpenclaw', mainAgent)
+    }
+    
+    // Wait a bit for the UI to update, then send delete command
+    setTimeout(async () => {
+      const { openclawService } = await import('../services/chatService')
+      await openclawService.sendMessage('main', `/agent delete ${agent.id}`)
+    }, 300)
   } catch (err) {
     console.error('Failed to send delete command:', err)
     alert('Failed to delete agent: ' + (err?.response?.data?.message || err?.message || 'Unknown error'))
