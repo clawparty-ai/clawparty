@@ -77,9 +77,10 @@ const handleInstallAll = async () => {
     installing.value[agent.slug] = true
     
     try {
+      // Don't pass agentName, let the system auto-generate a unique name
       const response = props.source === 'local'
-        ? await templateService.installLocalTemplate(selectedIndustry.value.slug, agent.slug, agent.systemPrompt || '', agent.name || '')
-        : await templateService.installSharedTemplate(selectedIndustry.value.slug, agent.slug, agent.systemPrompt || '', agent.name || '')
+        ? await templateService.installLocalTemplate(selectedIndustry.value.slug, agent.slug, agent.systemPrompt || '', '')
+        : await templateService.installSharedTemplate(selectedIndustry.value.slug, agent.slug, agent.systemPrompt || '', '')
       
       console.log(`[Install All] Response for ${agent.name}:`, response.data)
       
@@ -88,13 +89,19 @@ const handleInstallAll = async () => {
       } else {
         error.value = response.data.message || `Failed to install ${agent.name}`
         console.error(`[Install All] Failed: ${error.value}`)
-        break
+        // Continue with next agent instead of breaking
+        continue
       }
     } catch (e) {
       console.error(`[Install All] Error installing ${agent.name}:`, e)
       const serverMessage = e?.response?.data?.message
+      // Skip "Agent already exists" error and continue
+      if (serverMessage === 'Agent already exists') {
+        console.log(`[Install All] ${agent.name} already exists, skipping`)
+        continue
+      }
       error.value = serverMessage || `Failed to install ${agent.name}`
-      break
+      // Continue with next agent
     } finally {
       installing.value[agent.slug] = false
     }
