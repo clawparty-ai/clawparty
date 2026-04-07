@@ -1079,7 +1079,10 @@ const handleTemplateInstalled = async (data) => {
 }
 
 const installedAgentIds = computed(() => {
-  return openclawAgents.value.map(a => a.id)
+  // Include both id and name for matching
+  const ids = openclawAgents.value.map(a => a.id)
+  const names = openclawAgents.value.map(a => a.name)
+  return [...ids, ...names]
 })
 
 provide('switchMesh', switchMesh)
