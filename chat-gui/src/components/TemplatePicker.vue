@@ -71,34 +71,25 @@ const handleInstallAll = async () => {
   const notInstalledAgents = agentsWithStatus.value.filter(a => !a.installed)
   console.log(`[Install All] Starting to install ${notInstalledAgents.length} agents`)
   
-  for (let i = 0; i < notInstalledAgents.length; i++) {
-    const agent = notInstalledAgents[i]
-    console.log(`[Install All] Installing ${i + 1}/${notInstalledAgents.length}: ${agent.name}`)
-    
-    installing.value[agent.slug] = true
-    
-    try {
-      // Send message to main agent to install this agent
-      const soulContent = agent.systemPrompt || ''
-      const message = `帮我安装agent ${agent.name}，他的soul.md是：
+  // Build all messages first
+  const messages = notInstalledAgents.map(agent => ({
+    agent,
+    message: `帮我安装agent ${agent.name}，他的soul.md是：
 
-${soulContent}`
-      
+${agent.systemPrompt || ''}`
+  }))
+  
+  // Send all messages at once
+  for (const { agent, message } of messages) {
+    try {
+      console.log(`[Install All] Sending message for ${agent.name}`)
       await openclawService.sendMessage('main', message)
-      console.log(`[Install All] Sent install message for ${agent.name}`)
-      
-      // Wait a bit for the agent to process
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
     } catch (e) {
       console.error(`[Install All] Error sending message for ${agent.name}:`, e)
-      error.value = `Failed to send install message for ${agent.name}`
-    } finally {
-      installing.value[agent.slug] = false
     }
   }
   
-  console.log(`[Install All] Completed`)
+  console.log(`[Install All] All messages sent`)
   installAllLoading.value = false
 }
 
