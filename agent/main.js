@@ -959,6 +959,7 @@ function main(listen, apiToken, noAuth) {
 
         var userName = customUserName || namesList[Math.floor(Math.random() * namesList.length)]
         var epName = userName + '-lobster'
+        var meshName = 'clawparty'
 
         var passKeyChars = 'abcdefghijklmnopqrstuvwxyz'
         var passKey = ''
@@ -970,7 +971,13 @@ function main(listen, apiToken, noAuth) {
         function resolveRegUrl(url) {
           if (!url) return 'https://clawparty.flomesh.io:7779'
           if (url.startsWith(':')) return 'https://clawparty.flomesh.io' + url
-          if (url.length > 0 && !Number.isNaN(Number(url))) return 'https://clawparty.flomesh.io:' + url
+          // Check if url is a pure number (port number) without using Number.isNaN
+          var isPort = true
+          for (var i = 0; i < url.length; i++) {
+            var ch = url.charAt(i)
+            if (ch < '0' || ch > '9') { isPort = false; break }
+          }
+          if (url.length > 0 && isPort) return 'https://clawparty.flomesh.io:' + url
           if (!url.includes('://')) return 'http://' + url
           return url
         }
