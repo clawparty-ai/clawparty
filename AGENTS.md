@@ -181,6 +181,8 @@ cd chat-gui && npm run build && echo "Build successful"
 - **No regex**: PipyJS does not support `RegExp` APIs (`exec`, `match`, `test`, `replace(regex)`, `new RegExp`). Use string operations instead (`split`, `indexOf`, `charAt`, `substring`, `startsWith`, `endsWith`, `includes`).
 - **No locale methods**: PipyJS does not support `toLocaleTimeString()`, `toLocaleDateString()`, or similar locale-dependent Date methods. Format dates manually using `getHours()`, `getMinutes()`, etc. Example: `d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0')`
 - **No continue/break**: PipyJS does not support `continue` or `break` statements in loops. Use `if` blocks to wrap logic instead of `if (!condition) continue`.
+- **No arrow functions**: PipyJS does not fully support arrow functions (`=>`). Use traditional `function` declarations instead. Also avoid methods that rely on arrow functions for callbacks (e.g., `.map(x => x)`, `.filter(x => x)`, `.forEach(x => {})`). Use traditional loops or named function expressions instead.
+- **No Number.isNaN**: PipyJS does not support `Number.isNaN()`. Use a try-catch with `Number()` cast or compare with `!==` against a known NaN value.
 
 ### Comments
 - Keep comments minimal.
