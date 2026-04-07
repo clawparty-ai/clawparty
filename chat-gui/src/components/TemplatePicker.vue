@@ -68,23 +68,30 @@ const handleInstallAll = async () => {
   error.value = ''
   
   const notInstalledAgents = agentsWithStatus.value.filter(a => !a.installed)
+  console.log(`[Install All] Starting to install ${notInstalledAgents.length} agents`)
   
-  for (const agent of notInstalledAgents) {
+  for (let i = 0; i < notInstalledAgents.length; i++) {
+    const agent = notInstalledAgents[i]
+    console.log(`[Install All] Installing ${i + 1}/${notInstalledAgents.length}: ${agent.name}`)
+    
+    installing.value[agent.slug] = true
+    
     try {
-      installing.value[agent.slug] = true
-      
       const response = props.source === 'local'
         ? await templateService.installLocalTemplate(selectedIndustry.value.slug, agent.slug, agent.systemPrompt || '', agent.name || '')
         : await templateService.installSharedTemplate(selectedIndustry.value.slug, agent.slug, agent.systemPrompt || '', agent.name || '')
+      
+      console.log(`[Install All] Response for ${agent.name}:`, response.data)
       
       if (response.data.success) {
         emit('installed', response.data)
       } else {
         error.value = response.data.message || `Failed to install ${agent.name}`
+        console.error(`[Install All] Failed: ${error.value}`)
         break
       }
     } catch (e) {
-      console.error(`Failed to install ${agent.name}:`, e)
+      console.error(`[Install All] Error installing ${agent.name}:`, e)
       const serverMessage = e?.response?.data?.message
       error.value = serverMessage || `Failed to install ${agent.name}`
       break
@@ -93,6 +100,7 @@ const handleInstallAll = async () => {
     }
   }
   
+  console.log(`[Install All] Completed`)
   installAllLoading.value = false
 }
 
