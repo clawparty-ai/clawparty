@@ -67,6 +67,7 @@ const handleInstallAll = async () => {
   installAllLoading.value = true
   error.value = ''
   
+  const { openclawService } = await import('../services/chatService')
   const notInstalledAgents = agentsWithStatus.value.filter(a => !a.installed)
   console.log(`[Install All] Starting to install ${notInstalledAgents.length} agents`)
   
@@ -77,34 +78,21 @@ const handleInstallAll = async () => {
     installing.value[agent.slug] = true
     
     try {
-      // Don't pass agentName, let the system auto-generate a unique name
-      const response = props.source === 'local'
-        ? await templateService.installLocalTemplate(selectedIndustry.value.slug, agent.slug, agent.systemPrompt || '', '')
-        : await templateService.installSharedTemplate(selectedIndustry.value.slug, agent.slug, agent.systemPrompt || '', '')
+      // Send message to main agent to install this agent
+      const soulContent = agent.systemPrompt || ''
+      const message = `帮我安装agent ${agent.name}，他的soul.md是：
+
+${soulContent}`
       
-      console.log(`[Install All] Response for ${agent.name}:`, response.data)
+      await openclawService.sendMessage('main', message)
+      console.log(`[Install All] Sent install message for ${agent.name}`)
       
-      if (response.data.success) {
-        emit('installed', response.data)
-      } else {
-        const msg = response.data.message || `Failed to install ${agent.name}`
-        // Skip "already exists" and "not found" errors, continue with next
-        if (msg.includes('already exists') || msg.includes('Template not found')) {
-          console.log(`[Install All] ${agent.name}: ${msg}, skipping`)
-          continue
-        }
-        error.value = msg
-        console.error(`[Install All] Failed: ${msg}`)
-      }
+      // Wait a bit for the agent to process
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
     } catch (e) {
-      console.error(`[Install All] Error installing ${agent.name}:`, e)
-      const serverMessage = e?.response?.data?.message || e?.message
-      // Skip "already exists" and "not found" errors
-      if (serverMessage && (serverMessage.includes('already exists') || serverMessage.includes('Template not found'))) {
-        console.log(`[Install All] ${agent.name}: ${serverMessage}, skipping`)
-        continue
-      }
-      // Continue with next agent
+      console.error(`[Install All] Error sending message for ${agent.name}:`, e)
+      error.value = `Failed to send install message for ${agent.name}`
     } finally {
       installing.value[agent.slug] = false
     }
