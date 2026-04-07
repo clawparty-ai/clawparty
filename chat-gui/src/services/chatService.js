@@ -54,7 +54,19 @@ export const openclawService = {
   deleteAgent(agentId) {
     return api.del(`/openclaw/agents/${encodeURIComponent(agentId)}`)
   },
-  
+
+  getAgentWorkspaceFile(agentId, filename) {
+    return api.get(`/openclaw/agents/${encodeURIComponent(agentId)}/workspace/${encodeURIComponent(filename)}`, {
+      responseType: 'text'
+    })
+  },
+
+  saveAgentWorkspaceFile(agentId, filename, content) {
+    return api.post(`/openclaw/agents/${encodeURIComponent(agentId)}/workspace/${encodeURIComponent(filename)}`, content, {
+      headers: { 'Content-Type': 'text/plain' }
+    })
+  },
+
   sendMessage(agentId, text) {
     return api.post(`/openclaw/chat/${agentId}`, text, {
       headers: { 'Content-Type': 'text/plain' }

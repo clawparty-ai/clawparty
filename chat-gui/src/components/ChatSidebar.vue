@@ -284,6 +284,47 @@
       </div>
     </Teleport>
 
+    <!-- ISA Editor modal -->
+    <Teleport to="body">
+      <div v-if="editingFile" class="modal-backdrop" @click.self="closeEditor">
+        <div class="editor-dialog">
+          <div class="editor-header">
+            <span class="editor-title">{{ editingAgent?.name }} - {{ editingFile }}</span>
+            <div class="file-tabs">
+              <button 
+                v-for="f in isaFiles" 
+                :key="f"
+                class="file-tab"
+                :class="{ active: editingFile === f }"
+                @click="switchFile(f)"
+              >{{ f.replace('.md', '') }}</button>
+            </div>
+            <button class="editor-close" @click="closeEditor">✕</button>
+          </div>
+
+          <div v-if="loadingFile" class="editor-loading">Loading...</div>
+          <div v-else-if="fileError" class="editor-error">{{ fileError }}</div>
+          <textarea 
+            v-else 
+            v-model="fileContent" 
+            class="editor-textarea"
+            placeholder="File content..."
+          ></textarea>
+
+          <div class="editor-actions">
+            <button class="cancel-btn" @click="closeEditor">Cancel</button>
+            <button 
+              class="save-btn" 
+              :disabled="savingFile || !canSave" 
+              @click="saveFile"
+            >
+              {{ savingFile ? 'Saving...' : 'Save' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
       <div class="panel-list">
         <!-- Group Chats view — all groups across meshes -->
         <template v-if="activeOrg === 'groups'">
@@ -347,16 +388,33 @@
           >
             <div class="item-avatar openclaw-avatar">{{ agent.emoji }}</div>
             <span class="item-name">{{ agent.name }}</span>
-            <button
-              v-if="agent.id !== 'main'"
-              class="delete-agent-btn"
-              @click.stop="handleDeleteAgent(agent)"
-              title="Delete agent"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-              </svg>
-            </button>
+            <div class="agent-item-actions">
+              <button
+                class="isa-btn isa-i"
+                @click.stop="openEditor(agent, 'IDENTITY.md')"
+                title="Edit Identity"
+              >I</button>
+              <button
+                class="isa-btn isa-s"
+                @click.stop="openEditor(agent, 'SOUL.md')"
+                title="Edit Soul"
+              >S</button>
+              <button
+                class="isa-btn isa-a"
+                @click.stop="openEditor(agent, 'AGENTS.md')"
+                title="Edit Agents"
+              >A</button>
+              <button
+                v-if="agent.id !== 'main'"
+                class="delete-agent-btn"
+                @click.stop="handleDeleteAgent(agent)"
+                title="Delete agent"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                </svg>
+              </button>
+            </div>
           </div>
           <div v-if="openclawAgents.length === 0" class="panel-empty-state">
             <div class="panel-empty-state-title">No local agents</div>
@@ -698,6 +756,82 @@ const handleDeleteAgent = async (agent) => {
     console.error('Failed to send delete command:', err)
     alert('Failed to delete agent: ' + (err?.response?.data?.message || err?.message || 'Unknown error'))
   }
+}
+
+const isaFiles = ['IDENTITY.md', 'SOUL.md', 'AGENTS.md']
+const editingAgent = ref(null)
+const editingFile = ref(null)
+const fileContent = ref('')
+const fileOriginalContent = ref('')
+const loadingFile = ref(false)
+const fileError = ref('')
+const savingFile = ref(false)
+
+const canSave = computed(() => {
+  return fileContent.value !== fileOriginalContent.value && !loadingFile.value && !savingFile.value && !fileError.value
+})
+
+const openEditor = async (agent, filename) => {
+  editingAgent.value = agent
+  editingFile.value = filename
+  loadingFile.value = true
+  fileError.value = ''
+  fileContent.value = ''
+  fileOriginalContent.value = ''
+  
+  try {
+    const { openclawService } = await import('../services/chatService')
+    const response = await openclawService.getAgentWorkspaceFile(agent.id, filename)
+    fileContent.value = response.data || ''
+    fileOriginalContent.value = fileContent.value
+  } catch (err) {
+    if (err?.response?.status === 403) {
+      fileError.value = err.response.data?.message || 'Directory is not writable'
+    } else if (err?.response?.status === 404) {
+      fileError.value = err.response.data?.message || 'Agent workspace not found'
+      fileContent.value = ''
+      fileOriginalContent.value = ''
+    } else {
+      fileError.value = 'Failed to load file'
+      console.error('Failed to load file:', err)
+    }
+  } finally {
+    loadingFile.value = false
+  }
+}
+
+const switchFile = async (filename) => {
+  if (!editingAgent.value) return
+  await openEditor(editingAgent.value, filename)
+}
+
+const saveFile = async () => {
+  if (!editingAgent.value || !editingFile.value || !canSave.value) return
+  
+  savingFile.value = true
+  fileError.value = ''
+  
+  try {
+    const { openclawService } = await import('../services/chatService')
+    await openclawService.saveAgentWorkspaceFile(editingAgent.value.id, editingFile.value, fileContent.value)
+    fileOriginalContent.value = fileContent.value
+    alert('File saved successfully')
+  } catch (err) {
+    fileError.value = err?.response?.data?.message || 'Failed to save file'
+    console.error('Failed to save file:', err)
+  } finally {
+    savingFile.value = false
+  }
+}
+
+const closeEditor = () => {
+  editingAgent.value = null
+  editingFile.value = null
+  fileContent.value = ''
+  fileOriginalContent.value = ''
+  fileError.value = ''
+  loadingFile.value = false
+  savingFile.value = false
 }
 </script>
 
@@ -1295,6 +1429,48 @@ const handleDeleteAgent = async (agent) => {
   position: relative;
 }
 
+.agent-item-actions {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.isa-btn {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+  color: #fff;
+}
+
+.isa-btn:hover {
+  opacity: 1;
+}
+
+.isa-i {
+  background: #3b82f6;
+}
+
+.isa-s {
+  background: #10b981;
+}
+
+.isa-a {
+  background: #8b5cf6;
+}
+
 .delete-agent-btn {
   position: absolute;
   right: 8px;
@@ -1480,6 +1656,159 @@ const handleDeleteAgent = async (agent) => {
   padding: 2px 6px;
   outline: none;
   min-width: 0;
+}
+
+/* ISA Editor */
+.editor-dialog {
+  background: #fff;
+  border-radius: 12px;
+  width: 600px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.editor-header {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
+}
+
+.editor-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  flex-shrink: 0;
+}
+
+.file-tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: 16px;
+  flex: 1;
+}
+
+.file-tab {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #666;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.file-tab:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.file-tab.active {
+  background: #4095fe;
+  color: #fff;
+}
+
+.editor-close {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  color: rgba(0, 0, 0, 0.5);
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+
+.editor-close:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #333;
+}
+
+.editor-loading {
+  padding: 40px 20px;
+  text-align: center;
+  color: rgba(0, 0, 0, 0.5);
+  font-size: 14px;
+}
+
+.editor-error {
+  padding: 16px 20px;
+  color: #e01e5a;
+  font-size: 13px;
+  text-align: center;
+}
+
+.editor-textarea {
+  flex: 1;
+  width: 100%;
+  padding: 16px 20px;
+  border: none;
+  font-size: 13px;
+  font-family: monospace;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  background: #fafafa;
+  color: #333;
+  min-height: 200px;
+}
+
+.editor-textarea:focus {
+  background: #fff;
+}
+
+.editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
+}
+
+.cancel-btn {
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  font-size: 13px;
+  color: #666;
+  cursor: pointer;
+}
+
+.cancel-btn:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.save-btn {
+  padding: 8px 20px;
+  background: #2eb67d;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+}
+
+.save-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.save-btn:disabled {
+  background: rgba(0, 0, 0, 0.1);
+  color: rgba(0, 0, 0, 0.3);
+  cursor: not-allowed;
 }
 
 .group-members-list {

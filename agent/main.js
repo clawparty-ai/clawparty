@@ -814,6 +814,75 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
+    '/api/openclaw/agents/{agent}/workspace/{file}': {
+      'GET': function ({ agent, file }) {
+        agent = URL.decodeComponent(agent)
+        file = URL.decodeComponent(file)
+        
+        // Validate filename - only allow IDENTITY.md, SOUL.md, AGENTS.md (case insensitive)
+        var allowedFiles = ['identity.md', 'soul.md', 'agents.md']
+        var normalizedFile = file.toLowerCase()
+        if (allowedFiles.indexOf(normalizedFile) === -1) {
+          return response(400, { status: 400, message: 'Invalid file. Allowed: IDENTITY.md, SOUL.md, AGENTS.md' })
+        }
+        
+        // Prevent path traversal
+        if (file.indexOf('..') !== -1 || file.indexOf('/') !== -1 || file.indexOf('\\') !== -1) {
+          return response(400, { status: 400, message: 'Invalid file path' })
+        }
+        
+        var filepath = os.path.join(os.home(), '.openclaw', 'workspace', agent, file)
+        try {
+          var data = os.read(filepath)
+          if (data) {
+            return response(200, data)
+          } else {
+            return response(200, '')
+          }
+        } catch (e) {
+          return response(200, '')
+        }
+      },
+      
+      'POST': function ({ agent, file }, req) {
+        agent = URL.decodeComponent(agent)
+        file = URL.decodeComponent(file)
+        
+        // Validate filename
+        var allowedFiles = ['identity.md', 'soul.md', 'agents.md']
+        var normalizedFile = file.toLowerCase()
+        if (allowedFiles.indexOf(normalizedFile) === -1) {
+          return response(400, { status: 400, message: 'Invalid file. Allowed: IDENTITY.md, SOUL.md, AGENTS.md' })
+        }
+        
+        // Prevent path traversal
+        if (file.indexOf('..') !== -1 || file.indexOf('/') !== -1 || file.indexOf('\\') !== -1) {
+          return response(400, { status: 400, message: 'Invalid file path' })
+        }
+        
+        var filepath = os.path.join(os.home(), '.openclaw', 'workspace', agent, file)
+        
+        // Check if file is writable
+        try {
+          var dirPath = os.path.join(os.home(), '.openclaw', 'workspace', agent)
+          var st = os.stat(dirPath)
+          if (!st || !(st.mode & 0x200)) {
+            return response(403, { status: 403, message: 'Directory is not writable' })
+          }
+        } catch (e) {
+          return response(404, { status: 404, message: 'Agent workspace not found' })
+        }
+        
+        // Write file
+        try {
+          os.write(filepath, req.body)
+          return response(200, { status: 200, message: 'File saved successfully' })
+        } catch (e) {
+          return response(500, { status: 500, message: 'Failed to write file: ' + e.message })
+        }
+      }
+    },
+
     '/api/openclaw/{agent}/chat-log': {
       'GET': function ({ agent }) {
         agent = URL.decodeComponent(agent)
