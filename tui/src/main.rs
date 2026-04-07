@@ -422,64 +422,23 @@ async fn main() -> anyhow::Result<()> {
                                 tokio::spawn(async move {
                                     state_clone.write().await.add_log("INFO", "Joining clawparty...");
                                     
-                                    // Build CLI command with environment variables
-                                    let mut cmd = std::process::Command::new("ztm");
+                                    // Call agent API directly (like Web UI does)
+                                    let reg_url = "https://join.clawparty.ai";
+                                    let user_name = custom_name.unwrap_or_default();
                                     
-                                    // Set environment variables for CLI to connect to agent
-                                    let client = api_client_for_join.lock().await;
-                                    let api_url = client.base_url().to_string();
-                                    let api_token = client.token().to_string();
-                                    drop(client); // Release the lock
+                                    let result = {
+                                        let client = api_client_for_join.lock().await;
+                                        client.join_party(reg_url, &user_name).await
+                                    };
                                     
-                                    // Extract host:port from base_url (e.g., "http://127.0.0.1:7778" -> "127.0.0.1:7778")
-                                    let api_host = api_url
-                                        .trim_start_matches("http://")
-                                        .trim_start_matches("https://")
-                                        .to_string();
-                                    
-                                    cmd.env("ZTM_CONFIG", &api_host);
-                                    cmd.env("ZTM_API_TOKEN", &api_token);
-                                    
-                                    cmd.arg("join").arg("party");
-                                    
-                                    // Add --name parameter if provided
-                                    if let Some(ref name) = custom_name {
-                                        cmd.arg("--name").arg(name);
-                                    }
-                                    
-                                    // Execute CLI command
-                                    match cmd.output() {
-                                        Ok(output) => {
-                                            let stdout = String::from_utf8_lossy(&output.stdout);
-                                            let stderr = String::from_utf8_lossy(&output.stderr);
-                                            
-                                            // Log all output for debugging
-                                            if !stdout.is_empty() {
-                                                for line in stdout.lines() {
-                                                    state_clone.write().await.add_log("INFO", &format!("[CLI] {}", line));
-                                                }
-                                            }
-                                            if !stderr.is_empty() {
-                                                for line in stderr.lines() {
-                                                    state_clone.write().await.add_log("INFO", &format!("[CLI-ERR] {}", line));
-                                                }
-                                            }
-                                            
-                                            if output.status.success() {
-                                                let msg = if !stdout.is_empty() {
-                                                    stdout.lines()
-                                                        .find(|line| line.contains("Successfully joined"))
-                                                        .unwrap_or("Successfully joined clawparty!")
-                                                } else {
-                                                    "Successfully joined clawparty!"
-                                                };
-                                                state_clone.write().await.add_log("INFO", &format!("Join result: {}", msg));
-                                            } else {
-                                                state_clone.write().await.add_log("ERROR", &format!("Join party failed: {}", output.status));
-                                            }
+                                    match result {
+                                        Ok(data) => {
+                                            let user_name = data["userName"].as_str().unwrap_or("unknown");
+                                            let ep_name = data["epName"].as_str().unwrap_or("unknown");
+                                            state_clone.write().await.add_log("INFO", &format!("Successfully joined clawparty as '{}' (endpoint: {})", user_name, ep_name));
                                         }
                                         Err(e) => {
-                                            state_clone.write().await.add_log("ERROR", &format!("Failed to execute ztm command: {}", e));
+                                            state_clone.write().await.add_log("ERROR", &format!("Join party failed: {}", e));
                                         }
                                     }
                                 });

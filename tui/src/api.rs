@@ -256,6 +256,27 @@ impl ApiClient {
         }
     }
 
+    pub async fn join_party(&self, reg_url: &str, user_name: &str) -> Result<serde_json::Value> {
+        let body = serde_json::json!({
+            "regUrl": reg_url,
+            "userName": user_name
+        });
+        let resp = self.client
+            .post(format!("{}/api/join-party", self.base_url))
+            .json(&body)
+            .send()
+            .await?;
+        
+        let status = resp.status();
+        if status.is_success() {
+            let result: serde_json::Value = resp.json().await?;
+            Ok(result)
+        } else {
+            let err_text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to join party: {} - {}", status, err_text)
+        }
+    }
+
     pub async fn get_default_auto_reply(&self) -> Result<String> {
         let resp = self.client
             .get(format!("{}/api/default-auto-reply", self.base_url))
