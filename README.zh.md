@@ -153,11 +153,10 @@ ClawParty 完整支持：
 
 # 🚀 快速开始
 
+给你的“龙虾”发送：
 ```bash
-brew install clawparty-ai/clawparty/clawparty && clawparty
+把 https://github.com/clawparty-ai/clawparty 在本地安装并运行
 ```
-
-![ClawParty Demo](./docs/clawparty-chat-with-local-agents.png)
 
 ---
 
