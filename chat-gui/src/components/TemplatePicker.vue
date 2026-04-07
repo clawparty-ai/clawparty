@@ -87,20 +87,23 @@ const handleInstallAll = async () => {
       if (response.data.success) {
         emit('installed', response.data)
       } else {
-        error.value = response.data.message || `Failed to install ${agent.name}`
-        console.error(`[Install All] Failed: ${error.value}`)
-        // Continue with next agent instead of breaking
-        continue
+        const msg = response.data.message || `Failed to install ${agent.name}`
+        // Skip "already exists" and "not found" errors, continue with next
+        if (msg.includes('already exists') || msg.includes('Template not found')) {
+          console.log(`[Install All] ${agent.name}: ${msg}, skipping`)
+          continue
+        }
+        error.value = msg
+        console.error(`[Install All] Failed: ${msg}`)
       }
     } catch (e) {
       console.error(`[Install All] Error installing ${agent.name}:`, e)
-      const serverMessage = e?.response?.data?.message
-      // Skip "Agent already exists" error and continue
-      if (serverMessage === 'Agent already exists') {
-        console.log(`[Install All] ${agent.name} already exists, skipping`)
+      const serverMessage = e?.response?.data?.message || e?.message
+      // Skip "already exists" and "not found" errors
+      if (serverMessage && (serverMessage.includes('already exists') || serverMessage.includes('Template not found'))) {
+        console.log(`[Install All] ${agent.name}: ${serverMessage}, skipping`)
         continue
       }
-      error.value = serverMessage || `Failed to install ${agent.name}`
       // Continue with next agent
     } finally {
       installing.value[agent.slug] = false
