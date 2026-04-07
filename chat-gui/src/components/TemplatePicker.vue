@@ -1,6 +1,8 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, inject } from 'vue'
 import { templateService } from '../services/templateService'
+
+const openclawAgents = inject('openclawAgents')
 
 const props = defineProps({
   show: Boolean,
@@ -92,7 +94,19 @@ ${agent.systemPrompt || ''}`
     }
   }
   
-  console.log(`[Install All] All messages sent`)
+  console.log(`[Install All] All messages sent, refreshing agents in 3 seconds...`)
+  
+  // Wait a bit for main to process, then refresh
+  setTimeout(async () => {
+    try {
+      const response = await openclawService.getAgents()
+      openclawAgents.value = response.data || []
+      console.log(`[Install All] Agents refreshed:`, openclawAgents.value.length)
+    } catch (e) {
+      console.error(`[Install All] Failed to refresh agents:`, e)
+    }
+  }, 3000)
+  
   installAllLoading.value = false
 }
 
