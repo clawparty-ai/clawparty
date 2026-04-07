@@ -17,7 +17,13 @@ var trial = null
 function getHost(regUrl) {
   var host = regUrl || os.env.ZTM_TRIAL || getConfig().trial
   if (host.startsWith(':')) return 'https://join.clawparty.ai' + host
-  if (!Number.isNaN(Number.parseInt(host))) return 'https://join.clawparty.ai:' + host
+  // Check if host is a pure port number without using Number.isNaN
+  var isPort = true
+  for (var i = 0; i < host.length; i++) {
+    var ch = host.charAt(i)
+    if (ch < '0' || ch > '9') { isPort = false; break }
+  }
+  if (host.length > 0 && isPort) return 'https://join.clawparty.ai:' + host
   // bare host:port (no scheme) — use http for custom reg URLs, https for default
   if (!host.includes('://')) {
     return (regUrl ? 'http://' : 'https://') + host
