@@ -740,9 +740,38 @@ function main(listen, apiToken, noAuth) {
             try {
               var list = JSON.parse(cleaned)
               if (Array.isArray(list)) {
-                var ids = list.map(a => a.id || a.name).filter(Boolean)
+                var ids = list.map(function(a) { return a.id || a.name }).filter(function(a) { return a })
                 console.info('[openclaw cli] openclaw agents list --json output:', JSON.stringify(ids))
                 if (ids.length > 0) db.setCache('local_agent_ids', ids)
+                var openclawJsonPath = os.path.join(os.home(), '.openclaw', 'openclaw.json')
+                var openclawJson = null
+                try {
+                  var jsonStr = os.read(openclawJsonPath)
+                  openclawJson = JSON.decode(jsonStr)
+                } catch (e) {
+                  console.info('[api] failed to read openclaw.json:', e)
+                }
+                var agentsConfig = (openclawJson && openclawJson.agents && openclawJson.agents.list) ? openclawJson.agents.list : []
+                var displayNameMap = {}
+                if (Array.isArray(agentsConfig)) {
+                  for (var i = 0; i < agentsConfig.length; i++) {
+                    var a = agentsConfig[i]
+                    if (a && a.id && a.displayName) {
+                      displayNameMap[a.id] = a.displayName
+                    }
+                  }
+                }
+                var enrichedList = list.map(function(a) {
+                  var aid = a.id || a.name
+                  var displayName = displayNameMap[aid]
+                  if (displayName) {
+                    a.displayName = displayName
+                  } else if (a.id === 'main') {
+                    a.displayName = 'Main'
+                  }
+                  return a
+                })
+                return response(200, JSON.encode(enrichedList))
               }
             } catch {}
             return response(200, cleaned || '[]')

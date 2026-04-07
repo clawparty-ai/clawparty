@@ -389,21 +389,23 @@
             <div class="item-avatar openclaw-avatar">{{ agent.emoji }}</div>
             <span class="item-name">{{ agent.name }}</span>
             <div class="agent-item-actions">
-              <button
-                class="isa-btn isa-i"
-                @click.stop="openEditor(agent, 'IDENTITY.md')"
-                title="Edit Identity"
-              >I</button>
-              <button
-                class="isa-btn isa-s"
-                @click.stop="openEditor(agent, 'SOUL.md')"
-                title="Edit Soul"
-              >S</button>
-              <button
-                class="isa-btn isa-a"
-                @click.stop="openEditor(agent, 'AGENTS.md')"
-                title="Edit Agents"
-              >A</button>
+              <template v-if="agent.id !== 'main'">
+                <button
+                  class="isa-btn isa-i"
+                  @click.stop="openEditor(agent, 'IDENTITY.md')"
+                  title="Edit Identity"
+                >I</button>
+                <button
+                  class="isa-btn isa-s"
+                  @click.stop="openEditor(agent, 'SOUL.md')"
+                  title="Edit Soul"
+                >S</button>
+                <button
+                  class="isa-btn isa-a"
+                  @click.stop="openEditor(agent, 'AGENTS.md')"
+                  title="Edit Agents"
+                >A</button>
+              </template>
               <button
                 v-if="agent.id !== 'main'"
                 class="delete-agent-btn"
@@ -1472,10 +1474,6 @@ const closeEditor = () => {
 }
 
 .delete-agent-btn {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
   width: 24px;
   height: 24px;
   padding: 0;
@@ -1487,15 +1485,12 @@ const closeEditor = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
+  opacity: 0.7;
   transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
 
-.agent-item:hover .delete-agent-btn {
-  opacity: 1;
-}
-
 .delete-agent-btn:hover {
+  opacity: 1;
   color: #e01e5a;
   background: rgba(224, 30, 90, 0.1);
 }

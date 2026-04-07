@@ -72,7 +72,7 @@ const handleInstallAll = async () => {
   // Build all messages first
   const notInstalledAgents = agentsWithStatus.value.filter(a => !a.installed)
   const messageTexts = notInstalledAgents.map(agent => 
-    `帮我创建一个名字是'${agent.name}'的agent，如果这个名字是中文的需要用名字对应的拼音作为 agent-id，他的soul.md是：
+    `帮我创建一个agent，agent-id使用拼音'${agent.slug}'，agent-name使用中文名'${agent.name}'，创建完成后，把它加入到 main 的 subagents.allowAgents，他的soul.md是：
 
 ${agent.systemPrompt || ''}`
   )
@@ -105,7 +105,7 @@ ${agent.systemPrompt || ''}`
 const handleInstall = async (agent) => {
   if (agent.installed || installing.value[agent.slug]) return
   
-  const message = `帮我创建一个名字是'${agentName.value}'的agent，如果这个名字是中文的需要用名字对应的拼音作为 agent-id，他的soul.md是：
+  const message = `帮我创建一个agent，agent-id使用拼音，agent-name使用中文名'${agentName.value}'，把它加入到 main 的 subagents.allowAgents 中，他的soul.md是：
 
 ${editorContent.value}`
   
