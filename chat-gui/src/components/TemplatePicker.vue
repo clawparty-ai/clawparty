@@ -99,9 +99,14 @@ ${agent.systemPrompt || ''}`
   // Wait a bit for main to process, then refresh
   setTimeout(async () => {
     try {
-      const response = await openclawService.getAgents()
-      openclawAgents.value = response.data || []
-      console.log(`[Install All] Agents refreshed:`, openclawAgents.value.length)
+      // First call GET /api/openclaw/agents to trigger cache update
+      await openclawService.getAgents()
+      // Then wait a bit and get the updated list
+      setTimeout(async () => {
+        const response = await openclawService.getAgents()
+        openclawAgents.value = response.data || []
+        console.log(`[Install All] Agents refreshed:`, openclawAgents.value.length)
+      }, 500)
     } catch (e) {
       console.error(`[Install All] Failed to refresh agents:`, e)
     }
