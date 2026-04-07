@@ -423,7 +423,6 @@ const currentMeshAgentUsername = inject('currentMeshAgentUsername')
 const activeOpenclawAgent = inject('activeOpenclawAgent')
 const joinParty = inject('joinParty')
 const leaveMesh = inject('leaveMesh')
-const deleteAgent = inject('deleteAgent')
 const resolveEpDisplayName = inject('resolveEpDisplayName')
 const localOpenclawAvailable = inject('localOpenclawAvailable')
 
@@ -679,13 +678,11 @@ const handleDeleteAgent = async (agent) => {
   if (!confirm(`Are you sure you want to delete agent "${agent.name}"? This action cannot be undone.`)) return
   
   try {
-    await deleteAgent(agent.id)
-    // Refresh agents list
+    // Send delete command to main agent
     const { openclawService } = await import('../services/chatService')
-    const response = await openclawService.getAgents()
-    openclawAgents.value = response.data || []
+    await openclawService.sendMessage('main', `/delete agent ${agent.name}`)
   } catch (err) {
-    console.error('Failed to delete agent:', err)
+    console.error('Failed to send delete command:', err)
     alert('Failed to delete agent: ' + (err?.response?.data?.message || err?.message || 'Unknown error'))
   }
 }
