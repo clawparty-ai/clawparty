@@ -1,0 +1,186 @@
+---
+title: "Part 3: Proxy"
+---
+
+import FlagIcon from '@material-ui/icons/FlagSharp'
+import Layer4Proxy from './layer-4-proxy.svg';
+import Layer7Proxy from './layer-7-proxy.svg';
+import DemuxHTTP from './demux-http.svg';
+import MuxHTTP from './mux-http.svg';
+import SvgProxyPipelines from './proxy-pipelines.svg';
+
+We have used Pipy as a server for handling HTTP requests. Now we will be using it as what Pipy is mostly used for: a network proxy.
+
+## Create a proxy
+
+Click the Pipy icon at top-left to go back to Web UI homepage. Create a new codebase named `/proxy` in the same way you've done in [Part 2](/tutorial/02-echo#create-a-pipy-codebase).
+
+> Don't mind that `/hello` codebase we've just created. Leave it there for a moment, because we'll be using it as our upstream server a while later for testing.
+
+Add a new file `/proxy.js` to the new codebase and make it the entrance by clicking <FlagIcon/>. The script for `/proxy.js` would be like:
+
+``` js
+pipy()
+
+  .listen(8000)
+  .demuxHTTP().to('forward')
+
+  .pipeline('forward')
+  .muxHTTP().to('connection')
+
+  .pipeline('connection')
+  .connect('localhost:8080')
+```
+
+## Code dissection
+
+Besides one _port pipeline_ layout, this time we also added two _sub-pipeline_ layouts called _"forward"_ and _"connection"_.
+
+1. The port pipeline layout listens on port 8000. It has only one filter **demuxHTTP()**. It's similar to **serveHTTP()** that we've been using before for receiving HTTP requests and sending back responses. But instead of handling HTTP requests in a _callback function_, it handles them in a _sub-pipeline_, which is referred to under name _"forward"_ by calling method **to()** right after it.
+
+2. The _sub-pipeline_ layout named _"forward"_ has only one filter **muxHTTP()**. This filter _queues_ up its input message in another _sub-pipeline_ under the name _"connection"_ (as given in method **to()** called after it). It also _dequeues_ a message out of the output from _sub-pipeline "connection"_. The dequeued message would become its own output.
+
+3. The last pipeline layout _"connection"_ is also a _sub-pipeline_. It contains only one filter **connect()** that establishes a TCP connection to remote host _"localhost:8080"_ (given in its construction parameter). After the connection is established, it sends its input data to that host and outputs data received from it.
+
+## Mux and demux
+
+You may ask why we'd need 3 pipeline layouts instead of just a single one like in _"Hello World"_ earlier. This has to do with how a _layer 7_ protocol (or _application layer_ protocol, like HTTP) works, compared to a _layer 4_ protocol (or _transport layer_ protocol, like TCP).
+
+Simply put it, on layer 4 we see continuous _"streams"_ while on layer 7 we see discrete _"messages"_.
+
+For a layer 4 proxy, things are much easier, because connections to downstream clients have a one-on-one relation to upstream servers. For Pipy, that means pipelines handling downstreams have a one-on-one relation to pipelines handling upstreams. In many cases, we can simply proxy a layer 4 stream in one single pipeline that sits between a client and a server, connecting to both of them.
+
+<div style="text-align: center">
+  <Layer4Proxy/>
+</div>
+
+For a layer 7 proxy, things are complicated. A port pipeline handling a downstream connection would receive more than one _messages_. Each of them might go to a different upstream server. Also, when two messages coming from two different downstreams are headed to the same server, you might prefer to send them on a _shared_ upstream connection to that server for the sake of less resource usage.
+
+<div style="text-align: center">
+  <Layer7Proxy/>
+</div>
+
+Therefore, pipelines connected to downstream clients have a many-to-many relationship to those connected to upstream servers. That's why we need separate pipeline layouts to handle downstreams and upstreams differently. In a downstream-oriented pipeline, messages are _"demuxed"_ out of a single transport stream. In an upstream-oriented pipeline, messages are _"muxed"_ into a single transport stream.
+
+### Filter: demuxHTTP()
+
+In our example, a _port pipeline_ gulps incoming data as a sequence of [_Data_](/reference/api/Data) events, each holding a small chunk from the TCP stream. What **demuxHTTP()** does is _"decode"_ and _"demux"_ that TCP stream into separate HTTP messages, enclose each of them between a pair of [_MessageStart_](/reference/api/MessageStart) and [_MessageEnd_](/reference/api/MessageEnd) events, before feeding each of them into a dedicated sub-pipeline for processing.
+
+<div style="text-align: center">
+  <DemuxHTTP/>
+</div>
+
+But that's not the end of the story yet. Each sub-pipeline will eventually have a message outputted as its response. Output messages coming out of the end of all sub-pipelines are collected by **demuxHTTP()**. They are then _"encoded"_ and _"muxed"_ into one single TCP stream before going back to the client.
+
+As you can see, although the filter is named _"demuxHTTP"_, but it really performs both _demuxing_ and _muxing_. It demuxes on the requesting path, and muxes on the responding path.
+
+### Filter: muxHTTP()
+
+The opposite to **demuxHTTP()** is **muxHTTP()**. Unlike **demuxHTTP()** spawning multiple sub-pipelines, multiple **muxHTTP()** instances _merge_ messages into a shared sub-pipeline.
+
+<div style="text-align: center">
+  <MuxHTTP/>
+</div>
+
+The filter accepts an optional callback function `target` that tells which sub-pipeline it's going to merge messages to. When two **muxHTTP()** instances have the same _target_, they are merging into the same HTTP session. In other words, requests coming from the two **muxHTTP()** instances will be _multiplexed_ into one HTTP stream in a _shared_ sub-pipeline.
+
+Callback `target` can return a value of any type. Whatever it returns will be the _key_ referring to a shared sub-pipeline. If a sub-pipeline with that key doesn't exist yet, a new sub-pipeline will be created, and then shared by other **muxHTTP()** instances that come after and also refer to the same key.
+
+By default, the _key_ is just `__inbound` when a `target` callback is absent. `__inbound` is a built-in _context variable_ representing the current downstream connection. So by default, all **muxHTTP()** filters originated from the same client connection will create only one single sub-pipeline and merge to it. If you want to change that strategy, you can provide a custom `target` callback as the first parameter to the filter.
+
+> Note that this "merging" only happens between **muxHTTP()** instances coming from the same place in the same pipeline layout. In 2 different pipeline layouts, or 2 different places in the same pipeline layout, **muxHTTP()** instances will never merge to the same sub-pipeline.
+
+Same as **demuxHTTP()**, although it's named "muxHTTP", but really it also _demuxes_ responses coming out from the end of the shared sub-pipeline they merge to in addition to _muxing_ requests to it.
+
+### Pipeline topology
+
+In our example, let's say we have one client connection running 2 requests heading for the same server. To handle this, we need up to 4 inter-connected pipelines at runtime:
+
+- 1 downstream-oriented port pipeline connected to the client
+- 1 upstream-oriented _"connection"_ sub-pipeline connected to the server
+- 2 _"forward"_ sub-pipelines passing 2 requests separately
+
+<div style="text-align: center">
+  <SvgProxyPipelines/>
+</div>
+
+## Anonymous pipelines
+
+In the script above, we added 2 sub-pipeline layouts and named them "forward" and "connection". These names might help explain the purpose of these pipelines. However, as our script gets longer, giving each sub-pipeline layout a sensible name could turn into a drag. In many cases, it would be more concise and also easier to understand if we just embed a sub-pipeline layout into its parent filter without using a name.
+
+We can do so by changing our code as following:
+
+``` js
+pipy()
+
+  .listen(8000)
+  .demuxHTTP().to(
+    $=>$.muxHTTP().to(
+      $=>$.connect('localhost:8080')
+    )
+  )
+```
+
+Instead of giving a name to method **to()**, we gave it a function. The function will get a sole argument, of which you can call various methods to add filters to the embedded sub-pipeline layout, just like you do with the [Configuration](/reference/api/Configuration) object returned from [pipy()](/reference/api/pipy). The only difference though, is you can't add pipeline layouts to it. You can only add filters.
+
+> The dollar sign `$` is a valid variable name in PipyJS. We chose this name here just to make sub-pipeline definitions a bit different from normal variables. This is also our recommended naming convention, though you can indeed use any legal variable name you like and the code won't break.
+
+## Test in action
+
+Now let's start the program and `curl` it:
+
+``` sh
+curl localhost:8000 -i
+```
+
+You will get an error in response:
+
+```
+HTTP/1.1 502 Connection Refused
+content-length: 0
+connection: keep-alive
+```
+
+That's because we don't yet have an upstream server to pass requests to.
+
+### Start a second Pipy instance
+
+We have only one single Pipy instance right now, which is already running our proxy program. Now we need to start a second one for the test server.
+
+1. Go back to Web UI homepage, find the `/hello` codebase we've created before, click on it to open it up.
+
+2. Copy the URL appearing in the browser's address bar.
+
+3. Open a second terminal window, type `pipy` and paste after it the URL you just copied from the browser, and then hit Enter.
+
+```sh
+pipy http://localhost:6060/repo/hello/
+```
+
+Now a new Pipy instance should be up and running. Retry the test we did earlier and see if you'd get the correct answer.
+
+```
+HTTP/1.1 200 OK
+content-length: 11
+connection: keep-alive
+
+Hi, there!
+```
+
+## Summary
+
+In this part of the tutorial, you've learned how Pipy works as a network proxy. You've also seen why we need _sub-pipelines_ and how we define them.
+
+### Takeaways
+
+1. Port pipelines receive data on TCP layer. To handle individual HTTP messages, you need filters like **serveHTTP()** and **demuxHTTP()** to _demux_ messages out of it.
+
+2. The difference between **serveHTTP()** and **demuxHTTP()** is that, the former handles demuxed messages by a _callback function_ while the latter handles them in multiple separate _sub-pipelines_.
+
+3. Before HTTP messages are sent to a remote server, they need to be _muxed_ into one single TCP stream via **muxHTTP()** filters.
+
+4. Use **connect()** to establish an outgoing TCP connection to a remote host.
+
+### What's next?
+
+Our first try for a network proxy is overly-simplified. It really does nothing more than mapping one IP/port to another. For a proxy to be any useful, we need features like routing, load balancing, and so on. Next, we'll be looking at one of the basic tasks a proxy can do: routing.

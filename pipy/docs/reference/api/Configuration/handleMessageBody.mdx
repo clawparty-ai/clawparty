@@ -1,0 +1,44 @@
+---
+title: Configuration.handleMessageBody()
+api: Configuration.handleMessageBody
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="handleMessageBody"
+  input="Event"
+  output="Event"
+/>
+
+The user function that gets called will have a [Data](/reference/api/Data) object as parameter.
+
+This filter only calls the user function once for each message in the input stream. If the message's body is composed of multiple _Data_ objects, _handleMessageBody_ will wait until all _Data_ objects composing a whole message are collected and call the user function with a combined _Data_ object.
+
+This filter passes everything down unaltered. It doesn't change anything in the event stream.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .handleMessageBody(
+    data => onMessageBody(data)
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [handleData()](/reference/api/Configuration/handleData)
+* [handleStreamStart()](/reference/api/Configuration/handleStreamStart)
+* [handleStreamEnd()](/reference/api/Configuration/handleStreamEnd)
+* [handleMessageStart()](/reference/api/Configuration/handleMessageStart)
+* [handleMessageEnd()](/reference/api/Configuration/handleMessageEnd)
+* [handleMessage()](/reference/api/Configuration/handleMessage)

@@ -1,0 +1,119 @@
+---
+title: '1：Hello'
+---
+
+import PlusIcon from '@material-ui/icons/AddSharp' 
+import FlagIcon from '@material-ui/icons/FlagSharp' 
+import SaveIcon from '@material-ui/icons/SaveSharp' 
+import PlayIcon from '@material-ui/icons/PlayArrowSharp' 
+import StopIcon from '@material-ui/icons/StopSharp'
+import SvgHelloPipeline from './hello-pipeline.svg';
+
+**Ahoy, world!**
+
+私たちはプログラマーとして、「Hello World」にはある種のこだわりがあるはずです。 今すぐ飛び込んで、やってみましょう！
+
+## Pipy を起動する
+
+では最初に、コマンドラインからライブの Pipy インスタンスを起動しましょう。
+
+``` sh
+pipy
+```
+
+Pipy が起動して実行されたら、ターミナルウィンドウに以下のように表示されます。
+
+```
+[info] [codebase] Starting codebase service...
+[info] [listener] Listening on port 6060 at ::
+```
+
+次に、いつものWebブラウザを開いて http://localhost:6060 へ行くと、 Pipy Administration Web UI のビルトインがあります。
+
+## Pipy プログラムを作る
+
+では、最初の Pipy プログラムを作ってみましょう。
+
+1. New Codebase をクリックし、ポップアップウィンドウで Codebase name に /hello を入力したら、Create をクリックします。すると新しく作成されたCodebaseのコードエディタが現れます。
+
+2. 上のボタン <PlusIcon/> をクリックして新しいファイルを追加します。ファイル名に /main.js を入力して Create をクリックします。
+
+3. 左の File List の中から新しく作成したファイルを選択します。ボタン <FlagIcon/> をクリックしてこのプログラムの入り口にします。次のパートでの実行からは、このファイルからプログラムを開始できるようになります。
+
+4. 次に、以下のように main.jsのプログラムを書いてください。
+
+``` js
+pipy()
+
+.listen(8080)
+  .serveHTTP(
+    new Message('Hi, there!\n')
+  )
+```
+
+5. ボタン <SaveIcon/> をクリックしてファイルを保存します。
+
+## コードの説明
+
+少し時間をとって、ここで何が行われているのか、ひとつひとつコードを見ていきましょう。
+
+1. 最初の行では、ビルトインのグローバル関数である [_pipy()_](/reference/api/pipy) がコールされています。これは、後で必要になるパイプライン と フィルター の定義に使う [Configuration](/reference/api/Configuration) オブジェクトを返します。
+
+2. 3行目では、前の pipy() から返された Configuration オブジェクトのメソッドである listen() をコールして、ポート8080でリッスンするポートパイプラインを定義しています。 メソッド [_listen()_](/reference/api/Configuration/listen) 自体は同じ Configuration オブジェクトを返すので、他のメソッドを続けてコールすればさらにパイプラインとフィルターを定義できます。 次は実際それをやってみます。
+
+3. 4行目では、ステップ2で定義したパイプラインに [serveHTTP](/reference/api/classes/Configuration/serveHTTP) フィルターを定義しています。 フィルターは、構成パラメーターとして [Message](/reference/api/classes/Message) オブジェクトを受け取り、あらゆる入力メッセージに応答して同じメッセージを出力します。
+
+ここで作成したすべてのスクリプトでは、1つのフィルターを持つ1つのパイプラインを定義しました。 それを図に表すと次のようになります。
+
+<div style="text-align: center">
+  <SvgHelloPipeline/>
+</div>
+
+## テストしてみる
+
+では動かしてみましょう！ボタン <PlayIcon/> をクリックしてコードを実行します。 Console Window がポップアップし、次のように表示されるはずです。
+
+```
+[info] [config]
+[info] [config] Module /main.js
+[info] [config] ================
+[info] [config]
+[info] [config]  [Listen on :::8080]
+[info] [config]  ----->|
+[info] [config]        |
+[info] [config]       serveHTTP
+[info] [config]        |
+[info] [config]  <-----|
+[info] [config]  
+[info] [listener] Listening on port 8080 at ::
+```
+
+2番目のターミナルウィンドウが開くので、curlコマンドで試してみます。
+
+```
+curl localhost:8080
+```
+
+以下の結果になるはずです。
+
+```
+Hi, there!
+```
+
+思った通りにうまく行きました。
+
+## まとめ
+
+この初回のパートでは、Pipyプログラムがどのように構成されているかを解説しました。 また、簡単な Pipy プログラムを作成し、実行しながらビルトインの Administration Web UI にも慣れたと思います。
+
+### 要点
+
+* Pipy プログラムは、パイプラインとフィルターの定義で構成されています。 それは常に [_pipy()_](/reference/api/pipy) のコールから始まります。これによって [Configuration](/reference/api/Configuration) オブジェクトが提供され、パイプラインとフィルターを定義するためのさまざまなメソッドをコールできます。
+
+* ポートパイプライン は、ネットワークポートが読み取ったものを入力とし、最後のフィルターが出力したもので書き戻します。
+
+* serveHTTP フィルターは、HTTP メッセージをリクエストとして取り込み、HTTP メッセージをレスポンスとして出力できます。
+
+### 次のパートの内容
+
+これで単純な「Hello World」サーバーが作成できましたが、いつも同じことしか言わないのでほとんど役に立ちません。 次のパートでは、さまざまなリクエストにさまざまなメッセージでレスポンスする方法を見ていきます。

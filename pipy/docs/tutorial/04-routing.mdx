@@ -1,0 +1,330 @@
+---
+title: "Part 4: Routing"
+---
+
+import SvgRoutingPipelines from './routing-pipelines.svg';
+
+One of the basic tasks a proxy can do is _routing_. For HTTP, routing is usually based on the Host header and the requested URI of a request. In other words, a proxy should be able to map things like "abc.com/api/v1/login" to a certain _target host_ that can handle the request.
+
+## URLRouter
+
+Pipy API provides [URLRouter](/reference/api/algo/URLRouter) for quick mapping from a URL to a value of any type. In our example here, we'd like to map URLs to a _string value_ containing the target address and port.
+
+To define such a mapping, we `new` a _URLRouter_ object, giving it our routing table:
+
+``` js
+new algo.URLRouter({
+  '/hi/*': 'localhost:8080',
+  '/echo': 'localhost:8081',
+  '/ip/*': 'localhost:8082',
+})
+```
+
+We need this router accessible from anywhere in our script, so we should keep it in a _global variable_.
+
+## Global variables
+
+PipyJS is a _functional programming dialect_ of JavaScript. Everything in PipyJS is a _function_. There is no syntax for declaring _global variables_ or _local variables_ in PipyJS. Instead, we use _function arguments_ as local variables. On top of that, when the function is the outermost one that encloses the entire script file, its arguments practically become _"global variables"_.
+
+> For more information on variables in PipyJS, see [Variables](/reference/pjs/1-language/#variables).
+
+So, to have a "globally accessible variable", first, we wrap up our code inside a function and invoke it right in place.
+
+``` js
++ ((
++ ) =>
+  pipy()
+
+    .listen(8000)
+    .demuxHTTP().to(
+      $=>$.muxHTTP().to(
+        $=>$.connect('localhost:8080')
+      )
+    )
+
++ )()
+```
+
+> DO NOT FORGET the last pair of parentheses. It tells Pipy to _invoke_ the wrapper function immediately. Without that, it would be a function definition only. The code in it won't actually run.
+
+Next, add an argument named _"router"_ to the argument list at the beginning of the function, with its initial value set to the _URLRouter_ object we have _"newed"_ earlier.
+
+``` js
+  ((
++   router = new algo.URLRouter({
++     '/hi/*': 'localhost:8080',
++     '/echo': 'localhost:8081',
++     '/ip/*': 'localhost:8082',
++   })
+  ) =>
+  pipy()
+
+    .listen(8000)
+    .demuxHTTP().to(
+      $=>$.muxHTTP().to(
+        $=>$.connect('localhost:8080')
+      )
+    )=
+
+  )()
+```
+
+## Context variables
+
+In addition to a global URLRouter object, we need a second variable to keep the resulted _target_ from routing calculation. This variable can't be global because its value can be variant for different requests. In other words, the value of the variable depends on the current _context_ when referred to in the script. We call these variables _"context variables"_.
+
+> For more information on _context variables_, see [Context](/intro/concepts#context).
+
+We've seen the built-in context variable `__inbound` in [Part 2](/tutorial/02-echo/#code-dissection-1). This time, we are defining a custom context variable named `_target`. We'll give it an initial value of _undefined_. This is done through the argument given to [pipy()](/reference/api/pipy).
+
+``` js
+  ((
+    router = new algo.URLRouter({
+      '/hi/*': 'localhost:8080',
+      '/echo': 'localhost:8081',
+      '/ip/*': 'localhost:8082',
+    })
+  ) =>
+- pipy()
++ pipy({
++   _target: undefined,
++ })
+
+    .listen(8000)
+    .demuxHTTP().to(
+      $=>$.muxHTTP().to(
+        $=>$.connect('localhost:8080')
+      )
+    )=
+
+  )()
+```
+
+> Context variables can have any names that are valid JavaScript identifiers. But as a best practice, we recommend that all context variable names should be prefixed with a single underline, just to make them distinct from regular variables.
+
+## Routing
+
+Now we have all the variables we need, next thing we do is call [_URLRouter.find()_](/reference/api/algo/URLRouter/find) to work out the value of `_target` based on what's in the request. We can do so in a [handleMessageStart()](/reference/api/Configuration/handleMessageStart) filter right before **muxHTTP()**. It requires only one argument, which is a callback function that we should provide. This callback function will be executed every time a [MessageStart](/reference/api/MessageStart) event passes by. It then receives that **MessageStart** object as its sole argument, from which we obtain information about the request, calculate its routing, and leave the result in `_target`.
+
+``` js
+  ((
+    router = new algo.URLRouter({
+      '/hi/*': 'localhost:8080',
+      '/echo': 'localhost:8081',
+      '/ip/*': 'localhost:8082',
+    })
+  ) =>
+  pipy({
+    _target: undefined,
+  })
+
+    .listen(8000)
+    .demuxHTTP().to(
+      $=>$
++     .handleMessageStart(
++       msg => (
++         _target = router.find(
++           msg.head.headers.host,
++           msg.head.path,
++         )
++       )
++     )
+      .muxHTTP().to(
+        $=>$.connect('localhost:8080')
+      )
+    )
+
+  )()
+```
+
+### Filter: connect
+
+Now we've worked out `_target`, but we are still connecting to a fixed target _"localhost:8080"_. We should change that to `_target` accordingly, right?
+
+``` js
+      .muxHTTP().to(
+-       $=>$.connect('localhost:8080')
++       $=>$.connect(_target) // WRONG!!!
+      )
+```
+
+If you run this code, however, you will get an error:
+
+```
+[ERR] [pjs] File /proxy.js:
+[ERR] [pjs] Line 24:  $=>$.connect(_target)
+[ERR] [pjs]                        ^
+[ERR] [pjs] Error: unresolved identifier
+```
+
+This is because, a context variable needs a context. They are only alive when a context is created for running some pipelines. When we run the above code, however, we are in _"configure time"_, where we only _define_ pipeline layouts without _spawning_ any pipelines just yet. Since there are no incoming I/O events to handle, no pipelines are created, no contexts are needed, so no context variables exist. 
+
+How do we get around this? The same way as in [Part 2](/tutorial/02-echo/) where we made a filter parameter _dynamic_: just wrap it in a **function** that returns
+a dynamic value at runtime.
+
+``` js
+      .muxHTTP().to(
+-       $=>$.connect(_target) // WRONG!!!
++       $=>$.connect(() => _target)
+      )
+```
+
+Now `() => _target` is only a _function definition_ when we run the code at _configure time_. It's legit at the moment because `_target` is not evaluated yet. It'll only be evaluated _at runtime_ when the pipeline receives an input. At that point, the code is being executed in a certain context, where `_target` will have a set value from the previous **handleMessageStart()** callback.
+
+## Branching
+
+But wait, what if a target can't be found? If so, `_target` would be `undefined`, and we'd have nowhere to pass on the request to. We should then, in this situation, direct that request to a different path where _"404 Not Found"_ is sent back in response. This is where we need a **branch()**.
+
+### Filter: branch
+
+Filter [branch()](/reference/api/Configuration/branch) accepts one or more pairs of parameters. In each pair, a callback function comes first for the condition when a branch should be selected, followed by a sub-pipeline layout for the branch. The last pair can have its condition omitted, which means the last default branch.
+
+With that, we wrap up **muxHTTP()** in a **branch()** so that events only go to it when `_target` is found:
+
+``` js
+    .listen(8000)
+    .demuxHTTP().to(
+      $=>$
+      .handleMessageStart(
+        msg => (
+          _target = router.find(
+            msg.head.headers.host,
+            msg.head.path,
+          )
+        )
+      )
++     .branch(
++       () => Boolean(_target), (
++         $=>$
+          .muxHTTP().to(
+            $=>$.connect('localhost:8080')
+          )
++       )
++     )
+    )
+```
+
+> The condition could be as simple as `() => _target` because **branch()** takes a truthy return value as "yes" and falsy as "no". But we explicitly coerce `_target` to a boolean value just for clarity.
+
+### Filter: replaceMessage
+
+The last piece to the puzzle is the _"infamous 404 page"_. We will handle that by a sub-pipeline in the fallback branch to **branch()**.
+
+Could we do it with **serveHTTP()**, as we did in [Part 1](/tutorial/01-hello/)? The answer is no, unfortunately. **serveHTTP()** expects its input to be a raw TCP stream so that it can do its job: _"deframing"_ HTTP messages out of a TCP stream. But here, deframing has been done already in **demuxHTTP()**. You can't deframe a TCP stream twice.
+
+Since the stream fed to our new "404" sub-pipeline has already been transformed from a _byte stream_ to a _message_, that is, from layer 4 (transport layer) to layer 7 (application layer), we can simply "replace" the message on layer 7 with a new "404" message so that the sub-pipeline would output a "404" response in the end.
+
+``` js
+      .branch(
+        () => Boolean(_target), (
+          $=>$.muxHTTP().to(
+            $=>$.connect('localhost:8080')
+          )
++       ), (
++         $=>$.replaceMessage(
++           new Message({ status: 404 }, 'No route')
++         )
+        )
+      )
+```
+
+> You can think of **serveHTTP()** as a combination of a **demuxHTTP()** plus a **replaceMessage()**, where **replaceMessage()** holds the callback handler as in **serveHTTP()** to return a response.
+> So the following code:
+> ``` js
+> serveHTTP(req => makeResponse(req))
+> ```
+> is equivalent to:
+> ``` js
+> demuxHTTP().to($=>$.replaceMessage(req => makeResponse(req)))
+> ```
+
+Now you might wonder where the output from this "404" sub-pipeline goes next. How does it make it to the client?
+
+### Joint filters
+
+Pipy pipelines are one-way paths. Events stream in to its first filter, out from its last filter. For a _port pipeline_, requests from a client are its input, while responses back to the client are its output. Usually (not always though), this is also true for a sub-pipeline, where its input is a request and its output is a response.
+
+When a _joint filter_ like **branch()** links to a sub-pipeilne, the input to the joint filter goes to the input of the sub-pipeline, and the output from that sub-pipeline usually goes back to the joint filter and becomes the filter's output also. In our example, what **replaceMessage()** outputs becomes **branch()**'s output too. It then in turn goes back to **demuxHTTP()**, and eventually, back to the port pipeline's output as response.
+
+With that, when a request can't be routed and has to go down the "404" branch, its entire traveling path would be like this:
+
+<div style="text-align: center">
+  <SvgRoutingPipelines/>
+</div>
+
+For more about sub-pipelines and joint filters, see [Sub-pipeline](/intro/concepts/#sub-pipeline).
+
+## Connection Sharing Problem
+
+Now if you test the code, it seems working well at first:
+
+``` sh
+$ curl localhost:8000/hi
+Hi, there!
+$ curl localhost:8000/ip
+You are requesting /ip from 127.0.0.1
+$ curl localhost:8000/bad
+No route
+```
+
+But if we try to send 2 requests targeting different servers on one single client connection, we'll get:
+
+``` sh
+$ curl localhost:8000/hi localhost:8000/ip
+Hi, there!
+Hi, there!
+$ curl localhost:8000/ip localhost:8000/hi
+You are requesting /ip from 127.0.0.1
+You are requesting /hi from 127.0.0.1
+```
+
+Both requests were directed to the same server as the first request in that client connection. What gives?
+
+This is because the upstream connection was established by **connect()** in a sub-pipeline created from **muxHTTP()**, and the connection is established only once for every sub-pipeline it creates. That means, there's a one-on-one relationship between a server connection and a sub-pipeline from **muxHTTP()**. As explained in [Filter: muxHTTP](/tutorial/03-proxy/#filter-muxhttp) from the last chapter, multiple **muxHTTP()** instances merge to, by default, the same sub-pipeline for a particular _Inbound_ (or in our case, a particular connection from _curl_ client). Once the outbound connection is up, it won't change any more until the next inbound connection leads **muxHTTP()** to a different sub-pipeline. Even when each request has a different `_target` value to it, the variable is only used once as the connection is established. After that, its value is no longer relevant. It won't lead to a reconnection in the **connect()** filter.
+
+To solve this problem, we change the strategy how **muxHTTP()** instances share sub-pipelines by giving it the variable `_target` for the _merging target_, so that sub-pipelines will only be shared by requests targeting to the same server, regardless of what client connection.
+
+``` js
+      .branch(
+        () => Boolean(_target), (
+-         $=>$.muxHTTP().to(
++         $=>$.muxHTTP(() => _target).to(
+            $=>$.connect('localhost:8080')
+          )
+        ), (
+          $=>$.replaceMessage(
+            new Message({ status: 404 }, 'No route')
+          )
+        )
+      )
+```
+
+This is not the best strategy for HTTP/1 though, as when more than one client requests have to be merged to the same server connection, they'll be queued up and served only one at a time. There would be no concurrency. But we'll leave the solution to that problem for the next topic in this tutorial.
+
+## Test in action
+
+Now run this program and do the failed test again.
+
+``` sh
+$ curl localhost:8000/hi localhost:8000/ip
+Hi, there!
+You are requesting /ip from 127.0.0.1
+```
+
+Problem solved!
+
+## Summary
+
+In this part of the tutorial, you've learned how to implement a simple routing proxy. You've also learned about defining and using variables, as well as a few more filters: **branch()**, **handleMessageStart()** and **replaceMessage()**.
+
+### Takeaways
+
+1. Use [algo.URLRouter](/reference/api/algo/URLRouter) for a routing table that maps a URL-like path to a value of any type, based on which a simple routing proxy can be implemented.
+
+2. By using a **branch()** filter, a sub-pipeline can be selectively created for handling a stream. It resembles _if_ or _switch_ statements in programming languages, where a control flow can have conditional branches.
+
+3. Use **replaceMessage()** to turn a request message into a response message on layer 7. The combination of **demuxHTTP()** and **replaceMessage()** can be an equivalent to **serveHTTP()**.
+
+### What's next?
+
+Another basic feature a proxy should provide is _load balancing_. We'll look into that next.

@@ -1,0 +1,87 @@
+---
+title: Configuration.demuxHTTP()
+api: Configuration.demuxHTTP
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="demuxHTTP"
+  input="Data"
+  output="Data"
+  subInput="Message"
+  subOutput="Message"
+  subType="demux"
+/>
+
+A _demuxHTTP_ filter does the following:
+
+- At the input to a _demuxHTTP_ filter, HTTP requests are _de-multiplexed_ and _decoded_ from the input _Data_ stream
+- For each request, a dedicated sub-pipeline is created, whose input is only one decoded request _Message_
+- At the output from the _demuxHTTP_ filter, response _Messages_ coming out from all sub-pipelines are _encoded_ and _multiplexed_ into one single output _Data_ stream
+
+One _demuxHTTP_ filter can have more than one sub-pipelines, each of which handles one HTTP request. Compare this to [muxHTTP()](/reference/api/Configuration/muxHTTP).
+
+### HTTP versions
+
+The decoder can detect the version of HTTP protocol used by the input stream and automatically switch to HTTP/2 if requested.
+
+#### Multiplexing in HTTP/1.1
+
+In HTTP/1.1, multiplexing is done by [HTTP pipelining](https://en.wikipedia.org/wiki/HTTP_pipelining). A message queue is used internally inside _demuxHTTP_ so that output responses from the filter will always come in the same order as the input requests, even when the sub-pipelines output their responses out of order, in which case an early-arrived response will stay in the queue waiting for its turn to come out.
+
+#### Multiplexing in HTTP/2
+
+In HTTP/2, multiplexing is inherently supported by the protocol itself. With HTTP/2, every _virtual stream_ in the HTTP/2 transport stream runs in a dedicated sub-pipeline. There is no shared queue to wait as in HTTP/1.1, so a delayed response from one sub-pipeline won't affect other sub-pipelines.
+
+### Chunked transfer
+
+When encoding an HTTP/1.x response, the [Content-Length](https://developer.mozilla.org/docs/Web/HTTP/Headers/Content-Length) header needs to come before the body, so _demuxHTTP_ has to buffer the entire body until it sees a _MessageEnd_ event, only by then can the filter output a value for _Content-Length_ header, followed by the previously buffered body.
+
+The buffering is limited to 4KB by default. When the buffered data is over 4KB, the encoder will opt for [chunked encoding](https://developer.mozilla.org/docs/Web/HTTP/Headers/Transfer-Encoding#chunked_encoding), where a _Content-Length_ header is no longer needed. You can change this limit by the option _bufferSize_ in the _options_ parameter.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline('example')
+  .demuxHTTP().to(
+    subPipelineLayout
+  )
+
+pipy()
+  .pipeline('example')
+    .demuxHTTP({
+      bufferSize,
+    }).to(
+      subPipelineLayout
+    )
+```
+
+## Parameters
+
+<Parameters/>
+
+## Example
+
+``` js
+pipy()
+
+  .listen(8000)                       // Accept TCP connection on port 8000
+  .demuxHTTP().to(                    // De-multiplex and decode HTTP requests
+    $=>$.muxHTTP().to(                // Encode and multiplex the request into a shared TCP stream
+      $=>$.connect('localhost:8080')  // Send to and receive from localhost:8080
+    )
+  )
+```
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [demux()](/reference/api/Configuration/demux)
+* [demuxQueue()](/reference/api/Configuration/demuxQueue)
+* [muxQueue()](/reference/api/Configuration/muxQueue)
+* [muxHTTP()](/reference/api/Configuration/muxHTTP)
+* [serveHTTP()](/reference/api/Configuration/serveHTTP)

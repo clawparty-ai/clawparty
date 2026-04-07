@@ -1,0 +1,35 @@
+---
+title: Configuration.compress()
+api: Configuration.compress
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="compress"
+  input="Message"
+  output="Message"
+/>
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .compressMessage({
+    method: 'gzip',
+    level: 'default'
+  })
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [decompress()](/reference/api/Configuration/decompress)
+* [compressHTTP()](/reference/api/Configuration/compressHTTP)

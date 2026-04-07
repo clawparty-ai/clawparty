@@ -1,0 +1,42 @@
+---
+title: Configuration.detectProtocol()
+api: Configuration.detectProtocol
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="detectProtocol"
+  input="Event"
+  output="Event"
+/>
+
+The user function that gets called will have a string as parameter, which can be:
+
+* _"TLS"_ if a [TLS](https://en.wikipedia.org/wiki/Transport_Layer_Security) stream is detected
+* _"HTTP"_ if a plain HTTP/1.0 or HTTP/1.1 stream is detected
+* _"HTTP2"_ if a plain HTTP/2 stream is detected
+* _""_ (empty string) if the stream is concluded to be none of the above protocols
+
+This filter passes everything down unaltered. It doesn't change anything in the event stream.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .detectProtocol(
+    (protocolName) => onProtocolDetected(protocolName)
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [handleTLSClientHello()](/reference/api/Configuration/handleTLSClientHello)

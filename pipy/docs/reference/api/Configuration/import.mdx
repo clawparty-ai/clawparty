@@ -1,0 +1,50 @@
+---
+title: Configuration.import()
+api: Configuration.import
+---
+
+## Description
+
+<Summary/>
+
+In PipyJS, [context variables](/intro/concepts/context) can be defined in two ways. One way is by [pipy()](/reference/api/pipy), where the context variables are only visible to script in the same file. The other way is by using [export()](/reference/api/Configuration/export), where the context variables are not only visible to the file where they are defined, but also to other files that _imported_ them with `import()`.
+
+The module that imports a context variable from another module doesn't need to know what file that variable is defined in. Instead, the module can refer to the variable by its name plus the _namespace_ under which the variable is exported. The one and only argument to `import()` is an object of key-value pairs, where keys are the variable names and values are the namespaces where each variable can be found.
+
+After a context variable is imported to a module, it can be used as if it'd been defined in the current file by [pipy()](/reference/api/pipy). Any changes to that variable are also visible to the original file that _exports_ it, as well as other modules that have _imported_ it.
+
+> As a convention, exported variables are recommended to have two underscores as prefix, such as `__targetFound`.
+
+## Syntax
+
+``` js
+pipy()
+  .import({
+    contextVariable1: namespace1,
+    contextVariable2: namespace2,
+    contextVariable3: namespace3,
+    // ...
+  })
+```
+
+## Parameters
+
+<Parameters/>
+
+## Example
+
+``` js
+pipy()
+
+.import({
+  // global variables defined in other modules under namespace 'routing-stuff'
+  __service: 'routing-stuff',
+  __target: 'routing-stuff',
+})
+```
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [export()](/reference/api/Configuration/export)
+* [pipy()](/reference/api/pipy)

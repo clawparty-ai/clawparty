@@ -1,0 +1,42 @@
+---
+title: Configuration.handleMessageEnd()
+api: Configuration.handleMessageEnd
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="handleMessageEnd"
+  input="Event"
+  output="Event"
+/>
+
+The user function that gets called will have a [MessageEnd](/reference/api/MessageEnd) object as parameter.
+
+This filter passes every input event down to its output. It doesn't change how many or what events there are. However, since events are all just objects being passed around by reference, if you alter the event object itself, the change will be visible on the output, even though the references to the events are identical between the input and the output.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .handleMessageEnd(
+    event => onMessageEnd(event)
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [handleData()](/reference/api/Configuration/handleData)
+* [handleStreamStart()](/reference/api/Configuration/handleStreamStart)
+* [handleStreamEnd()](/reference/api/Configuration/handleStreamEnd)
+* [handleMessageStart()](/reference/api/Configuration/handleMessageStart)
+* [handleMessageBody()](/reference/api/Configuration/handleMessageBody)
+* [handleMessage()](/reference/api/Configuration/handleMessage)

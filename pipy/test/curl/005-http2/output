@@ -1,0 +1,77 @@
+sending 10 separate requests..
+8080
+8081
+8082
+8080
+8081
+8082
+8080
+8081
+8082
+8080
+sending 10 requests in a batch...
+8081
+8081
+8081
+8081
+8081
+8081
+8081
+8081
+8081
+8081
+sending 10 requests in a batch with --http2...
+8082
+8082
+8082
+8082
+8082
+8082
+8082
+8082
+8082
+8082
+sending 10 requests in a batch with --http2-prior-knowledge...
+8080
+8080
+8080
+8080
+8080
+8080
+8080
+8080
+8080
+8080
+sending 10 separate requests over HTTPS...
+HTTP2:8083
+HTTP:8084
+HTTP:8085
+HTTP2:8083
+HTTP:8084
+HTTP:8085
+HTTP2:8083
+HTTP:8084
+HTTP:8085
+HTTP2:8083
+sending 10 requests in a batch over HTTPS...
+HTTP:8084
+HTTP:8084
+HTTP:8084
+HTTP:8084
+HTTP:8084
+HTTP:8084
+HTTP:8084
+HTTP:8084
+HTTP:8084
+HTTP:8084
+sending 10 requests in a batch over HTTPS with --http2...
+HTTP:8085
+HTTP:8085
+HTTP:8085
+HTTP:8085
+HTTP:8085
+HTTP:8085
+HTTP:8085
+HTTP:8085
+HTTP:8085
+HTTP:8085

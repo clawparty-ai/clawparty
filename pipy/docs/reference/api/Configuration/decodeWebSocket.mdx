@@ -1,0 +1,85 @@
+---
+title: Configuration.decodeWebSocket()
+api: Configuration.decodeWebSocket
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="decodeWebSocket"
+  input="Data"
+  output="Message"
+/>
+
+After decoding, the output [Message](/reference/api/Message) has:
+
+* _head_
+  - _opcode_ - Interpretation of the payload
+  - _masked_ - Whether the payload is masked
+* _body_ - Binary data in the body
+
+The _opcode_ can be:
+
+* 1 = text data
+* 2 = binary data
+* 8 = connection close
+* 9 = ping
+* 10 = pong
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .decodeWebSocket()
+```
+
+## Parameters
+
+<Parameters/>
+
+## Example
+
+``` js
+pipy()
+
+  .listen(8080)
+  .demuxHTTP().to(
+    $=>$.acceptHTTPTunnel(
+      msg => (
+        ((
+          hash = new crypto.Hash('sha1'),
+        ) => (
+          hash.update(
+            msg.head.headers['sec-websocket-key'] +
+            '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+          ),
+          new Message({
+            status: 101,
+            headers: {
+              'upgrade': 'websocket',
+              'connection': 'upgrade',
+              'sec-websocket-accept': hash.digest('base64'),
+            }
+          })
+        ))()
+      )
+    ).to(
+      $=>$
+      .decodeWebSocket()
+      .replaceMessage(
+        () => new Message({ opcode: 1 }, 'yay!')
+      )
+      .encodeWebSocket()
+    )
+  )
+```
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [encodeWebSocket()](/reference/api/Configuration/encodeWebSocket)
+* [acceptHTTPTunnel()](/reference/api/Configuration/acceptHTTPTunnel)
+* [connectHTTPTunnel()](/reference/api/Configuration/connectHTTPTunnel)

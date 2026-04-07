@@ -1,0 +1,57 @@
+---
+title: Configuration.serveHTTP()
+api: Configuration.serveHTTP
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="serveHTTP"
+  input="Data"
+  output="Data"
+/>
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .serveHTTP(
+    new Message(head, body)
+  )
+
+pipy()
+  .pipeline()
+  .serveHTTP(
+    request => getResponse(request)
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## Example
+
+``` js
+pipy()
+
+  .listen(8080)
+  .serveHTTP(
+    msg => new Message(
+      `You requested ${msg.head.path}`
+    )
+  )
+```
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [demux()](/reference/api/Configuration/demux)
+* [demuxQueue()](/reference/api/Configuration/demuxQueue)
+* [demuxHTTP()](/reference/api/Configuration/demuxHTTP)
+* [merge()](/reference/api/Configuration/merge)
+* [muxQueue()](/reference/api/Configuration/muxQueue)
+* [muxHTTP()](/reference/api/Configuration/muxHTTP)

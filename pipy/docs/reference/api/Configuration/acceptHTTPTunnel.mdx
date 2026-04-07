@@ -1,0 +1,62 @@
+---
+title: Configuration.acceptHTTPTunnel()
+api: Configuration.acceptHTTPTunnel
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="acceptHTTPTunnel"
+  input="Message + Data"
+  output="Message + Data"
+  subInput="Data"
+  subOutput="Data"
+  subType="link"
+/>
+
+An _acceptHTTPTunnel_ filter calls back a user handler for the input _Message_ (expected to be an HTTP request) and outputs the _Message_ returned from the callback as response. When the response status code is 1xx or 2xx, a sub-pipeline will be created to establish an _HTTP tunnel_ and _Data_ events after that initial request and response are sent back and forth between the _acceptHTTPTunnel_ filter and the sub-pipeline.
+
+Besides _HTTP tunnel_, this filter can also be used for a tunneling-like protocol upgraded from a regular HTTP session, such as [WebSocket](https://en.wikipedia.org/wiki/WebSocket).
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .acceptHTTPTunnel(
+    request => getResponse(request)
+  ).to(
+    subPipelineLayout
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## Example
+
+``` js
+pipy({
+  _target: '',
+})
+
+  .listen(8080)
+  .demuxHTTP().to(
+    $=>$.acceptHTTPTunnel(
+      msg => (
+        _target = msg.head.path, // Extracts the target from the URI
+        new Message('OK')
+      )
+    ).to(
+      $=>$.connect(() => _target)
+    )
+  )
+```
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [connectHTTPTunnel()](/reference/api/Configuration/connectHTTPTunnel)

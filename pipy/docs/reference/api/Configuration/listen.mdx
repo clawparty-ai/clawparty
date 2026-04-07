@@ -1,0 +1,49 @@
+---
+title: Configuration.listen()
+api: Configuration.listen
+---
+
+## Description
+
+<Summary/>
+
+Ports can be specified with just numbers when binding to `0.0.0.0`, or strings in form of `<IP>:<port>` when binding to arbitrary IP addresses. Note that, to bind to an IPv6 address, surround the address within a pair of brackets so that the colon before the port number can be identified correctly, e.g. `[::]:8080`.
+
+After calling this method on a _Configuration_, the newly created pipeline layout would become current. Any _filter-creating_ methods called after this point would append filters to that pipeline layout, until another _pipeline-layout-creating_ method is called.
+
+## Syntax
+
+``` js
+pipy()
+  .listen(port)
+  .filterA()
+  .filterB()
+  // ...
+
+pipy()
+  .listen(port, { ...options })
+  .filterA()
+  .filterB()
+  // ...
+```
+
+## Parameters
+
+<Parameters/>
+
+## Example
+
+``` js
+pipy()
+
+  .listen(8080) // Start listening on port 8080
+  .dump()       // Add filter, dump to stdout whatever is received from the port
+  .dummy()      // Add filter, do not send anything back to the client
+```
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [read()](/reference/api/Configuration/read)
+* [task()](/reference/api/Configuration/task)
+* [pipeline()](/reference/api/Configuration/pipeline)

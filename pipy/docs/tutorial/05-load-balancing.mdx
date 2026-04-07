@@ -1,0 +1,157 @@
+---
+title: "Part 5: Loading Balancing"
+---
+
+import SvgConnectionPools from './connection-pools.svg';
+
+Now we have a proxy that can route requests to different servers. Another requirement to a proxy coming up next would be _load balance_ requests across multiple servers.
+
+## RoundRobinLoadBalancer
+
+Pipy provides a number of built-in classes for load balancing, each of which implemented a specific load balancing algorithm. They can all be used in the same way. In this tutorial, we'll demonstrate how [algo.RoundRobinLoadBalancer](/reference/api/algo/RoundRobinLoadBalancer) can be used to build a _"round-robin"_ load balancer.
+
+To construct a _RoundRobinLoadBalancer_ object, you need a list of targets together with their weights:
+
+``` js
+new algo.RoundRobinLoadBalancer({
+  'localhost:8080': 50,
+  'localhost:8081': 25,
+  'localhost:8082': 25,
+})
+```
+
+Or, if you prefer workload to be distributed evenly, you can simply give it an array of targets, ignoring the weights:
+
+``` js
+new algo.RoundRobinLoadBalancer([
+  'localhost:8080',
+  'localhost:8081',
+  'localhost:8082',
+])
+```
+
+With that _RoundRobinLoadBalancer_, each time you call its [next()](/reference/api/algo/RoundRobinLoadBalancer/next) method, it will give you one of the targets in a round-robin fashion. The target is given as the `id` property of a wrapper object.
+
+We can see how it works in a one-liner script like this:
+
+``` sh
+$ pipy -e "new Array(10).fill(new algo.RoundRobinLoadBalancer(['A','B','C'])).map(b => b.next().id)" 2> /dev/null
+[object pjs::Array]
+["A","B","C","A","B","C","A","B","C","A"]
+```
+
+### Add in load balancers
+
+Our current routing script maps requests directly to string values representing server addresses. Now we need to add one layer of indirection in between: map a request to a _RoundRobinLoadBalancer_ first, before querying the balancer for a concrete target.
+
+``` js
+  ((
+    router = new algo.URLRouter({
+-     '/hi/*': 'localhost:8080',
+-     '/echo': 'localhost:8081',
+-     '/ip/*': 'localhost:8082',
++     '/hi/*': new algo.RoundRobinLoadBalancer(['localhost:8080', 'localhost:8082']),
++     '/echo': new algo.RoundRobinLoadBalancer(['localhost:8081']),
++     '/ip/*': new algo.RoundRobinLoadBalancer(['localhost:8082']),
+    }),
+
+  ) => pipy({
+    _target: undefined,
+  })
+```
+
+Now when we call `router.find()`, we won't get a server address any more. Instead, we'll get a _RoundRobinLoadBalancer_ object. To get the server address that **connect()** needs, we call [next()](/reference/api/algo/RoundRobinLoadBalancer/next) on the balancer.
+
+``` js
+    .handleMessageStart(
+      msg => (
+        _target = router.find(
+          msg.head.headers.host,
+          msg.head.path,
+-       )
++       )?.next?.()
+      )
+    )
+```
+
+Note that, since `router.find()` might return `undefined` when a route isn't found, so we're [optional chaining](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Optional_chaining) here so that `_target` gets a value of `undefined` silently in that case.
+
+What [RoundRobinLoadBalancer.next()](/reference/api/algo/RoundRobinLoadBalancer/next) returns is an internal object with a property `id` holding one _target_ in the target list given at construction time. We use that for the server address we are connecting to.
+
+``` js
+        $=>$.muxHTTP(() => _target).to(
+-         $=>$.connect(() => _target)
++         $=>$.connect(() => _target.id)
+        )
+```
+
+That's all we need to do for a simple load balancer.
+
+## Test in action
+
+Now let's do some tests.
+
+``` sh
+$ curl localhost:8000/hi
+Hi, there!
+$ curl localhost:8000/hi
+You are requesting /hi from ::ffff:127.0.0.1
+$ curl localhost:8000/hi
+Hi, there!
+$ curl localhost:8000/hi
+You are requesting /hi from ::ffff:127.0.0.1
+```
+
+You can see that each time you visit path "/hi", the request is directed to a different target, responding with a different message. What about sending two requests on one single connection?
+
+``` sh
+$ curl localhost:8000/hi localhost:8000/hi
+Hi, there!
+Hi, there!
+$ curl localhost:8000/hi localhost:8000/hi
+You are requesting /hi from 127.0.0.1
+You are requesting /hi from 127.0.0.1
+```
+
+As you can see, the targets are not rotating for a specific client connection. It only rotates across different downstream connections. How does that work behind the scene?
+
+## Connection pool
+
+Under the hood, RoundRobinLoadBalancer has a _resource pool_ for each target it distributes workloads to. We usually use those pools as _connection pools_ when load balancing to upstream servers, which is also the most common use case for a proxy. RoundRobinLoadBalancer keeps track of _resource allocations_ from the pools. When a target is requested by calling [next()](/reference/api/RoundRobinLoadBalancer/next), a free resource item is _borrowed_ from the target's pool. When a resource item is no longer needed, it is _returned_ back to the pool. Most importantly, the balancer guarantees that the same _borrower_ won't get more than one resource items when it calls _next()_ to _borrow_ more than once.
+
+<div style="text-align: center">
+  <SvgConnectionPools/>
+</div>
+
+By default, _next()_ considers the _current downstream connection_ as the borrower, which it can obtain from the built-in context variable `__inbound` by itself without any user interference. That means _next()_ will regard each client connection as a distinct borrower and make sure the same server connection is always allocated no matter how many times the client has requested in a session. That's why the targets, as we've seen earlier in the test, were not rotating for one go of _curl_. It only rotated for different runs of _curl_.
+
+However, if you want to distinguish borrowers by other means, such as client IP or user ID, you can do so by giving a distinct value to the first argument of [next()](/reference/api/RoundRobinLoadBalancer/next) that can represent the actual borrower .
+
+``` js
+  // Allocate only one resource item for each client IP
+  _target = loadBalancer.next(__inbound.remoteAddress)
+```
+
+These built-in resource pools are also the reason why _next()_ returns an object instead of the selected target itself. The object is actually the representative of a resource item from one of the pools. For the same target (or server), we can have multiple resource items (or connections, in our case) allocated to different borrowers (or clients). If _next()_ had returned only the target (such as, the server), there'd be no way to distinguish individual resource items (say, connections) for different borrowers (like, different clients).
+
+Also, **muxHTTP()** can use this resource object as the _key_ to the shared sub-pipeline it _targets_ to (See [Filter: muxHTTP()](/tutorial/03-proxy/#filter-muxhttp) for a detailed explanation about _key_ and the _target callback_). As shown in the following excerpt from our code earlier, the allocated resource (which was left in the custom context variable `_target` after calling [next()](/reference/api/RoundRobinLoadBalancer/next) prior to this point) is given to **muxHTTP()** as the _key_ to the targeted sub-pipeline. That way, each allocated resource item from the balancer is associated with a sub-pipeline in **muxHTTP()**, which is a connection to the actual target server.
+
+``` js
+  $=>$.muxHTTP(() => _target).to(
+    $=>$.connect(() => _target.id)
+  )
+```
+
+## Summary
+
+In this part of the tutorial, you've learned to write a simple round-robin load-balancer.
+
+### Takeaways
+
+1. Use [algo.RoundRobinLoadBalancer](/reference/api/algo/RoundRobinLoadBalancer) (or a few others similar to it) to distribute workloads across multiple targets with respect to their weights.
+
+2. Use [algo.URLRouter](/reference/api/algo/URLRouter) to map URL-like paths to values of any type, not necessarily strings representing server addresses.
+
+### What's next?
+
+As our program gets more features, we'll have more and more parameters for controlling it, such as the port we listen on and the routing table, etc. It would be more nice and tidy to have all these parameters in a dedicated _"configuration file"_. That's what we are going to do next.

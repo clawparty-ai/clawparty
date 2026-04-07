@@ -1,0 +1,127 @@
+---
+title: Configuration.acceptTLS()
+api: Configuration.acceptTLS
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="acceptTLS"
+  input="Data"
+  output="Data"
+  subInput="Data"
+  subOutput="Data"
+  subType="link"
+/>
+
+An _acceptTLS_ filter does the following:
+
+- First, it handles a TLS handshake by reading handshake messages from the client via its input and sending messages back to the client via its output
+- After the handshake is done, it goes on reading and decrypting the _Data_ stream from the filter's input and pumping the decrypted _Data_ stream to a newly created sub-pipeline
+- Output from that sub-pipeline will be encrypted and sent back to the client via the filter's output
+
+### Certificate and private key
+
+The _certificate_ option in the _options_ parameter is required for this filter. It can be an object with two properties:
+
+- _cert_ - a [crypto.Certificate](/reference/api/crypto/Certificate) or [crypto.CertificateChain](/reference/api/crypto/CertificateChain)
+- _key_ - a [crypto.PrivateKey](/reference/api/crypto/PrivateKey)
+
+It can also be a function that returns the above object. In this case, the function will have a _serverName_ parameter as its input, by which you get to provide different certificates for different [SNI](https://en.wikipedia.org/wiki/Server_Name_Indication) names.
+
+### Mutual TLS
+
+To enable mTLS, give an array of [crypto.Certificate](/reference/api/crypto/Certificate) objects to the _trusted_ option in the _options_ parameter. Only clients holding a certificate presented in that list are allowed in the handshake process.
+
+### ALPN
+
+You can provide a callback function to the _alpn_ option in the _options_ parameter. During TLS handshake, this function gets called with an array of protocol names offered by the client and is expected to return the index of the selected protocol in that array.
+
+For example,
+
+``` js
+pipy()
+  .listen(8443)
+  .acceptTLS({
+    certificate: {
+      // ...
+    },
+    // Select HTTP/2 if requested, or HTTP/1.1
+    alpn: names => (
+      ((names.indexOf('h2')+1) || (names.indexOf('http/1.1')+1)) - 1
+    )
+  }).to('tls-offloaded')
+```
+
+You can also simply give an array of strings to this option, telling what protocols should be accepted during TLS handshake.
+
+``` js
+pipy()
+  .listen(8443)
+  .acceptTLS({
+    certificate: {
+      // ...
+    },
+    alpn: ['http/1.1', 'h2']
+  }).to('tls-offloaded')
+```
+
+If nothing is provided, or the callback function returns an invalid index, the first protocol requested by the client side would be chosen.
+
+### Handshake callback
+
+A handshake callback function can be given to the _handshake_ option in the _options_ parameter. This function will be called after handshake completes. The protocol that is chosen after protocol negotiation is passed as a string parameter to the callback.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .acceptTLS({
+    certificate: {
+      cert, // crypto.Certificate or crypto.CertificateChain
+      key,  // crypto.PrivateKey
+    },
+    trusted: [
+      ...trustedCerts // array of crypto.Certificate
+    ],
+    verify: (ok, cert) => onVerifyPeerCertificate(cert),
+    alpn: [...allowedProtocols],
+    handshake: (chosenProtocol) => onHandshakeComplete(chosenProtocol),
+  }).to(
+    subPipelineLayout
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## Example
+
+``` js
+pipy()
+
+  .listen(8443)
+  .acceptTLS({
+    certificate: {
+      // Suppose we have server-cert.pem and server-key.pem in 'secret' folder
+      cert: new crypto.Certificate(pipy.load('secret/server-cert.pem')),
+      key: new crypto.Certificate(pipy.load('secret/server-key.pem')),
+    }
+  }).to(
+    $=>$.serveHTTP(
+      new Message('Hello, TLS!\n')
+    )
+  )
+```
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [connectTLS()](/reference/api/Configuration/connectTLS)
+* [crypto.Certificate](/reference/api/crypto/Certificate)
+* [crypto.CertificateChain](/reference/api/crypto/CertificateChain)
+* [crypto.PrivateKey](/reference/api/crypto/PrivateKey)

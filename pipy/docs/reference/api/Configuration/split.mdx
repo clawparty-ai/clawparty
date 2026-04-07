@@ -1,0 +1,36 @@
+---
+title: Configuration.split()
+api: Configuration.split
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="split"
+  input="Message"
+  output="Message x N"
+/>
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .split(separator)
+
+pipy()
+  .pipeline()
+  .split(
+    () => getSeparator()
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)

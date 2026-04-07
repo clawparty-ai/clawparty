@@ -1,0 +1,42 @@
+---
+title: Configuration.decompress()
+api: Configuration.decompress
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="decompress"
+  input="Message"
+  output="Message"
+/>
+
+The algorithm used for decompression is specified by the _algorithm_ parameter. The decompression algorithms currently supported are _"inflate"_ and _"brotli"_.
+
+You can also give a function to _algorithm_ that dynamically returns the algorithm to use. When it returns nullish (_null_ or _undefined_), no decompression will be done.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .decompressMessage(algorithm)
+
+pipy()
+  .pipeline()
+  .decompressMessage(
+    () => whatAlgorithm()
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [compress()](/reference/api/Configuration/compress)
+* [decompressHTTP()](/reference/api/Configuration/decompressHTTP)

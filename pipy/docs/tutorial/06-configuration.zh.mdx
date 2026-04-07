@@ -1,0 +1,158 @@
+---
+title: 06 配置
+---
+
+在这部分教程中，我们将通过隔离代码和数据来重新组织我们的代码库。其中数据部分将通过一个独立的 JSON 文件暴露出来，作为配置文件，用户可以更改这个文件而不需要触动代码。
+
+## 重构
+
+### 准备 JSON 文件
+
+首先，像之前在 [02 回显](/tutorial/02-echo/#创建一个-pipy-代码库) 里面创建 “main.js” 那样创建一个 JSON 文件，取名为 “config.json”，只是不把它标记为程序的入口。这个文件将包含我们代码里面的可配置元素。
+
+``` js
+{
+  "listen": 8000,
+  "routes": {
+    "/hi/*": "service-hi",
+    "/echo": "service-echo",
+    "/ip/*": "service-tell-ip"
+  },
+  "services": {
+    "service-hi"      : ["127.0.0.1:8080", "127.0.0.1:8082"],
+    "service-echo"    : ["127.0.0.1:8081"],
+    "service-tell-ip" : ["127.0.0.1:8082"]
+  }
+}
+```
+
+正如你所见，这个 JSON 文件包括三个部分：
+
+- 代理要监听的 TCP 端口，目前是 8000。这个很容易理解。
+- 把请求路由到 _服务名称_ 的路由表，而服务名称跟第三部分关联。
+- _服务_ 所对应的目标列表，每个服务在路由表中通过 _服务名称_ 来引用。
+
+我们也可以把目标列表直接放到路由表里，那样一个请求路径能够一次性被路由到一个目标列表。然而，现实中，经常会有多个路径路由到同一个目标列表，所以我们决定添加一层 _services_，那样我们就不必为每一个路径重复其指向的目标列表。
+
+### 从 JSON 里读取数据
+
+现在让我们修改脚本来从 "config.json" 里面读取配置数据。我们把从文件中载入的数据保存到全局变量 `config` 里面以供日后使用。
+
+``` js
++   config = JSON.decode(pipy.load('config.json')),
+    router = new algo.URLRouter({
+      '/hi/*': new algo.RoundRobinLoadBalancer(['localhost:8080', 'localhost:8082']),
+      '/echo': new algo.RoundRobinLoadBalancer(['localhost:8081']),
+      '/ip/*': new algo.RoundRobinLoadBalancer(['localhost:8082']),
+    }),
+```
+
+接下来，我们用已载入 `config` 的数据来初始化 `router`。 
+
+``` js
+    config = JSON.decode(pipy.load('config.json')),
+-   router = new algo.URLRouter({
+-     '/hi/*': new algo.RoundRobinLoadBalancer(['localhost:8080', 'localhost:8082']),
+-     '/echo': new algo.RoundRobinLoadBalancer(['localhost:8081']),
+-     '/ip/*': new algo.RoundRobinLoadBalancer(['localhost:8082']),
+-   }),
++   router = new algo.URLRouter(config.routes),
+```
+
+新的 _URLRouter_ 现在把路径映射到服务名称，而不是直接到一个 _RoundRobinLoadBalancer_，所以我们需要更多一步来为每个服务创建负载均衡器。这些均衡器也来自于 JSON 配置，每个服务一个，从服务名称映射过来。我们可以利用 [_Array.prototype.map_](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Array/map)，再组合上 [_Object.entries_](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Object/entries) 和 [_Object.fromEntries_](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Object/fromEntries) 来把 JSON 里面的目标列表转换成 _RoundRobinLoadBalancer_ 对象。
+
+``` js
+    config = JSON.decode(pipy.load('config.json')),
+    router = new algo.URLRouter(config.routes),
++   services = Object.fromEntries(
++     Object.entries(config.services).map(
++       ([k, v]) => [
++         k, new algo.RoundRobinLoadBalancer(v)
++       ]
++     )
++   ),
+```
+
+> 在 JavaScript 里，可以使用 [_Array.prototype.map_](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Array/map) 来轻松地转换数组元素。然而，对于一个对象，我们得首先把它转换成 `[key, value]` 键值对的数组，再利用 `map()` 来转换数组元素，最后把它转换回一个对象。
+> ``` js
+> Object.fromEntries(
+>   Object.entries(inputObject).map(
+>     ([k, v]) => [
+>       transformKey(k),
+>       transformValue(v),
+>     ]
+>   )
+> )
+> ```
+> 在处理 JSON 中的配置数据时，这是一个十分便利的技巧。
+
+### 链接代码和数据
+
+最后，我们把脚本中可以配置的部分替换成从配置文件获取的数据。
+
+监听端口这块还蛮直截了当的：
+
+``` js
+-   .listen(8000)
++   .listen(config.listen)
+```
+
+对于路由和负载均衡，需要变成两步。首先，把路径路由到服务，然后，从该服务里选择一个目标。当然，我们完全能够在一个深度内嵌的表达式里做完全部工作，但是为了更好的代码可读性，我们决定使用两个表达式。这么做需要一个 _局部变量_ 来临时存放 _服务名称_。
+
+就像在 [04 全局变量](/tutorial/04-routing/#全局变量)里提到的，在 PipyJS 里，不能像在标准 JavaScript 里那样声明 _全局_ 或者 _局部变量_，我们还是通过使用 _函数参数_ 来做类似的事情。所以首先，我们把整个 **handleMessageStart()** 回调包在一个函数里，把原来的 `router.find()` 调用放到参数列表中。
+
+``` js
+    $=>$
+    .handleMessageStart(
+      msg => (
++       ((
+          _target = router.find(
+            msg.head.headers.host,
+            msg.head.path,
+          )?.next?.()
++       ) => (
++       ))()
+      )
+    )
+```
+
+接下来，我们把 `_target` 改成新的局部变量 `s`，并且把 `_target` 连同对 `next()` 的调用一起，都移到函数体内。
+
+``` js
+    $=>$
+    .handleMessageStart(
+      msg => (
+        ((
+-         _target = router.find(
++         s = router.find(
+            msg.head.headers.host,
+            msg.head.path,
+-         )?.next?.()
++         )
+        ) => (
++         _target = services[s]?.next?.()
+        ))()
+      )
+    )
+```
+
+以上便是代码所需的全部修改。
+
+## 测试
+
+我们没有对功能做任何改变，所以可以用之前同样的方法来测试：[测试](/tutorial/05-load-balancing#测试)。
+
+## 总结
+
+在这部分教程里，你学会了如何分离代码和数据。这是一种组织代码的好方法，尤其是当脚本要让其他人使用时，而他们也许并不关心代码本身。你也了解了如何在 PipyJS 里面声明和使用局部变量。
+
+### 要点
+
+1. 分离代码和数据是一种很好的实践，它使你的代码更易于配置。
+2. 使用 [pipy.load()](/reference/api/pipy/load) 从一个文件里读取二进制数据。
+3. 使用 [JSON.decode()](/reference/api/JSON/decode) 从二进制数据里解码 JSON。
+4. 把代码包在一个带参数的函数里，这些参数扮演了局部变量的角色，可以用于存放临时值。
+
+### 接下来
+
+我们的代码逻辑变得越来越冗长复杂，总是在单个脚本文件里添加功能从长远来看不是个好办法。在走得更远之前，我们要先建立某种 “模块化” 机制。所以接下来，我们要看看如何构建一个 “插件系统”。

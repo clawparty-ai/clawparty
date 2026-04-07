@@ -1,0 +1,39 @@
+---
+title: Configuration.print()
+api: Configuration.print
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="print"
+  input="Event"
+  output="Event"
+/>
+
+This filter is different from [dump()](/reference/api/Configuration/dump) in that:
+
+- It only prints out _Data_ events
+- It dumps out _Data_ object without formatting, so if the _Data_ is not text, it could mess up your terminal
+
+This filter passes everything down unaltered. It doesn't change anything in the event stream.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .print()
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [dump()](/reference/api/Configuration/dump)
+* [console.log()](/reference/api/console/log)

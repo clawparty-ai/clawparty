@@ -1,0 +1,92 @@
+---
+title: Configuration.task()
+api: Configuration.task
+---
+
+## Description
+
+<Summary/>
+
+A _task pipeline layout_ can be used in 3 scenarios:
+
+- When used without an argument, the job will be started only once at startup.
+- When used with a number or a time-unit-suffixed string, the job will be created periodically. Valid time unit suffixes include: `s` for seconds, `m` for minutes, `h` for hours.
+- When used with a signal name such as _"SIGINT"_ or _"SIGHUP"_, the job will be created when the signal is received.
+
+At creation of a task pipeline, [onStart()](/reference/api/Configuration/onStart) is usually used to generate the initial _Event(s)_ driving the filters on the pipeline. The pipeline should eventually output a _StreamEnd_ event to indicate the completion of the job. The next recurrence of the job, if any, will not happen until the current one is completed.
+
+After calling this method on a _Configuration_, the newly created pipeline layout would become current. Any _filter-creating_ methods called after this point would append filters to that pipeline layout, until another _pipeline-layout-creating_ method is called.
+
+## Syntax
+
+``` js
+pipy()
+  .task()
+  .filterA()
+  .filterB()
+  // ...
+
+pipy()
+  .task(interval)
+  .filterA()
+  .filterB()
+  // ...
+
+pipy()
+  .task(signal)
+  .filterA()
+  .filterB()
+  // ...
+```
+
+## Parameters
+
+<Parameters/>
+
+## Example
+
+``` js
+pipy({
+  _g: { counter: 0 },
+})
+
+  // Start a job at startup
+  .task()
+  .onStart(
+    () => (
+      console.log('Started.'),
+      new StreamEnd // Indicate end of the job by outputting a StreamEnd event
+    )
+  )
+
+  // Start a job every 5 seconds
+  .task('5s')
+  .onStart(() => new Message)
+  .handleStreamStart(
+    // Print 'Hello!' at the beginning of the job
+    () => console.log(`Hello! Counter is ${++_g.counter}`)
+  )
+  .replaceMessage(
+    // Indicate end of the job by outputting a StreamEnd event
+    new StreamEnd
+  )
+
+  // Start a job when SIGINT is received
+  .task('SIGINT')
+  .onStart(() => new Message)
+  .handleStreamStart(
+    // Gracefully shut down, which is also the default behaviour for SIGINT
+    () => pipy.exit()
+  )
+  .replaceMessage(
+    // Indicate end of the job by outputting a StreamEnd event
+    new StreamEnd
+  )
+```
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [listen()](/reference/api/Configuration/listen)
+* [read()](/reference/api/Configuration/read)
+* [pipeline()](/reference/api/Configuration/pipeline)

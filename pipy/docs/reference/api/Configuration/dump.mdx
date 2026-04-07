@@ -1,0 +1,49 @@
+---
+title: Configuration.dump()
+api: Configuration.dump
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="dump"
+  input="Event"
+  output="Event"
+/>
+
+This filter is different from [print()](/reference/api/Configuration/print) in that:
+
+- It prints out all types of events
+- It dumps out _Data_ object in two formats side by side: hexadecimal and text
+
+You can attach extra information to print out along with the events by the _tag_ parameter. It can be any truthy value or a function that returns a truthy value.
+
+This filter passes everything down unaltered. It doesn't change anything in the event stream.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .dump()
+
+pipy()
+  .pipeline()
+  .dump(tag)
+
+pipy()
+  .pipeline()
+  .dump(() => getTag())
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [print()](/reference/api/Configuration/print)
+* [console.log()](/reference/api/console/log)

@@ -1,0 +1,43 @@
+---
+title: Configuration.throttleConcurrency()
+api: Configuration.throttleConcurrency
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="throttleConcurrency"
+  input="Event"
+  output="Event"
+/>
+
+This filter passes down everything unaltered. It doesn't change anything in the event stream. It only delays them.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .throttleConcurrency(
+    new algo.Quota(quota)
+  )
+
+pipy()
+  .pipeline()
+  .throttleConcurrency(
+    () => getQuota()
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [algo.Quota](/reference/api/algo/Quota)
+* [throttleDataRate()](/reference/api/Configuration/throttleDataRate)
+* [throttleMessageRate()](/reference/api/Configuration/throttleMessageRate)

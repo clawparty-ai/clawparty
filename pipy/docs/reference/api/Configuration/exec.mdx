@@ -1,0 +1,53 @@
+---
+title: Configuration.exec()
+api: Configuration.exec
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="exec"
+  input="Data"
+  output="Data"
+/>
+
+The external process is started from a shell command given by the _command_ parameter when the first event hits the filter's input. The command can be a string or a function that returns a dynamic string.
+
+Only _Data_ events on the filter's input are fed into the process's standard input as a byte stream. All other events are discarded. On the output of the filter, the process's standard output can be received as _Data_ events. When the process exits, a [StreamEnd](/reference/api/StreamEnd) event will be received.
+
+When the filter is destroyed with its pipeline, the process (if any) will be killed accordingly.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .exec(command)
+
+pipy()
+  .pipeline()
+  .exec(
+    () => whatCommand()
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## Example
+
+``` js
+pipy()
+
+  .task()
+  .onStart(() => new Message)
+  .exec('ls -l') // Execute shell command: `ls -l`
+  .print()       // Print out the standard output from that command
+```
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)

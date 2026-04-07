@@ -1,0 +1,329 @@
+---
+title: 04 路由
+---
+
+import SvgRoutingPipelines from './routing-pipelines.svg';
+
+代理基本的任务之一就是 _路由_。对于 HTTP，路由通常基于一个请求的 Host 头字段和被请求的 URI。换言之，代理应该能够把类似 "abc.com/api/v1/login" 这样的东西映射到某个能够处理该请求的 _目标主机_。
+
+## URLRouter
+
+Pipy API 提供 [URLRouter](/reference/api/algo/URLRouter) 以方便实现从 URL 到任意类型值的快速映射。在这个例子里，我们打算把 URL 映射到一个 _字符串值_，其中包含了目标地址和端口号。
+
+要定义这样的映射，我们 `new` 一个 _URLRouter_ 对象，并给它路由表。
+
+``` js
+new algo.URLRouter({
+  '/hi/*': 'localhost:8080',
+  '/echo': 'localhost:8081',
+  '/ip/*': 'localhost:8082',
+})
+```
+
+我们需要从脚本任意位置都可以访问这个路由器，所以我们应该把它放到一个 _全局变量_ 里面。
+
+## 全局变量
+
+PipyJS 是一个 JavaScript 的 _函数式编程变种_。在 PipyJS 里，每一样东西都是一个 _函数_。没有语法来声明 _全局变量_ 或者 _局部变量_，相反，我们使用 _函数参数_ 作为局部变量。在此基础上，当函数位于最外层，包含了整个脚本文件时，它的参数实际上就成为了 _全局变量_。
+
+> 关于 PipyJS 变量的更多信息，请参阅 [Variables](/reference/pjs/1-language/#variables)。
+
+所以，要有一个 “全局可访问变量”，首先，就得把我们的代码包在一个函数里面，然后立刻就地调用这个函数。
+
+``` js
++ ((
++ ) =>
+  pipy()
+
+    .listen(8000)
+    .demuxHTTP().to(
+      $=>$.muxHTTP().to(
+        $=>$.connect('localhost:8080')
+      )
+    )
+
++ )()
+```
+
+> 别忘了最后的那对括号。它让 Pipy 立即 _调用_ 该包裹函数。如果没有这个，它就只是一个函数定义，其中的代码根本不会运行。
+
+接下来，添加一个名为 _"router"_ 的参数到这个函数最开始的参数列表里面，它的初始值设置成我们之前 _"new"_ 出来的那个 _URLRouter_ 对象。
+
+``` js
+  ((
++   router = new algo.URLRouter({
++     '/hi/*': 'localhost:8080',
++     '/echo': 'localhost:8081',
++     '/ip/*': 'localhost:8082',
++   })
+  ) =>
+  pipy()
+
+    .listen(8000)
+    .demuxHTTP().to(
+      $=>$.muxHTTP().to(
+        $=>$.connect('localhost:8080')
+      )
+    )=
+
+  )()
+```
+
+## 上下文变量
+
+除了全局的 URLRouter 对象之外，我们还需要一个变量来保存从路由计算得到的 _target_ 结果。这个变量不能是全局的，因为它的值随着请求的不同而变化。换言之，当变量在脚本中被引用时，它的值取决于当前的 _上下文_。我们称这些变量为 _"上下文变量"_。
+
+> 关于 _上下文变量_ 的更多信息，请参阅 [上下文](/intro/concepts#上下文)。
+
+我们已经在 [Part 2](/tutorial/02-echo/#代码剖析-1) 里认识了内置的上下文变量 `__inbound`。这次，我们添加一个自定义的上下文变量 `_target`，并给它 _undefined_ 作为初始值，这通过传递给 [pipy()](/reference/api/pipy) 调用的参数来完成。
+
+``` js
+  ((
+    router = new algo.URLRouter({
+      '/hi/*': 'localhost:8080',
+      '/echo': 'localhost:8081',
+      '/ip/*': 'localhost:8082',
+    })
+  ) =>
+- pipy()
++ pipy({
++   _target: undefined,
++ })
+
+    .listen(8000)
+    .demuxHTTP().to(
+      $=>$.muxHTTP().to(
+        $=>$.connect('localhost:8080')
+      )
+    )=
+
+  )()
+```
+
+> 上下文变量可以用 JavaScript 允许的任意名字。不过作为最佳实践，我们推荐所有的上下文变量命名时都在前面加一个下划线前缀，这只是为了和常规的变量做区分。
+
+## 路由
+
+现在我们有了所需的全部变量，接下来我们要做的是调用 [_URLRouter.find()_](/reference/api/algo/URLRouter/find) 以根据请求里面的内容得到 `_target` 的值。我们可以在一个置于 **muxHTTP()** 之前的 [handleMessageStart()](/reference/api/Configuration/handleMessageStart) 过滤器里做这件事。它只需一个回调函数作为参数，这个回调函数在每次 [MessageStart](/reference/api/MessageStart) 事件经过时都会执行，届时它会收到一个 **MessageStart** 对象作为它的唯一入参，从这个对象可以获取请求的信息，计算它的路由，然后把结果保存在 `_target` 里。
+
+``` js
+  ((
+    router = new algo.URLRouter({
+      '/hi/*': 'localhost:8080',
+      '/echo': 'localhost:8081',
+      '/ip/*': 'localhost:8082',
+    })
+  ) =>
+  pipy({
+    _target: undefined,
+  })
+
+    .listen(8000)
+    .demuxHTTP().to(
+      $=>$
++     .handleMessageStart(
++       msg => (
++         _target = router.find(
++           msg.head.headers.host,
++           msg.head.path,
++         )
++       )
++     )
+      .muxHTTP().to(
+        $=>$.connect('localhost:8080')
+      )
+    )
+
+  )()
+```
+
+### 过滤器：connect
+
+现在我们已经得出了 `_target`，但是我们还总是连接到一个固定的目标 _"localhost:8080"_。我们应该相应地把它改成 `_target`，对吧？
+
+``` js
+      .muxHTTP().to(
+-       $=>$.connect('localhost:8080')
++       $=>$.connect(_target) // WRONG!!!
+      )
+```
+
+如果你运行这个代码，很抱歉，你会得到一个错误：
+
+```
+[ERR] [pjs] File /proxy.js:
+[ERR] [pjs] Line 24:  $=>$.connect(_target)
+[ERR] [pjs]                        ^
+[ERR] [pjs] Error: unresolved identifier
+```
+
+这是因为，上下文变量需要上下文，仅在有上下文被创建用于管道运行时它们才存在。当我们运行上面的代码时，我们还处于 _"配置时"_，此时我们仅仅 _定义_ 了管道布局，还没有 _产生_ 任何管道。既然没有进来的 I/O 事件要处理，就没有管道被创建，也没有所需的上下文，也就压根没有上下文变量存在。
+
+如何解决这个问题？在 [Part 2](/tutorial/02-echo/) 里我们曾设法把一个过滤器参数变成 _动态_ 的，这次也可以采用同样的办法：只要将其包在一个在运行时会返回动态值的 **函数** 里面。
+
+``` js
+      .muxHTTP().to(
+-       $=>$.connect(_target) // WRONG!!!
++       $=>$.connect(() => _target)
+      )
+```
+
+现在，当我们在 _配置时_ 运行代码，`() => _target` 只是一个 _函数定义_，此刻它是合法的，因为 `_target` 还没有被求解。只有在 _运行时_，管道接收到输入时才会求解它。那时候，代码运行在某个特定的上下文里，那时的 `_target` 会包含前面的 **handleMessageStart()** 回调确定下来的值。
+
+## 分支
+
+但是等等，假如目标找不到会怎样？如果找不到，`_target` 将会是 `undefined`，我们就无处转发该请求。在这种情况下，我们应该把这个请求引向另一个不同路径，在那里返回 _"404 Not Found"_ 作为响应。这就是需要 **branch()** 的时候了。
+
+### 过滤器：branch
+
+过滤器 [branch()](/reference/api/Configuration/branch) 接受一个或者多个参数对。在每对参数中，先是一个回调函数用于分支被选中的条件，紧接着是一个该分支的子管道布局。最后一对参数可以省略条件，表示最后别无选择的默认分支。
+
+这样一来，我们把 **muxHTTP()** 包在一个 **branch()** 里面，只有当找到 `_target` 时，事件才走这里。
+
+``` js
+    .listen(8000)
+    .demuxHTTP().to(
+      $=>$
+      .handleMessageStart(
+        msg => (
+          _target = router.find(
+            msg.head.headers.host,
+            msg.head.path,
+          )
+        )
+      )
++     .branch(
++       () => Boolean(_target), (
++         $=>$
+          .muxHTTP().to(
+            $=>$.connect('localhost:8080')
+          )
++       )
++     )
+    )
+```
+
+> 这里的这个条件可以简化成 `() => _target`，因为 **branch()** 本来就用真性值作为 “是” 而假性值作为 “否”。但是为了清晰起见，在这里我们显式地把 `_target` 转换成布尔值。
+
+### 过滤器：replaceMessage
+
+谜题的最后一块拼图是 _"臭名昭著的 404 页面"_。我们在默认替代分支里用一个子管道来处理。
+
+我们能像在 [Part 1](/tutorial/01-hello/) 里那样使用 **serveHTTP()** 吗？很不幸，答案是 “不可以”。**serveHTTP()** 期待的输入是原始 TCP 流，只有这样它才能完成它的工作：从 TCP 流 _“解帧”_ HTTP 消息。而在这里，解帧工作已经在 **demuxHTTP()** 里完成了。你不能对一个 TCP 流解帧两次。
+
+既然喂给这个新 “404” 子管道的流已经从 _字节流_ 变成了 _消息_，也就是说，从四层（传输层）变成了七层（应用层），我们只要用一个新的 “404” 消息来 “替换掉” 这个七层的消息，从而让子管道最终输出 “404” 响应即可。
+
+``` js
+      .branch(
+        () => Boolean(_target), (
+          $=>$.muxHTTP().to(
+            $=>$.connect('localhost:8080')
+          )
++       ), (
++         $=>$.replaceMessage(
++           new Message({ status: 404 }, 'No route')
++         )
+        )
+      )
+```
+
+> 你可以把 **serveHTTP()** 想作 **demuxHTTP()** 加上 **replaceMessage()** 的组合，其中 **replaceMessage()** 持有跟 **serveHTTP()** 相同的回调处理函数，用以返回响应。 
+> 所以，下面的代码：
+> ``` js
+> serveHTTP(req => makeResponse(req))
+> ```
+> 等同于：
+> ``` js
+> demuxHTTP().to($=>$.replaceMessage(req => makeResponse(req)))
+> ```
+
+此刻你或许会纳闷，从这个 “404” 子管道出来的输出到哪里去了？它是怎么到达客户端的？
+
+### 接合过滤器
+
+Pipy 管道是单向路径。事件流入它的第一个过滤器，从最后一个过滤器出来。对于一个 _端口管道_，来自客户端的请求是它的输入，返回给客户端的响应是它的输出。通常而言（并非总是如此），对于一个子管道也是一样，输入是请求，输出是响应。
+
+当类似于 **branch()** 这样的 _接合过滤器_ 链接到子管道时，接合过滤器的输入去往子管道的输入，子管道的输出通常也会返回到接合过滤器，成为该过滤器的输出。在我们的例子中，**replaceMessage()** 的输出也成为 **branch()** 的输出，紧接着，又返回到 **demuxHTTP()**，最终，作为响应返回到端口管道的输出。
+
+那也就是说，当一个请求无法被路由而不得不进入 “404” 分支时，它的完整旅行路线就像下面这样：
+
+<div style="text-align: center">
+  <SvgRoutingPipelines/>
+</div>
+
+关于子管道和接合过滤器的更多信息，请参阅 [子管道](/intro/concepts/#子管道)。
+
+## 连接共享问题
+
+现在，如果测试下面的代码，一开始它看起来工作的还不错：
+
+``` sh
+$ curl localhost:8000/hi
+Hi, there!
+$ curl localhost:8000/ip
+You are requesting /ip from 127.0.0.1
+$ curl localhost:8000/bad
+No route
+```
+
+但是如果我们尝试在单个客户端连接上发送两个请求到不同的服务器，我们却得到：
+
+``` sh
+$ curl localhost:8000/hi localhost:8000/ip
+Hi, there!
+Hi, there!
+$ curl localhost:8000/ip localhost:8000/hi
+You are requesting /ip from 127.0.0.1
+You are requesting /hi from 127.0.0.1
+```
+
+两个请求都被导向了此客户端连接上第一个请求的目标服务器，这是什么情况？
+
+这是因为上游连接是通过 **muxHTTP()** 创建的子管道里的 **connect()** 来建立的，对于它创建的每一个子管道，连接只会建立一次。这就意味着，服务器连接跟 **muxHTTP()** 的子管道之间是一对一关系。正如在上一章 [过滤器: muxHTTP](/tutorial/03-proxy/#过滤器-muxhttp) 所解释的，默认情况下，针对某个特定的 _Inbound_ （或者在我们这个例子中，针对来自 _curl_ 客户端的某个特定连接），多个 **muxHTTP()** 实例向同一个子管道合并。一旦出站连接被建立就不会再改变，直到下一个入站连接导致 **muxHTTP()** 使用不同的子管道。即使每个请求有不同的 `_target` 值，该变量也只有在连接建立时被使用一次。在那之后，它的值就不再有关系，也不会致使 **connect()** 过滤器重新连接。
+
+为了解决这个问题，我们改变一下 **muxHTTP()** 实例如何共享子管道的策略，把 `_target` 变量给它作为 _合并目标_，这样，子管道就只会由指向同一个服务器的请求所共享，而不管是哪个客户端连接。
+
+``` js
+      .branch(
+        () => Boolean(_target), (
+-         $=>$.muxHTTP().to(
++         $=>$.muxHTTP(() => _target).to(
+            $=>$.connect('localhost:8080')
+          )
+        ), (
+          $=>$.replaceMessage(
+            new Message({ status: 404 }, 'No route')
+          )
+        )
+      )
+```
+
+对于 HTTP/1 来说，这并不是最好的策略，因为当多于一个客户端请求不得不被合并到同一个服务器连接时，它们会排队，一次只能服务一个，完全没有并发了。对于这个问题的解决方案将留作本教程的下一个话题。
+
+## 测试
+
+现在运行程序，再做一次之前失败的测试。
+
+``` sh
+$ curl localhost:8000/hi localhost:8000/ip
+Hi, there!
+You are requesting /ip from 127.0.0.1
+```
+
+问题解决啦！
+
+## 总结
+
+在这部分教程里，你学会了如何实现一个简单的路由代理，你还了解了关于定义和使用变量，以及几个新的过滤器：**branch()**，**handleMessageStart()** 和 **replaceMessage()**。
+
+### 要点
+
+1. 利用 [algo.URLRouter](/reference/api/algo/URLRouter) 实现路由表，该路由表可以把类 URL 路径映射到任意类型的值，基于此，一个简单的路由代理得以实现。
+
+2. 通过使用 **branch()** 过滤器，能够选择性地创建一个子管道来处理流。这就好像编程语言中的 _if_ 或者 _switch_ 语句，使得一个控制流可以有条件分支。
+
+3. 利用 **replaceMessage()** 在七层把一个请求消息转变成响应消息。**demuxHTTP()** 和 **replaceMessage()** 的组合跟 **serveHTTP()** 是等价的。
+
+### 接下来
+
+代理的另一个基本功能就是 _负载均衡_，我们要在接下来的主题中看看。

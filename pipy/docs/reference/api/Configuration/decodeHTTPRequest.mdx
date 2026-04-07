@@ -1,0 +1,47 @@
+---
+title: Configuration.decodeHTTPRequest()
+api: Configuration.decodeHTTPRequest
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="decodeHTTPRequest"
+  input="Data"
+  output="Message"
+/>
+
+After decoding, the output [Message](/reference/api/Message) has:
+
+* _head_
+  - _protocol_ - Can be `"HTTP/1.0"` or `"HTTP/1.1"`
+  - _method_ - HTTP method such as `"GET"` and `"POST"`
+  - _path_ - Requested URI
+  - _headers_ - Header fields
+* _body_ - Message body
+
+Header names are all converted to lowercase. So `"Host"` becomes `"host"` and `"Content-Type"` becomes `"content-type"`.
+
+This filter only supports HTTP/1.x. For compatibility with HTTP/2, check out [demuxHTTP()](/reference/api/Configuration/demuxHTTP).
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .decodeHTTPRequest()
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [decodeHTTPResponse()](/reference/api/Configuration/decodeHTTPResponse)
+* [encodeHTTPRequest()](/reference/api/Configuration/encodeHTTPRequest)
+* [encodeHTTPResponse()](/reference/api/Configuration/encodeHTTPResponse)
+* [demuxHTTP()](/reference/api/Configuration/demuxHTTP)

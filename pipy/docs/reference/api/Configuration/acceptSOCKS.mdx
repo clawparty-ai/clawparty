@@ -1,0 +1,70 @@
+---
+title: Configuration.acceptSOCKS()
+api: Configuration.acceptSOCKS
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="acceptSOCKS"
+  input="Data"
+  output="Data"
+  subInput="Data"
+  subOutput="Data"
+  subType="link"
+/>
+
+An _acceptSOCKS_ filter decodes the connection request from its input stream, and calls back a user function with the connection parameters including:
+
+- _host_ - Destination address, could be an IPv4 address or a domain name
+- _port_ - Destination port number
+- _id_ - Username if any
+
+If the callback returns `true`, the request will be accepted, and a sub-pipeline will be created. All subsequently received _Data_ from the client is forwarded to it. Output _Data_ from the sub-pipeline is sent back to the client.
+
+If the callback returns `false`, the request will be rejected, and no sub-pipelines will be created.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .acceptSOCKS(
+    (host, port, id) => shouldAcceptSession(host, port, id)
+  ).to(
+    subPipelineLayout
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## Example
+
+``` js
+pipy({
+  _host: '',
+  _port: 0,
+})
+
+  .listen(1080)
+  .acceptSOCKS(
+    (host, port) => (
+      _host = host,
+      _port = port,
+      true // return true to accept the session
+    )
+  ).to(
+    $=>$.connect(
+      () => `${_host}:${_port}`
+    )
+  )
+```
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [connectSOCKS()](/reference/api/Configuration/connectSOCKS)

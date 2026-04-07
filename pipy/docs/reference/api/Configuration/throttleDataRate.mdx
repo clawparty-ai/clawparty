@@ -1,0 +1,43 @@
+---
+title: Configuration.throttleDataRate()
+api: Configuration.throttleDataRate
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="throttleDataRate"
+  input="Event"
+  output="Event"
+/>
+
+This filter passes down everything unaltered. It doesn't change anything in the event stream. It only delays them.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .throttleDataRate(
+    new algo.Quota(quota, { per })
+  )
+
+pipy()
+  .pipeline()
+  .throttleDataRate(
+    () => getQuota()
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [algo.Quota](/reference/api/algo/Quota)
+* [throttleConcurrency()](/reference/api/Configuration/throttleConcurrency)
+* [throttleMessageRate()](/reference/api/Configuration/throttleMessageRate)

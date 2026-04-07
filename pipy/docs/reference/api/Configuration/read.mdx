@@ -1,0 +1,49 @@
+---
+title: Configuration.read()
+api: Configuration.read
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="read"
+  input="Event"
+  output="Data"
+/>
+
+The specified file is opened at the first received input event, whatever type of event it is. The filter's output has only _Data_ events from the file's content, ended with a _StreamEnd_ event. All input events are simply discarded.
+
+The pathname of the file to read is specified in the first parameter. It can be a function that returns a pathname. The pathname can be `"-"` for reading from the standard input.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .read(filename)
+
+pipy()
+  .pipeline()
+  .read(() => getFilename())
+```
+
+## Parameters
+
+<Parameters/>
+
+## Example
+
+``` js
+pipy()
+  .task()
+  .onStart(() => new Message)
+  .read('/path/to/input.txt') // Open and read from file /path/to/input.txt
+  .dump() // Dump to stdout whatever is in the file
+```
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [tee()](/reference/api/Configuration/tee)

@@ -1,0 +1,42 @@
+---
+title: Configuration.replaceData()
+api: Configuration.replaceData
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="replaceData"
+  input="Event"
+  output="Event"
+/>
+
+The user function will receive as parameter a [Data](/reference/api/Data) object that is removed from the input stream. Whatever the function returns will be inserted into the output stream in place of the removed event. It can be an event or a [Message](/reference/api/Message), or an array of events or _Messages_. If the function returns nothing (_null_ or _undefined_), no events will be inserted back into the stream.
+
+You can also use a fixed replacement value instead of a function if the replacement is static.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .replaceData(
+    data => transform(data)
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [replaceStreamStart()](/reference/api/Configuration/replaceStreamStart)
+* [replaceStreamEnd()](/reference/api/Configuration/replaceStreamEnd)
+* [replaceMessageStart()](/reference/api/Configuration/replaceMessageStart)
+* [replaceMessageBody()](/reference/api/Configuration/replaceMessageBody)
+* [replaceMessageEnd()](/reference/api/Configuration/replaceMessageEnd)
+* [replaceMessage()](/reference/api/Configuration/replaceMessage)

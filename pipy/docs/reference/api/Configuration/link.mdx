@@ -1,0 +1,37 @@
+---
+title: Configuration.link()
+api: Configuration.link
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="link"
+  input="Event"
+  output="Event"
+  subInput="Event"
+  subOutput="Event"
+  subType="link"
+/>
+
+When a sub-pipeline layout is to be used in more than one places, you can give it a name by defining it with [pipeline()](/reference/api/Configuration/pipeline) and _"links"_ to it from multiple places using the _link_ filter.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .link('named-sub-pipeline')
+```
+
+## Parameters
+
+<Parameters/>
+
+## See also
+
+* [Configuration](/reference/api/Configuration)
+* [pipeline()](/reference/api/Configuration/pipeline)
+* [branch()](/reference/api/Configuration/branch)

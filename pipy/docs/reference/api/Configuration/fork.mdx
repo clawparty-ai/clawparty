@@ -1,0 +1,93 @@
+---
+title: Configuration.fork()
+api: Configuration.fork
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="fork"
+  input="Event"
+  output="Event"
+  subInput="Event"
+  subType="demux"
+/>
+
+### Create a single sub-pipeline
+
+When `fork()` has no parameters, only one sub-pipeline will be created for each input stream. The sub-pipeline shares the same context from the _fork_ filter's pipeline, aka. the _main pipeline_. That is, all states in the main pipeline is visible to the sub-pipeline, and all changes to the states in the sub-pipeline will be reflected in the main pipeline as well.
+
+### Create multiple sub-pipelines
+
+When `fork()` is given an argument, it is supposed to be an array, or a function that returns an array. The length of the array is the number of sub-pipelines to create for every input stream. Each sub-pipeline is given one of the array elements as the _startup parameter_. These sub-pipelines can obtain their _startup parameters_ by the parameter to a callback function in [onStart()](/reference/api/Configuration/onStart). Sub-pipelines created this way also get their own new contexts cloned from the main pipeline (the _fork_ filter's pipeline).
+
+``` js
+pipy({
+  _index: 0,
+})
+
+  .task()
+  .onStart(() => new Message)
+  // Create 10 sub-pipelines, each having
+  // numbers 1 to 10 for their _index values
+  .fork(
+    new Array(10).fill().map(
+      (_, i) => i
+    )
+  ).to(
+    $=>$
+    .onStart(i => _index = i)
+    .dump(() => _index) // Dump all events with tag _index
+  )
+```
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .fork().to(
+    subPipelineLayout
+  )
+
+pipy()
+  .pipeline()
+  .fork([ ...startupValues ]).to(
+    subPipelineLayout
+  )
+
+pipy()
+  .pipeline()
+  .fork(() => getStartupValues()).to(
+    subPipelineLayout
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## Example
+
+``` js
+pipy()
+
+  .listen(8000)
+  // Clone all data to a sub-pipeline
+  .fork().to(
+    // Send the cloned data to localhost:8008
+    $=>$.connect('localhost:8008')
+  )
+  // Respond with 'Hello!' to all requests
+  .serveHTTP(
+    new Message('Hello!')
+  )
+```
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [link()](/reference/api/Configuration/link)
+* [use()](/reference/api/Configuration/use)

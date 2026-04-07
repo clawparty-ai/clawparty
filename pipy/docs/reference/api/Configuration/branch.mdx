@@ -1,0 +1,114 @@
+---
+title: Configuration.branch()
+api: Configuration.branch
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="branch"
+  input="Event"
+  output="Event"
+  subInput="Event"
+  subOutput="Event"
+  subType="demux"
+/>
+
+### Select from several sub-pipeline layouts
+
+The _branch_ filter can be given more than one sub-pipeline layouts, each corresponding to a condition. As the first event arrives at the filter, it evaluates each condition in order to find the first one that is met, and creates a sub-pipeline based on its corresponding sub-pipeline layout.
+
+> Once a pipeline layout is selected, it won't change throughout the whole lifetime of the current stream, even when the conditions may change afterwards.
+
+If no conditions are met, the last pipeline layout without a set condition is selected.
+
+``` js
+pipy({
+  _condition: undefined,
+})
+
+  .pipeline()
+  .branch(
+    () => _condition === 'cond1', (
+      $=>$.dump('branch1')
+    ),
+    () => _condition === 'cond2', (
+      $=>$.dump('branch1')
+    ),
+    (
+      $=>$.dump('default branch')
+    )
+  )
+```
+
+### Block up events until a condition is met
+
+If all sub-pipeline layout options have conditions but none of them are met, _branch_ filter will block the stream until a condition is met. This can be used to buffer up events while waiting for a certain situation.
+
+``` js
+pipy({
+  _targetDetected: false,
+})
+
+  .pipeline()
+  .branch(
+    () => _targetDetected, (
+      $=>$.dump()
+    )
+  )
+```
+
+> The condition the filter is waiting for is only checked every time there's an input event to the filter. To check the condition whenever any state in the context has changed, regardless of any input events, use [wait()](/reference/api/Configuration/wait) instead.
+
+### Static branch
+
+If none of the condition arguments are functions, the _branch_ filter will be *static*, in which case there will not be a _branch_ filter being appended to the current pipeline configuration. Instead, all conditions will be evaluated at _configuration time_ to find a branch. The function for that branch will then be executed with one single argument for the current _Configuration_, giving your script a chance to selectively insert or bypass filters from the very beginning.
+
+``` js
+((
+  dumpEnabled = false,
+) => pipy()
+
+.listen(8080)
+.branch(
+  dumpEnabled, (
+    $=>$.dump()
+  )
+)
+.dummy()
+
+)()
+```
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .branch(
+    () => isConditionAMet(), pipelineLayoutA,
+    () => isConditionBMet(), pipelineLayoutB,
+    // ...
+    fallbackPipelineLayout,
+  )
+
+pipy()
+  .pipeline()
+  .branch(
+    () => isConditionAMet(), pipelineLayoutA,
+    () => isConditionBMet(), pipelineLayoutB,
+    // ...
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [branchMessage()](/reference/api/Configuration/branchMessage)
+* [branchMessageStart()](/reference/api/Configuration/branchMessageStart)

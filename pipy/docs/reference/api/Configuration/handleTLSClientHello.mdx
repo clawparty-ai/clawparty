@@ -1,0 +1,40 @@
+---
+title: Configuration.handleTLSClientHello()
+api: Configuration.handleTLSClientHello
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="handleTLSClientHello"
+  input="Event"
+  output="Event"
+/>
+
+The user function that gets called will have an object as parameter. The object has these fields:
+
+- _serverNames_ - An array of server names from [SNI](https://www.rfc-editor.org/rfc/rfc6066#section-3)
+- _protocolNames_ - An array of protocol names from [ALPN](https://www.rfc-editor.org/rfc/rfc7301)
+
+This filter passes everything down unaltered. It doesn't change anything in the event stream.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .handleTLSClientHello(
+    ({ serverNames, protocolNames }) => onClientHello()
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [detectProtocol()](/reference/api/Configuration/detectProtocol)

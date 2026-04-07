@@ -1,0 +1,52 @@
+---
+title: Configuration.wait()
+api: Configuration.wait
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="wait"
+  input="Event"
+  output="Event"
+/>
+
+The condition to wait is given by the _condition_ parameter. It should be a function that returns a truthy value when the condition is met. The function will be called every time a relevant asynchronous event happens, such as having received a response from the upstream, etc.
+
+You can optionally set the maximum waiting time with _timeout_ option in the _options_ parameter. It can be a number in seconds or a string ending with one of the time unit suffixes including `s`, `m`, `h` and `d`.
+
+This filter passes everything down unaltered. It doesn't change anything in the event stream. It only delays them.
+
+### Similarity to _branch()_
+
+When [branch()](/reference/api/Configuration/branch) filter is used without a fallback branch, it has a similar effect as _wait_, where input events are blocked until certain condition is met. The differece is, however, _branch_ only checks the provided condition callback when there's an input event to the filter, while _wait_ checks it whenever any state in the context has changed.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .wait(
+    () => shouldContinue()
+  )
+
+pipy()
+  .pipeline()
+  .wait(
+    () => shouldContinue(),
+    {
+      timeout,
+    }
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [branch()](/reference/api/Configuration/branch)

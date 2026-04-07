@@ -1,0 +1,51 @@
+---
+title: Data
+api: Data
+---
+
+## Description
+
+<Summary/>
+
+Once created, you can't alter a byte in it, but you can cut it short or enlarge it by joining to other _Data_ objects.
+
+### Conversion from/to strings
+
+To convert from a string, you can [construct](/reference/api/Data/new) a _Data_ object or call [Data.from()](/reference/api/Data/from) with the string as parameter, plus an optional _encoding_ parameter. The following encodings are supported:
+
+- `"utf8"` (default) - As a UTF-8 encoded string.
+- `"hex"` - As hexadecimal numbers.
+- `"base64"` - [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4) representation.
+- `"base64url"` - [Base64url](https://datatracker.ietf.org/doc/html/rfc4648#section-5) representation.
+
+To convert to a string, call [toString](/reference/api/Data/toString) with one of the above encodings as the optional _encoding_ parameter.
+
+### Create binary data using script
+
+To make raw binary data from scratch, first, create an array of numbers, each representing a byte, and then [construct](/reference/api/Data/new) a _Data_ object with the array as parameter.
+
+After a _Data_ object is created, you can also call [push()](/reference/api/Data/push) to concatenate it with other _Data_ objects.
+
+## Constructor
+
+<Constructor/>
+
+## Static methods
+
+<StaticMethods/>
+
+## Properties
+
+<Properties/>
+
+## Methods
+
+<Methods/>
+
+## See Also
+
+* [MessageStart](/reference/api/MessageEnd)
+* [MessageEnd](/reference/api/MessageEnd)
+* [StreamEnd](/reference/api/StreamEnd)
+* [handleData()](/reference/api/Configuration/handleData)
+* [replaceData()](/reference/api/Configuration/replaceData)

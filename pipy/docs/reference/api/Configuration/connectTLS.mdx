@@ -1,0 +1,109 @@
+---
+title: Configuration.connectTLS()
+api: Configuration.connectTLS
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="connectTLS"
+  input="Data"
+  output="Data"
+  subInput="Data"
+  subOutput="Data"
+  subType="link"
+/>
+
+A _connectTLS_ filter does the following:
+
+- First, it initiates and carries out a TLS handshake with the server via a newly created sub-pipeline
+- After the handshake is done, it goes on reading and encrypting _Data_ stream from the filter's input and pumping the encrypted _Data_ stream to the sub-pipeline
+- The sub-pipeline's output, which is encrypted _Data_ stream received from the server, is decrypted before coming out from the filter's output
+
+### SNI
+
+As the client side in a TLS communication, you can specify the [SNI](https://en.wikipedia.org/wiki/Server_Name_Indication) server name by option _sni_ in the _options_ parameter. It can be a string or a function that returns a string.
+
+### ALPN
+
+[ALPN](https://en.wikipedia.org/wiki/Application-Layer_Protocol_Negotiation) is supported by specifying protocols the client side prefers in _alpn_ option of the _options_ parameter. It can be a string or an array of strings.
+
+### Mutual TLS
+
+To enable mTLS, give an array of [crypto.Certificate](/reference/api/crypto/Certificate) objects to the _trusted_ option in the _options_ parameter. Only servers holding a certificate presented in that list are allowed in the handshake process.
+
+The _certificate_ option in the _options_ parameter is also required on the client side if mutual TLS is being used. It can be an object with the following properties, or a function that returns that object:
+
+- _cert_ - a [crypto.Certificate](/reference/api/crypto/Certificate) or [crypto.CertificateChain](/reference/api/crypto/CertificateChain)
+- _key_ - a [crypto.PrivateKey](/reference/api/crypto/PrivateKey)
+
+### Handshake callback
+
+A handshake callback function can be given to the _handshake_ option in the _options_ parameter. This function will be called after handshake completes. The protocol that is chosen after protocol negotiation is passed as a string parameter to the callback.
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .connectTLS().to(
+    subPipelineLayout
+  )
+
+pipy()
+  .pipeline('example')
+  .connectTLS({
+    certificate: {
+      cert, // crypto.Certificate or crypto.CertificateChain
+      key,  // crypto.PrivateKey
+    },
+    trusted: [
+      ...trustedCerts // array of crypto.Certificate
+    ],
+    verify: (ok, cert) => onVerifyPeerCertificate(cert),
+    sni: () => getServerName(),
+    alpn: [...requestedProtocols],
+    handshake: (chosenProtocol) => onHandshakeComplete(chosenProtocol),
+  })
+```
+
+## Parameters
+
+<Parameters/>
+
+## Example
+
+``` js
+pipy()
+
+  // Start a one-shot task
+  .task()
+  // Throw together a simple HTTP request: GET /hello
+  .onStart(
+    () => new Message(
+      {
+        method: 'GET',
+        path: '/hello',
+        headers: {
+          host: 'example.com:443',
+        },
+      }
+    )
+  )
+  .muxHTTP().to(
+    $=>$.connectTLS().to(
+      $=>$.connect('example.com:443') // Connect to the target with TCP
+    )
+  )
+  .print() // Print out the response as plain text
+```
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [acceptTLS()](/reference/api/Configuration/acceptTLS)
+* [crypto.Certificate](/reference/api/crypto/Certificate)
+* [crypto.CertificateChain](/reference/api/crypto/CertificateChain)
+* [crypto.PrivateKey](/reference/api/crypto/PrivateKey)

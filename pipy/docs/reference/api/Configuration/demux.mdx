@@ -1,0 +1,47 @@
+---
+title: Configuration.demux()
+api: Configuration.demux
+---
+
+## Description
+
+<Summary/>
+
+<FilterDiagram
+  name="demux"
+  input="Message"
+  subInput="Message"
+  subType="demux"
+/>
+
+A _demux_ filter does the following:
+
+- At the input to a _demux_ filter, _Messages_ are separated
+- For each input _Message_, a dedicated sub-pipeline is created, whose input is only that _Message_
+- At the output from the _demux_ filter, nothing is outputted (compare to [demuxQueue()](/reference/api/Configuration/demuxQueue))
+
+One _demux_ filter can have more than one sub-pipelines, each of which handles only one _Message_. Compare this to [mux()](/reference/api/Configuration/mux).
+
+## Syntax
+
+``` js
+pipy()
+  .pipeline()
+  .demux().to(
+    subPipelineLayout
+  )
+```
+
+## Parameters
+
+<Parameters/>
+
+## See Also
+
+* [Configuration](/reference/api/Configuration)
+* [demuxQueue()](/reference/api/Configuration/demuxQueue)
+* [demuxHTTP()](/reference/api/Configuration/demuxHTTP)
+* [merge()](/reference/api/Configuration/merge)
+* [muxQueue()](/reference/api/Configuration/muxQueue)
+* [muxHTTP()](/reference/api/Configuration/muxHTTP)
+* [serveHTTP()](/reference/api/Configuration/serveHTTP)
