@@ -123,6 +123,7 @@
     @close="showLocalTemplates = false"
     @installed="handleTemplateInstalled"
     @open-main-chat="openMainChatForInstall"
+    @send-messages="handleSendMessages"
   />
   <TemplatePicker
     :show="showSharedTemplates"
@@ -131,6 +132,7 @@
     @close="showSharedTemplates = false"
     @installed="handleTemplateInstalled"
     @open-main-chat="openMainChatForInstall"
+    @send-messages="handleSendMessages"
   />
 </template>
 
@@ -1064,6 +1066,76 @@ const openMainChatForInstall = () => {
   }
 }
 
+const handleSendMessages = async (messages) => {
+  const mainAgent = openclawAgents.value.find(a => a.id === 'main')
+  if (!mainAgent) {
+    console.error('[handleSendMessages] main agent not found')
+    return
+  }
+  
+  // Set main agent as active
+  activeChat.value = null
+  activeOpenclawAgent.value = {
+    agentId: mainAgent.id,
+    name: mainAgent.name,
+    emoji: mainAgent.emoji || '🤖',
+    isOpenclaw: true,
+    messages: [],
+    sessions: [],
+    isTemp: true
+  }
+  
+  // Send each message with a delay between them
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i]
+    
+    // Add user message to chat immediately
+    const now = new Date()
+    const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+    
+    if (!activeOpenclawAgent.value.messages) {
+      activeOpenclawAgent.value.messages = []
+    }
+    
+    activeOpenclawAgent.value.messages.push({
+      text: message,
+      time: time,
+      sender: currentMeshAgentUsername.value,
+      timestamp: now.getTime(),
+      isTemp: true,
+      isSent: true
+    })
+    
+    activeOpenclawAgent.value.lastMessage = message
+    activeOpenclawAgent.value.time = time
+    
+    // Send API call
+    try {
+      const response = await openclawService.sendMessage('main', message)
+      const payloads = response.data?.payloads || response.data?.result?.payloads || []
+      const replyText = payloads.map(p => p?.text).filter(Boolean).join('\n\n')
+      
+      if (replyText) {
+        const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
+        activeOpenclawAgent.value.messages.push({
+          text: replyText,
+          time: replyTime,
+          sender: mainAgent.name,
+          timestamp: new Date().getTime(),
+          isTemp: false
+        })
+      }
+    } catch (e) {
+      console.error(`[handleSendMessages] Error sending message ${i + 1}:`, e)
+    }
+    
+    // Delay between messages
+    if (i < messages.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+  }
+}
+
 const handleTemplateInstalled = async (data) => {
   await fetchOpenclawAgents()
   
@@ -1092,7 +1164,7 @@ const handleTemplateInstalled = async (data) => {
     isTemp: true
   }
   
-  const message = `使用如下信息帮我创建一个叫做'${data.agentName}'的Agent : ...\n\nSOUL.md:\n${data.soulContent}`
+  const message = `帮我创建一个名字是'${data.agentName}'的agent，如果这个名字是中文的需要用名字对应的拼音作为 agent-id，他的soul.md是：\n\n${data.soulContent}`
   newMessage.value = message
   
   await new Promise(resolve => setTimeout(resolve, 100))

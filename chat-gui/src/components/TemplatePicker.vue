@@ -10,7 +10,7 @@ const props = defineProps({
   installedAgentIds: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['close', 'installed', 'open-main-chat'])
+const emit = defineEmits(['close', 'installed', 'open-main-chat', 'send-messages'])
 
 const industries = ref([])
 const selectedIndustry = ref(null)
@@ -69,36 +69,23 @@ const handleInstallAll = async () => {
   installAllLoading.value = true
   error.value = ''
   
-  // Open main chat to show installation progress
-  emit('open-main-chat')
-  
-  const { openclawService } = await import('../services/chatService')
-  const notInstalledAgents = agentsWithStatus.value.filter(a => !a.installed)
-  console.log(`[Install All] Starting to install ${notInstalledAgents.length} agents`)
-  
   // Build all messages first
-  const messages = notInstalledAgents.map(agent => ({
-    agent,
-    message: `帮我安装agent ${agent.name}，他的soul.md是：
+  const notInstalledAgents = agentsWithStatus.value.filter(a => !a.installed)
+  const messageTexts = notInstalledAgents.map(agent => 
+    `帮我创建一个名字是'${agent.name}'的agent，如果这个名字是中文的需要用名字对应的拼音作为 agent-id，他的soul.md是：
 
 ${agent.systemPrompt || ''}`
-  }))
+  )
   
-  // Send all messages at once
-  for (const { agent, message } of messages) {
-    try {
-      console.log(`[Install All] Sending message for ${agent.name}`)
-      await openclawService.sendMessage('main', message)
-    } catch (e) {
-      console.error(`[Install All] Error sending message for ${agent.name}:`, e)
-    }
-  }
-  
-  console.log(`[Install All] All messages sent, refreshing agents in 3 seconds...`)
+  // Emit messages to be sent by parent component
+  emit('send-messages', messageTexts)
+  emit('open-main-chat')
+  emit('close')
   
   // Wait a bit for main to process, then refresh
   setTimeout(async () => {
     try {
+      const { openclawService } = await import('../services/chatService')
       // First call GET /api/openclaw/agents to trigger cache update
       await openclawService.getAgents()
       // Then wait a bit and get the updated list
@@ -117,30 +104,14 @@ ${agent.systemPrompt || ''}`
 
 const handleInstall = async (agent) => {
   if (agent.installed || installing.value[agent.slug]) return
-  installing.value[agent.slug] = true
-  try {
-    const response = props.source === 'local'
-      ? await templateService.installLocalTemplate(selectedIndustry.value.slug, agent.slug, editorContent.value, agentName.value)
-      : await templateService.installSharedTemplate(selectedIndustry.value.slug, agent.slug, editorContent.value, agentName.value)
-    if (response.data.success) {
-      emit('installed', response.data)
-      editingAgent.value = null
-      editorContent.value = ''
-      agentName.value = ''
-    } else {
-      error.value = response.data.message || 'Install failed'
-    }
-  } catch (e) {
-    console.error('Install failed:', e)
-    const serverMessage = e?.response?.data?.message
-    if (serverMessage === 'Agent already exists') {
-      showDuplicateConfirm.value = true
-    } else {
-      error.value = serverMessage || 'Install failed'
-    }
-  } finally {
-    installing.value[agent.slug] = false
-  }
+  
+  const message = `帮我创建一个名字是'${agentName.value}'的agent，如果这个名字是中文的需要用名字对应的拼音作为 agent-id，他的soul.md是：
+
+${editorContent.value}`
+  
+  emit('send-messages', [message])
+  emit('open-main-chat')
+  emit('close')
 }
 
 const handleSelect = (agent) => {
