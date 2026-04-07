@@ -938,6 +938,14 @@ function main(listen, apiToken, noAuth) {
         var regUrl = (body && body.regUrl) ? body.regUrl : 'https://clawparty.flomesh.io:7779'
         var customUserName = (body && body.userName) ? body.userName : ''
 
+        // Check if already joined clawparty
+        var meshName = 'clawparty'
+        var existingMeshes = api.allMeshes()
+        var alreadyJoined = existingMeshes.some(function(m) { return m.name === meshName })
+        if (alreadyJoined) {
+          return response(409, { status: 409, message: 'Already joined ' + meshName + ', have fun!' })
+        }
+
         var DEFAULT_NAMES = [
           'jose-arcadio-buendia', 'ursula-iguran', 'aureliano-buendia', 'rebeco',
           'amaranta', 'jose-arcadio', 'aureliano-babilonia', 'remedios-the-beauty',
