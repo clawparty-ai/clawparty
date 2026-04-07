@@ -435,21 +435,29 @@ async fn main() -> anyhow::Result<()> {
                                             let stdout = String::from_utf8_lossy(&output.stdout);
                                             let stderr = String::from_utf8_lossy(&output.stderr);
                                             
+                                            // Log all output for debugging
+                                            if !stdout.is_empty() {
+                                                for line in stdout.lines() {
+                                                    state_clone.write().await.add_log("INFO", &format!("[CLI] {}", line));
+                                                }
+                                            }
+                                            if !stderr.is_empty() {
+                                                for line in stderr.lines() {
+                                                    state_clone.write().await.add_log("INFO", &format!("[CLI-ERR] {}", line));
+                                                }
+                                            }
+                                            
                                             if output.status.success() {
-                                                // Find the success message line
-                                                let msg = stdout.lines()
-                                                    .find(|line| line.contains("Successfully joined"))
-                                                    .unwrap_or("Successfully joined clawparty!");
-                                                state_clone.write().await.add_log("INFO", msg);
-                                            } else {
-                                                let err_msg = if !stderr.is_empty() {
-                                                    stderr.trim().to_string()
-                                                } else if !stdout.is_empty() {
-                                                    stdout.trim().to_string()
+                                                let msg = if !stdout.is_empty() {
+                                                    stdout.lines()
+                                                        .find(|line| line.contains("Successfully joined"))
+                                                        .unwrap_or("Successfully joined clawparty!")
                                                 } else {
-                                                    format!("CLI exited with status: {}", output.status)
+                                                    "Successfully joined clawparty!"
                                                 };
-                                                state_clone.write().await.add_log("ERROR", &format!("Join party failed: {}", err_msg));
+                                                state_clone.write().await.add_log("INFO", &format!("Join result: {}", msg));
+                                            } else {
+                                                state_clone.write().await.add_log("ERROR", &format!("Join party failed: {}", output.status));
                                             }
                                         }
                                         Err(e) => {
