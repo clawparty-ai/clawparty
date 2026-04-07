@@ -414,14 +414,32 @@ async fn main() -> anyhow::Result<()> {
                                     }
                                 }
 
+                                // Get api_client before dropping s
+                                let api_client_for_join = s.api.clone();
                                 drop(s);
                                 
                                 let state_clone = state.clone();
                                 tokio::spawn(async move {
                                     state_clone.write().await.add_log("INFO", "Joining clawparty...");
                                     
-                                    // Build CLI command
+                                    // Build CLI command with environment variables
                                     let mut cmd = std::process::Command::new("ztm");
+                                    
+                                    // Set environment variables for CLI to connect to agent
+                                    let client = api_client_for_join.lock().await;
+                                    let api_url = client.base_url().to_string();
+                                    let api_token = client.token().to_string();
+                                    drop(client); // Release the lock
+                                    
+                                    // Extract host:port from base_url (e.g., "http://127.0.0.1:7778" -> "127.0.0.1:7778")
+                                    let api_host = api_url
+                                        .trim_start_matches("http://")
+                                        .trim_start_matches("https://")
+                                        .to_string();
+                                    
+                                    cmd.env("ZTM_CONFIG", &api_host);
+                                    cmd.env("ZTM_API_TOKEN", &api_token);
+                                    
                                     cmd.arg("join").arg("party");
                                     
                                     // Add --name parameter if provided

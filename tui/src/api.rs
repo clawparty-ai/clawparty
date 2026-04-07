@@ -5,6 +5,7 @@ use crate::models::*;
 pub struct ApiClient {
     client: Client,
     base_url: String,
+    token: String,
 }
 
 impl ApiClient {
@@ -21,7 +22,15 @@ impl ApiClient {
             .build()
             .unwrap();
 
-        Self { client, base_url }
+        Self { client, base_url, token }
+    }
+
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    pub fn token(&self) -> &str {
+        &self.token
     }
 
     pub async fn check_health(&self) -> bool {
