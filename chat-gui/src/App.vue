@@ -990,6 +990,11 @@ const leaveMesh = async (meshName) => {
   await fetchMeshes()
 }
 
+const deleteAgent = async (agentId) => {
+  await openclawService.deleteAgent(agentId)
+  await fetchAgents()
+}
+
 const renameGroupChat = async (chat, newName) => {
   if (!currentMesh.value || !newName.trim()) return
   
@@ -1090,6 +1095,7 @@ provide('groupChats', groupChats)
 provide('currentMeshAgentUsername', currentMeshAgentUsername)
 provide('joinParty', joinParty)
 provide('leaveMesh', leaveMesh)
+provide('deleteAgent', deleteAgent)
 provide('localOpenclawAvailable', localOpenclawAvailable)
 
 const resolveEpDisplayName = (username) => {

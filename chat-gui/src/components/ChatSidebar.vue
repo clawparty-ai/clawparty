@@ -341,12 +341,17 @@
           <div
             v-for="agent in openclawAgents"
             :key="agent.id"
-            class="panel-item"
+            class="panel-item agent-item"
             :class="{ active: activeOpenclawAgent?.agentId === agent.id }"
             @click="$emit('selectOpenclaw', agent)"
           >
             <div class="item-avatar openclaw-avatar">{{ agent.emoji }}</div>
             <span class="item-name">{{ agent.name }}</span>
+            <button class="delete-agent-btn" @click.stop="handleDeleteAgent(agent)" title="Delete agent">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+              </svg>
+            </button>
           </div>
           <div v-if="openclawAgents.length === 0" class="panel-empty-state">
             <div class="panel-empty-state-title">No local agents</div>
@@ -418,6 +423,7 @@ const currentMeshAgentUsername = inject('currentMeshAgentUsername')
 const activeOpenclawAgent = inject('activeOpenclawAgent')
 const joinParty = inject('joinParty')
 const leaveMesh = inject('leaveMesh')
+const deleteAgent = inject('deleteAgent')
 const resolveEpDisplayName = inject('resolveEpDisplayName')
 const localOpenclawAvailable = inject('localOpenclawAvailable')
 
@@ -667,6 +673,21 @@ const handleCreateGroup = async () => {
   await createGroupChat(selectedObjs, groupName)
   closePicker()
   activeOrg.value = 'groups'
+}
+
+const handleDeleteAgent = async (agent) => {
+  if (!confirm(`Are you sure you want to delete agent "${agent.name}"? This action cannot be undone.`)) return
+  
+  try {
+    await deleteAgent(agent.id)
+    // Refresh agents list
+    const { openclawService } = await import('../services/chatService')
+    const response = await openclawService.getAgents()
+    openclawAgents.value = response.data || []
+  } catch (err) {
+    console.error('Failed to delete agent:', err)
+    alert('Failed to delete agent: ' + (err?.response?.data?.message || err?.message || 'Unknown error'))
+  }
 }
 </script>
 
@@ -1258,6 +1279,39 @@ const handleCreateGroup = async () => {
 .panel-item.active .item-name {
   color: #000;
   font-weight: 700;
+}
+
+.agent-item {
+  position: relative;
+}
+
+.delete-agent-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #888;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.agent-item:hover .delete-agent-btn {
+  opacity: 1;
+}
+
+.delete-agent-btn:hover {
+  color: #e01e5a;
+  background: rgba(224, 30, 90, 0.1);
 }
 
 .item-status {

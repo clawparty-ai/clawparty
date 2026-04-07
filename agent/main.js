@@ -752,6 +752,42 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
+    '/api/openclaw/agents/{agent}': {
+      'DELETE': function ({ agent }) {
+        agent = URL.decodeComponent(agent)
+        if (!agent) {
+          return response(400, { status: 400, message: 'Agent name is required' })
+        }
+        console.info('[api] DELETE /api/openclaw/agents/' + agent)
+        
+        // Remove agent files from ~/.openclaw/agents/
+        var agentDir = os.path.join(os.home(), '.openclaw', 'agents', agent)
+        try {
+          os.exec(['rm', '-rf', agentDir])
+          console.info('[api] Removed agent directory:', agentDir)
+        } catch (e) {
+          console.error('[api] Failed to remove agent directory:', e)
+          return response(500, { status: 500, message: 'Failed to remove agent files' })
+        }
+        
+        // Also remove from mesh config if exists
+        var allMeshes = api.allMeshes()
+        for (var i = 0; i < allMeshes.length; i++) {
+          var mesh = allMeshes[i]
+          if (mesh.agent && mesh.agent.name && mesh.agent.name.startsWith(agent)) {
+            try {
+              db.delMesh(mesh.name)
+              console.info('[api] Removed mesh config for:', mesh.name)
+            } catch (e) {
+              console.error('[api] Failed to remove mesh config:', e)
+            }
+          }
+        }
+        
+        return response(200, { status: 200, message: 'Agent deleted successfully' })
+      }
+    },
+
     '/api/openclaw/session-history/{agent}/{session}': {
       'GET': function ({ agent, session }) {
         agent = URL.decodeComponent(agent)

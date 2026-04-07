@@ -51,6 +51,10 @@ export const openclawService = {
     })
   },
   
+  deleteAgent(agentId) {
+    return api.del(`/openclaw/agents/${encodeURIComponent(agentId)}`)
+  },
+  
   sendMessage(agentId, text) {
     return api.post(`/openclaw/chat/${agentId}`, text, {
       headers: { 'Content-Type': 'text/plain' }
