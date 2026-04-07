@@ -14,6 +14,7 @@ const industries = ref([])
 const selectedIndustry = ref(null)
 const loading = ref(false)
 const installing = ref({})
+const installAllLoading = ref(false)
 const error = ref('')
 const editingAgent = ref(null)
 const editorContent = ref('')
@@ -55,6 +56,45 @@ const agentsWithStatus = computed(() => {
     installed: props.installedAgentIds.includes(agent.slug),
   }))
 })
+
+const notInstalledCount = computed(() => {
+  return agentsWithStatus.value.filter(a => !a.installed).length
+})
+
+const handleInstallAll = async () => {
+  if (installAllLoading.value || notInstalledCount.value === 0) return
+  
+  installAllLoading.value = true
+  error.value = ''
+  
+  const notInstalledAgents = agentsWithStatus.value.filter(a => !a.installed)
+  
+  for (const agent of notInstalledAgents) {
+    try {
+      installing.value[agent.slug] = true
+      
+      const response = props.source === 'local'
+        ? await templateService.installLocalTemplate(selectedIndustry.value.slug, agent.slug, agent.systemPrompt || '', agent.name || '')
+        : await templateService.installSharedTemplate(selectedIndustry.value.slug, agent.slug, agent.systemPrompt || '', agent.name || '')
+      
+      if (response.data.success) {
+        emit('installed', response.data)
+      } else {
+        error.value = response.data.message || `Failed to install ${agent.name}`
+        break
+      }
+    } catch (e) {
+      console.error(`Failed to install ${agent.name}:`, e)
+      const serverMessage = e?.response?.data?.message
+      error.value = serverMessage || `Failed to install ${agent.name}`
+      break
+    } finally {
+      installing.value[agent.slug] = false
+    }
+  }
+  
+  installAllLoading.value = false
+}
 
 const handleInstall = async (agent) => {
   if (agent.installed || installing.value[agent.slug]) return
@@ -143,6 +183,13 @@ const handleBackToEdit = () => {
             <div class="agents-header">
               <span class="agents-title">{{ selectedIndustry.name }}</span>
               <span class="agents-count">({{ agentsWithStatus.length }})</span>
+              <button
+                class="install-all-btn"
+                :disabled="installAllLoading || notInstalledCount === 0"
+                @click="handleInstallAll"
+              >
+                {{ installAllLoading ? '安装中...' : '一键全安装' }}
+              </button>
             </div>
             <div
               v-for="agent in agentsWithStatus"
@@ -356,7 +403,12 @@ const handleBackToEdit = () => {
 .agents-header {
   display: flex;
   align-items: center;
-  padding: 8px 16px 4px;
+  padding: 10px 16px;
+  background: rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .agents-title {
@@ -369,6 +421,30 @@ const handleBackToEdit = () => {
   font-size: 12px;
   color: rgba(0, 0, 0, 0.4);
   margin-left: 6px;
+  flex: 1;
+}
+
+.install-all-btn {
+  padding: 5px 12px;
+  background: var(--slack-green);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.install-all-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.install-all-btn:disabled {
+  background: rgba(0, 0, 0, 0.15);
+  color: rgba(0, 0, 0, 0.4);
+  cursor: not-allowed;
 }
 
 .agent-item {
@@ -376,9 +452,13 @@ const handleBackToEdit = () => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  margin: 2px 8px;
-  border-radius: 8px;
+  margin: 0 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   transition: background 0.1s;
+}
+
+.agent-item:last-child {
+  border-bottom: none;
 }
 
 .agent-item:hover {
