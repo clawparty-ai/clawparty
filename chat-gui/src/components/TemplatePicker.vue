@@ -8,7 +8,7 @@ const props = defineProps({
   installedAgentIds: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['close', 'installed'])
+const emit = defineEmits(['close', 'installed', 'open-main-chat'])
 
 const industries = ref([])
 const selectedIndustry = ref(null)
@@ -66,6 +66,9 @@ const handleInstallAll = async () => {
   
   installAllLoading.value = true
   error.value = ''
+  
+  // Open main chat to show installation progress
+  emit('open-main-chat')
   
   const { openclawService } = await import('../services/chatService')
   const notInstalledAgents = agentsWithStatus.value.filter(a => !a.installed)

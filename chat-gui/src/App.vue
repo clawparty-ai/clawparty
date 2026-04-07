@@ -122,6 +122,7 @@
     :installedAgentIds="installedAgentIds"
     @close="showLocalTemplates = false"
     @installed="handleTemplateInstalled"
+    @open-main-chat="openMainChatForInstall"
   />
   <TemplatePicker
     :show="showSharedTemplates"
@@ -129,6 +130,7 @@
     :installedAgentIds="installedAgentIds"
     @close="showSharedTemplates = false"
     @installed="handleTemplateInstalled"
+    @open-main-chat="openMainChatForInstall"
   />
 </template>
 
@@ -1041,6 +1043,25 @@ const openLocalTemplates = () => {
 const openSharedTemplates = () => {
   showSharedTemplates.value = true
   showLocalTemplates.value = false
+}
+
+const openMainChatForInstall = () => {
+  const mainAgent = openclawAgents.value.find(a => a.id === 'main')
+  if (!mainAgent) {
+    console.error('[openMainChatForInstall] main agent not found')
+    return
+  }
+  
+  activeChat.value = null
+  activeOpenclawAgent.value = {
+    agentId: mainAgent.id,
+    name: mainAgent.name,
+    emoji: mainAgent.emoji || '🤖',
+    isOpenclaw: true,
+    messages: [],
+    sessions: [],
+    isTemp: true
+  }
 }
 
 const handleTemplateInstalled = async (data) => {
