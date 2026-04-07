@@ -39,8 +39,16 @@ function loadFilter(name) {
 export default function ({ app, mesh, db, spawnOpenclaw }) {
   var chats = []
 
+  function getDefaultAutoReplyAgent() {
+    return db.getCache('default_auto_reply_agent') || 'main'
+  }
+
+  function setDefaultAutoReplyAgent(agentName) {
+    db.setCache('default_auto_reply_agent', agentName)
+  }
+
   function getPeerConfig(peer) {
-    return db.getChatPeer(mesh.name, peer) || { peer, autoReply: false, autoReplyAgent: 'main', credit: BASE_CREDIT, filterChain: '', sendFilterChain: '', isBlocked: false, run: 1, muted: false, thinkingTime: 3, halfAutomation: false }
+    return db.getChatPeer(mesh.name, peer) || { peer, autoReply: false, autoReplyAgent: getDefaultAutoReplyAgent(), credit: BASE_CREDIT, filterChain: '', sendFilterChain: '', isBlocked: false, run: 1, muted: false, thinkingTime: 3, halfAutomation: false }
   }
 
   function setPeerConfig(peer, config) {
@@ -1296,5 +1304,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     clearGroupEpRequestHint,
     clearPeerRequestHint,
     halfAutomationRewrite,
+    getDefaultAutoReplyAgent,
+    setDefaultAutoReplyAgent,
   }
 }

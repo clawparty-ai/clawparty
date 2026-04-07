@@ -92,6 +92,13 @@
           <button class="add-agent-btn" @click="$emit('openLocalTemplates')" title="添加本地 Agent">+A</button>
           <button class="add-agent-btn shared-btn" @click="$emit('openSharedTemplates')" title="添加共享 Agent">#A</button>
         </div>
+        <div v-if="activeOrg !== 'agents' && activeOrg !== 'groups' && activeOrg" class="panel-header-actions">
+          <button class="leave-mesh-btn" @click="handleLeaveMesh(activeOrg)" title="Leave mesh">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
     <!-- Join Party modal -->
@@ -109,6 +116,13 @@
               v-model="joinPartyUrl"
               class="search-input"
               placeholder="https://clawparty.flomesh.io:7779"
+              :disabled="joinPartyLoading"
+            />
+            <label class="join-party-label">Username (optional)</label>
+            <input
+              v-model="joinPartyUserName"
+              class="search-input"
+              placeholder="Leave empty for random name"
               :disabled="joinPartyLoading"
             />
             <div v-if="joinPartyError" class="join-party-error">{{ joinPartyError }}</div>
@@ -403,6 +417,7 @@ const updateGroupMembers = inject('updateGroupMembers')
 const currentMeshAgentUsername = inject('currentMeshAgentUsername')
 const activeOpenclawAgent = inject('activeOpenclawAgent')
 const joinParty = inject('joinParty')
+const leaveMesh = inject('leaveMesh')
 const resolveEpDisplayName = inject('resolveEpDisplayName')
 const localOpenclawAvailable = inject('localOpenclawAvailable')
 
@@ -517,6 +532,16 @@ const handleSelectMesh = async (meshName) => {
   }
 }
 
+const handleLeaveMesh = async (meshName) => {
+  if (!confirm(`Are you sure you want to leave mesh "${meshName}"?`)) return
+  try {
+    await leaveMesh(meshName)
+    activeOrg.value = 'agents'
+  } catch (err) {
+    console.error('Failed to leave mesh:', err)
+  }
+}
+
 // Chats split by type
 const groupChats = computed(() =>
   props.chats.filter(c => c.isGroup && !c.isOpenclaw)
@@ -582,6 +607,7 @@ const togglePickerUser = (name) => {
 // Join Party state
 const showJoinParty = ref(false)
 const joinPartyUrl = ref('https://join.clawparty.ai')
+const joinPartyUserName = ref('')
 const joinPartyLoading = ref(false)
 const joinPartyError = ref('')
 const joinPartySuccess = ref('')
@@ -599,6 +625,7 @@ const closeJoinParty = () => {
   showJoinParty.value = false
   joinPartyError.value = ''
   joinPartySuccess.value = ''
+  joinPartyUserName.value = ''
 }
 
 const handleJoinParty = async () => {
@@ -607,7 +634,7 @@ const handleJoinParty = async () => {
   joinPartyError.value = ''
   joinPartySuccess.value = ''
   try {
-    await joinParty(joinPartyUrl.value)
+    await joinParty(joinPartyUrl.value, joinPartyUserName.value.trim() || undefined)
     joinPartySuccess.value = '成功加入组织！'
     setTimeout(() => {
       closeJoinParty()
@@ -667,7 +694,7 @@ const handleCreateGroup = async () => {
 .org-divider {
   width: 32px;
   height: 1px;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.8);
   margin: 4px 0;
 }
 
@@ -748,6 +775,7 @@ const handleCreateGroup = async () => {
   align-items: center;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .agents-header {
@@ -788,6 +816,26 @@ const handleCreateGroup = async () => {
 
 .shared-btn {
   background: #4095fe;
+}
+
+.leave-mesh-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: #888;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.leave-mesh-btn:hover {
+  color: #e01e5a;
+  background: rgba(224, 30, 90, 0.1);
 }
 
 /* ── Group Chats org icon accent ── */

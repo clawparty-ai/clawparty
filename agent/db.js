@@ -377,22 +377,22 @@ function setMesh(name, mesh) {
   var old = getMesh(name)
   if (old) {
     mesh = { ...old, ...mesh }
-    var agent = { ...old.agent, ...mesh.agent }
-    agent.id = old.agent.id
+    var agent = { ...(old.agent || {}), ...(mesh.agent || {}) }
+    agent.id = old.agent?.id || algo.uuid()
     db.sql('UPDATE meshes SET ca = ?, agent = ?, bootstraps = ? WHERE name = ?')
       .bind(1, mesh.ca || '')
       .bind(2, JSON.stringify(agent))
-      .bind(3, mesh.bootstraps.join(','))
+      .bind(3, (mesh.bootstraps || []).join(','))
       .bind(4, name)
       .exec()
   } else {
-    var agent = mesh.agent
+    var agent = mesh.agent || {}
     agent.id = algo.uuid()
     db.sql('INSERT INTO meshes(name, ca, agent, bootstraps) VALUES(?, ?, ?, ?)')
       .bind(1, name)
       .bind(2, mesh.ca || '')
       .bind(3, JSON.stringify(agent))
-      .bind(4, mesh.bootstraps.join(','))
+      .bind(4, (mesh.bootstraps || []).join(','))
       .exec()
   }
 }

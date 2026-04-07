@@ -980,8 +980,13 @@ const handleLeaveGroup = async (chat) => {
   await fetchChats()
 }
 
-const joinParty = async (regUrl) => {
-  await meshService.joinParty(regUrl)
+const joinParty = async (regUrl, userName) => {
+  await meshService.joinParty(regUrl, userName)
+  await fetchMeshes()
+}
+
+const leaveMesh = async (meshName) => {
+  await meshService.leaveMesh(meshName)
   await fetchMeshes()
 }
 
@@ -1033,8 +1038,39 @@ const openSharedTemplates = () => {
   showLocalTemplates.value = false
 }
 
-const handleTemplateInstalled = async () => {
+const handleTemplateInstalled = async (data) => {
   await fetchOpenclawAgents()
+  
+  showLocalTemplates.value = false
+  showSharedTemplates.value = false
+  
+  if (!data || !data.agentName || !data.soulContent) {
+    console.warn('[handleTemplateInstalled] missing data, skipping auto-send')
+    return
+  }
+  
+  const mainAgent = openclawAgents.value.find(a => a.id === 'main')
+  if (!mainAgent) {
+    console.error('[handleTemplateInstalled] main agent not found')
+    return
+  }
+  
+  activeChat.value = null
+  activeOpenclawAgent.value = {
+    agentId: mainAgent.id,
+    name: mainAgent.name,
+    emoji: mainAgent.emoji || '🤖',
+    isOpenclaw: true,
+    messages: [],
+    sessions: [],
+    isTemp: true
+  }
+  
+  const message = `使用如下信息帮我创建一个叫做'${data.agentName}'的Agent : ...\n\nSOUL.md:\n${data.soulContent}`
+  newMessage.value = message
+  
+  await new Promise(resolve => setTimeout(resolve, 100))
+  sendMessage()
 }
 
 const installedAgentIds = computed(() => {
@@ -1053,6 +1089,7 @@ provide('updateGroupMembers', updateGroupMembers)
 provide('groupChats', groupChats)
 provide('currentMeshAgentUsername', currentMeshAgentUsername)
 provide('joinParty', joinParty)
+provide('leaveMesh', leaveMesh)
 provide('localOpenclawAvailable', localOpenclawAvailable)
 
 const resolveEpDisplayName = (username) => {

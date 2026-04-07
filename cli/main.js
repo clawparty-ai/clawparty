@@ -365,9 +365,10 @@ function doCommand(meshName, epName, argv, program) {
           --permit, -p  <pathname>   Point to a permit file
           --reg-url     <url>        Specify a custom registration server URL for 'join party'
                                      (default: https://join.clawparty.ai)
+          --name        <username>   Specify a custom username for 'join party'
         `,
         action: (args) => {
-          if (args['<mesh name>'] === 'party') return joinParty(args['--reg-url'])
+          if (args['<mesh name>'] === 'party') return joinParty(args['--reg-url'], args['--name'])
           return join(args['<mesh name>'], args['--as'], args['--permit'])
         },
       },
@@ -857,7 +858,7 @@ function tryOpenclaw(meshName, userName, passKey, epName, permitPathname, target
 // Command: joinParty
 //
 
-function joinParty(regUrl) {
+function joinParty(regUrl, customName) {
   println(`Joining clawparty...`)
   if (regUrl) {
     println(`Registration server: ${regUrl}`)
@@ -889,7 +890,7 @@ function joinParty(regUrl) {
     } catch {
       namesList = DEFAULT_NAMES
     }
-    var firstName = namesList[Math.floor(Math.random() * namesList.length)]
+    var firstName = customName || namesList[Math.floor(Math.random() * namesList.length)]
     var passKeyChars = 'abcdefghijklmnopqrstuvwxyz'
     var passKey = ''
     for (var i = 0; i < 16; i++) passKey += passKeyChars[Math.floor(Math.random() * 26)]
@@ -898,7 +899,11 @@ function joinParty(regUrl) {
     var epName = `${firstName}-lobster`
     var permitPathname = `${os.home()}/.clawparty/permit.json`
 
-    println(`Picked user name: ${userName}, endpoint: ${epName}`)
+    if (customName) {
+      println(`Using custom user name: ${userName}, endpoint: ${epName}`)
+    } else {
+      println(`Picked user name: ${userName}, endpoint: ${epName}`)
+    }
     println(`Requesting permit from registration server...`)
 
     return tryOpenclaw(meshName, userName, passKey, epName, permitPathname, null, null, null, regUrl).then(

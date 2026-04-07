@@ -231,4 +231,48 @@ impl ApiClient {
             anyhow::bail!("Failed to join mesh: {} - {}", status, err_text)
         }
     }
+
+    pub async fn leave_mesh(&self, mesh: &str) -> Result<()> {
+        let resp = self.client
+            .delete(format!("{}/api/meshes/{}", self.base_url, mesh))
+            .send()
+            .await?;
+        
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            let status = resp.status();
+            let err_text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to leave mesh: {} - {}", status, err_text)
+        }
+    }
+
+    pub async fn get_default_auto_reply(&self) -> Result<String> {
+        let resp = self.client
+            .get(format!("{}/api/default-auto-reply", self.base_url))
+            .send()
+            .await?;
+        
+        if resp.status().is_success() {
+            let result: serde_json::Value = resp.json().await?;
+            Ok(result["agent"].as_str().unwrap_or("main").to_string())
+        } else {
+            Ok("main".to_string())
+        }
+    }
+
+    pub async fn set_default_auto_reply(&self, agent_name: &str) -> Result<()> {
+        let body = serde_json::json!({ "agent": agent_name });
+        let resp = self.client
+            .post(format!("{}/api/default-auto-reply", self.base_url))
+            .json(&body)
+            .send()
+            .await?;
+        
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            anyhow::bail!("Failed to set default auto-reply: {}", resp.status())
+        }
+    }
 }

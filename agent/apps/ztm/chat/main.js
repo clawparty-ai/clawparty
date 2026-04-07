@@ -267,6 +267,18 @@ export default function ({ app, mesh, utils }) {
       'GET': responder(() => Promise.resolve(response(200, api.allPeerConfigs()))),
     },
 
+    '/api/default-auto-reply': {
+      'GET': responder(() => Promise.resolve(response(200, { agent: api.getDefaultAutoReplyAgent() }))),
+
+      'POST': responder((_, req) => {
+        var body
+        try { body = JSON.decode(req.body) } catch { body = {} }
+        var agentName = body.agent || 'main'
+        api.setDefaultAutoReplyAgent(agentName)
+        return Promise.resolve(response(200, { agent: agentName }))
+      }),
+    },
+
     '/api/files': {
       'POST': responder((_, req) => {
         return api.addFile(req.body).then(

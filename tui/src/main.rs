@@ -404,97 +404,122 @@ async fn main() -> anyhow::Result<()> {
 
                             // Handle #join-party command
                             let trimmed = text.trim();
-                            if trimmed == "#join-party" || trimmed == "#join" {
-                                let api_client = s.api.clone();
+                            if trimmed == "#join-party" || trimmed == "#join" || trimmed.starts_with("#join-party ") || trimmed.starts_with("#join ") {
+                                // Parse optional name parameter: #join name=张三
+                                let mut custom_name: Option<String> = None;
+                                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                                for part in &parts[1..] {
+                                    if let Some(stripped) = part.strip_prefix("name=") {
+                                        custom_name = Some(stripped.to_string());
+                                    }
+                                }
+
                                 drop(s);
-                                state.write().await.add_log("INFO", "Joining clawparty...");
                                 
-                                let join_fut = async {
-                                    // Check if already joined
-                                    let meshes = {
-                                        let client = api_client.lock().await;
-                                        client.get_meshes().await?
-                                    };
-                                    if !meshes.is_empty() {
-                                        return Ok::<String, anyhow::Error>("Already joined clawparty!".to_string());
+                                let state_clone = state.clone();
+                                tokio::spawn(async move {
+                                    state_clone.write().await.add_log("INFO", "Joining clawparty...");
+                                    
+                                    // Build CLI command
+                                    let mut cmd = std::process::Command::new("ztm");
+                                    cmd.arg("join").arg("party");
+                                    
+                                    // Add --name parameter if provided
+                                    if let Some(ref name) = custom_name {
+                                        cmd.arg("--name").arg(name);
                                     }
                                     
-                                    // Generate username
-                                    let names = ["red-hawk", "thunder-cloud", "morning-star", "running-deer", "little-wolf",
-                                        "william-wallace", "princess-isabella", "sacagawea", "pocahontas", "crazy-moon",
-                                        "red-cloud", "chief-joseph", "white-buffalo", "morning-star", "sitting-bull"];
-                                    let mut rng = rand::rng();
-                                    let name_idx = rand::Rng::random_range(&mut rng, 0..names.len());
-                                    let username = names[name_idx];
-                                    let ep_name = format!("{}-lobster", username);
-                                    
-                                    // Get agent identity
-                                    let identity = {
-                                        let client = api_client.lock().await;
-                                        client.get_identity().await?
-                                    };
-                                    
-                                    // Post to registration server
-                                    let reg_url = "https://join.clawparty.ai/invite";
-                                    let mut pass_key = String::new();
-                                    let chars = b"abcdefghijklmnopqrstuvwxyz";
-                                    for _ in 0..16 {
-                                        let idx = rand::Rng::random_range(&mut rng, 0..chars.len());
-                                        pass_key.push(chars[idx] as char);
+                                    // Execute CLI command
+                                    match cmd.output() {
+                                        Ok(output) => {
+                                            let stdout = String::from_utf8_lossy(&output.stdout);
+                                            let stderr = String::from_utf8_lossy(&output.stderr);
+                                            
+                                            if output.status.success() {
+                                                // Find the success message line
+                                                let msg = stdout.lines()
+                                                    .find(|line| line.contains("Successfully joined"))
+                                                    .unwrap_or("Successfully joined clawparty!");
+                                                state_clone.write().await.add_log("INFO", msg);
+                                            } else {
+                                                let err_msg = if !stderr.is_empty() {
+                                                    stderr.trim().to_string()
+                                                } else if !stdout.is_empty() {
+                                                    stdout.trim().to_string()
+                                                } else {
+                                                    format!("CLI exited with status: {}", output.status)
+                                                };
+                                                state_clone.write().await.add_log("ERROR", &format!("Join party failed: {}", err_msg));
+                                            }
+                                        }
+                                        Err(e) => {
+                                            state_clone.write().await.add_log("ERROR", &format!("Failed to execute ztm command: {}", e));
+                                        }
                                     }
-                                    
-                                    let invite_body = serde_json::json!({
-                                        "PublicKey": identity,
-                                        "UserName": username,
-                                        "EpName": ep_name,
-                                        "PassKey": pass_key
+                                });
+                                continue;
+                            }
+
+                            // Handle #default command
+                            if trimmed.starts_with("#default ") {
+                                let agent_name = trimmed["#default ".len()..].trim();
+                                if agent_name.is_empty() {
+                                    s.add_log("ERROR", "Usage: #default <agent-name>");
+                                } else {
+                                    // Check if agent exists in local agents
+                                    let agent_exists = s.local_agents.iter().any(|a| a.id == agent_name);
+                                    if !agent_exists {
+                                        s.add_log("ERROR", &format!("Agent '{}' not found in local agents", agent_name));
+                                    } else {
+                                        let api_client = s.api.clone();
+                                        let agent_name_owned = agent_name.to_string();
+                                        drop(s);
+
+                                        state.write().await.add_log("INFO", &format!("Setting default auto-reply agent to '{}'...", agent_name_owned));
+
+                                        let state_clone = state.clone();
+                                        tokio::spawn(async move {
+                                            let result = {
+                                                let client = api_client.lock().await;
+                                                client.set_default_auto_reply(&agent_name_owned).await
+                                            };
+
+                                            let mut s = state_clone.write().await;
+                                            match result {
+                                                Ok(()) => s.add_log("INFO", &format!("Default auto-reply agent set to '{}'", agent_name_owned)),
+                                                Err(e) => s.add_log("ERROR", &format!("Failed to set default auto-reply: {}", e)),
+                                            }
+                                        });
+                                    }
+                                }
+                                continue;
+                            }
+
+                            // Handle #leave command
+                            if trimmed.starts_with("#leave ") {
+                                let mesh_name = trimmed["#leave ".len()..].trim();
+                                if mesh_name.is_empty() {
+                                    s.add_log("ERROR", "Usage: #leave <mesh-name>");
+                                } else {
+                                    let api_client = s.api.clone();
+                                    let mesh_name_owned = mesh_name.to_string();
+                                    drop(s);
+
+                                    state.write().await.add_log("INFO", &format!("Leaving mesh '{}'...", mesh_name_owned));
+
+                                    let state_clone = state.clone();
+                                    tokio::spawn(async move {
+                                        let result = {
+                                            let client = api_client.lock().await;
+                                            client.leave_mesh(&mesh_name_owned).await
+                                        };
+
+                                        let mut s = state_clone.write().await;
+                                        match result {
+                                            Ok(()) => s.add_log("INFO", &format!("Left mesh '{}'", mesh_name_owned)),
+                                            Err(e) => s.add_log("ERROR", &format!("Failed to leave mesh: {}", e)),
+                                        }
                                     });
-                                    
-                                    let reg_client = reqwest::Client::builder()
-                                        .danger_accept_invalid_certs(true)
-                                        .build()?;
-                                    let resp = reg_client
-                                        .post(reg_url)
-                                        .json(&invite_body)
-                                        .send()
-                                        .await?;
-                                    
-                                    if !resp.status().is_success() {
-                                        let err_text = resp.text().await.unwrap_or_default();
-                                        anyhow::bail!("Registration failed: {}", err_text);
-                                    }
-                                    
-                                    let result: serde_json::Value = resp.json().await?;
-                                    let final_username = result["UserName"].as_str().unwrap_or(username);
-                                    let final_ep_name = result["EpName"].as_str().unwrap_or(&ep_name);
-                                    let permit = result["Permit"].as_str().unwrap_or("");
-                                    
-                                    // Save permit to file
-                                    let permit_path = format!("{}/.clawparty/permit.json", 
-                                        std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
-                                    std::fs::create_dir_all(format!("{}/.clawparty", 
-                                        std::env::var("HOME").unwrap_or_else(|_| ".".to_string())))?;
-                                    std::fs::write(&permit_path, permit)?;
-                                    
-                                    // Join mesh
-                                    {
-                                        let client = api_client.lock().await;
-                                        client.join_mesh("clawparty", final_ep_name, permit).await?;
-                                    }
-                                    
-                                    Ok(format!("Successfully joined clawparty as '{}' (endpoint: {})", 
-                                        final_username, final_ep_name))
-                                };
-                                
-                                match join_fut.await {
-                                    Ok(msg) => {
-                                        let mut s = state.write().await;
-                                        s.add_log("INFO", &msg);
-                                    }
-                                    Err(e) => {
-                                        let mut s = state.write().await;
-                                        s.add_log("ERROR", &format!("Join party failed: {}", e));
-                                    }
                                 }
                                 continue;
                             }

@@ -936,6 +936,7 @@ function main(listen, apiToken, noAuth) {
         }
 
         var regUrl = (body && body.regUrl) ? body.regUrl : 'https://clawparty.flomesh.io:7779'
+        var customUserName = (body && body.userName) ? body.userName : ''
 
         var DEFAULT_NAMES = [
           'jose-arcadio-buendia', 'ursula-iguran', 'aureliano-buendia', 'rebeco',
@@ -956,13 +957,12 @@ function main(listen, apiToken, noAuth) {
           if (parsed.length > 0) namesList = parsed
         } catch {}
 
-        var firstName = namesList[Math.floor(Math.random() * namesList.length)]
+        var userName = customUserName || namesList[Math.floor(Math.random() * namesList.length)]
+        var epName = userName + '-lobster'
+
         var passKeyChars = 'abcdefghijklmnopqrstuvwxyz'
         var passKey = ''
         for (var i = 0; i < 16; i++) passKey += passKeyChars.charAt(Math.floor(Math.random() * 26))
-        var meshName = 'clawparty'
-        var userName = firstName
-        var epName = firstName + '-lobster'
 
         var publicKey = api.getIdentity()
 
@@ -1034,6 +1034,20 @@ function main(listen, apiToken, noAuth) {
             parsedPermit.agent = parsedPermit.agent || {}
             parsedPermit.agent.name = finalEpName
 
+            console.info('[join-party] permit keys:', Object.keys(parsedPermit).join(', '))
+            console.info('[join-party] ca:', parsedPermit.ca ? 'present' : 'missing')
+            console.info('[join-party] agent.certificate:', parsedPermit.agent?.certificate ? 'present' : 'missing')
+            console.info('[join-party] agent.privateKey:', parsedPermit.agent?.privateKey ? 'present' : 'missing')
+            console.info('[join-party] bootstraps:', parsedPermit.bootstraps ? JSON.stringify(parsedPermit.bootstraps) : 'missing')
+
+            var bootstraps = parsedPermit.bootstraps || []
+            if (bootstraps.length === 0 && parsedPermit.hubs) {
+              bootstraps = parsedPermit.hubs.map(h => {
+                if (typeof h === 'string') return h
+                return h.address || h.host || h.endpoint || ''
+              }).filter(h => h)
+            }
+
             api.setMesh(meshName, {
               ca: parsedPermit.ca,
               agent: {
@@ -1041,7 +1055,7 @@ function main(listen, apiToken, noAuth) {
                 certificate: parsedPermit.agent.certificate,
                 privateKey: parsedPermit.agent.privateKey,
               },
-              bootstraps: parsedPermit.bootstraps,
+              bootstraps: bootstraps,
             })
 
             return response(200, {
@@ -1151,8 +1165,9 @@ function main(listen, apiToken, noAuth) {
         try { json = JSON.parse(body) } catch {}
         var soulContent = json?.soulContent || ''
         var agentName = json?.agentName || ''
-        console.log('[DEBUG install] local: industry=', industry, ', agent=', agent, ', agentName=', agentName)
+        console.info('[api] POST /api/agent-templates/local/install: industry=', industry, ', agent=', agent, ', agentName=', agentName)
         var result = api.installLocalTemplate(industry, agent, soulContent, agentName)
+        console.info('[api] install result:', result.success ? 'success' : 'failed', result.message || '')
         return response(result.success ? 200 : 400, result)
       },
     },
@@ -1166,7 +1181,9 @@ function main(listen, apiToken, noAuth) {
         try { json = JSON.parse(body) } catch {}
         var soulContent = json?.soulContent || ''
         var agentName = json?.agentName || ''
+        console.info('[api] POST /api/agent-templates/shared/install: industry=', industry, ', agent=', agent, ', agentName=', agentName)
         var result = api.installSharedTemplate(industry, agent, soulContent, agentName)
+        console.info('[api] install result:', result.success ? 'success' : 'failed', result.message || '')
         return response(result.success ? 200 : 400, result)
       },
     },

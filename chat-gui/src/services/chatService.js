@@ -21,8 +21,12 @@ export const meshService = {
     return api.get('/meshes')
   },
 
-  joinParty(regUrl) {
-    return api.post('/join-party', { regUrl })
+  joinParty(regUrl, userName) {
+    return api.post('/join-party', { regUrl, userName })
+  },
+
+  leaveMesh(meshName) {
+    return api.del(`/meshes/${encodeURIComponent(meshName)}`)
   }
 }
 
