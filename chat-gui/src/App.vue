@@ -270,8 +270,8 @@ const fetchOpenclawAgents = async () => {
     // 只更新 openclawAgents 列表，不添加到 chats 列表
     openclawAgents.value = agentsData.map(agent => ({
       id: agent.id,
-      name: agent.displayName || agent.identityName || agent.id,
-      emoji: agent.identityEmoji || '🤖',
+      name: agent.name || agent.identityName || agent.id,
+      emoji: agent.identityEmoji || agent.emoji || '🤖',
       model: agent.model,
       isOpenclaw: true
     }))

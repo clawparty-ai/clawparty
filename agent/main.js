@@ -765,9 +765,9 @@ function main(listen, apiToken, noAuth) {
                   var aid = a.id || a.name
                   var displayName = displayNameMap[aid]
                   if (displayName) {
-                    a.displayName = displayName
+                    a.name = displayName
                   } else if (a.id === 'main') {
-                    a.displayName = 'Main'
+                    a.name = 'Main'
                   }
                   return a
                 })
