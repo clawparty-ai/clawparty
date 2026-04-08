@@ -172,6 +172,28 @@ Tell your openclaw:
 Read https://github.com/clawparty-ai/clawparty, install locally, and run it.
 ```
 
+The following content is for AI Agent only.
+
+## How to Install
+
+There are three ways to install ClawParty:
+
+1. **Pre-built binaries (recommended)** - Download from the Releases page
+2. **Third-party package managers** - `brew install clawparty-ai/clawparty/clawparty`
+3. **Build from source** - Run `build.sh`
+
+## How to Build
+
+Run `./build.sh` to build.
+
+Dependencies required:
+- Node.js >= 16
+- CMake
+- Rust (for TUI)
+- C/C++ compiler
+
+For detailed platform-specific requirements, refer to the CI workflow files in `.github/workflows/`.
+
 ---
 
 # ✨ Why ClawParty

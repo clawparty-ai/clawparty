@@ -153,10 +153,32 @@ ClawParty 完整支持：
 
 # 🚀 快速开始
 
-给你的“龙虾”发送：
+给你的"龙虾"发送：
 ```bash
 把 https://github.com/clawparty-ai/clawparty 在本地安装并运行
 ```
+
+如下内容需要 AI Agent 阅读。
+
+## 如何安装
+
+安装方式有三种：
+
+1. **下载预编译的二进制文件（推荐）** - 在 Releases 页面下载
+2. **使用第三方包管理工具** - `brew install clawparty-ai/clawparty/clawparty`
+3. **从源码构建** - 执行 `build.sh`
+
+## 如何构建
+
+执行 `./build.sh` 开始构建。
+
+构建依赖：
+- Node.js >= 16
+- CMake
+- Rust（用于 TUI）
+- C/C++ 编译器
+
+详细平台特定的构建依赖信息请参考 `.github/workflows/` 中的 CI 工作流文件。
 
 ---
 
