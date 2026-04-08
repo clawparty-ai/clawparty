@@ -172,14 +172,18 @@ async fn main() -> anyhow::Result<()> {
                     if let (Some(creator), Some(group)) = (&chat.creator, &chat.group) {
                         let c = creator.clone();
                         let g = group.clone();
-                        if let Ok(msgs) = state.api.lock().await.get_group_messages(&mesh, &c, &g).await {
-                            state.messages = msgs;
+                        let msgs = state.api.lock().await.get_group_messages(&mesh, &c, &g).await.ok();
+                        if let Some(m) = msgs {
+                            state.messages = m;
+                            state.trim_messages();
                         }
                     }
                 } else if let Some(peer) = &chat.peer {
                     let p = peer.clone();
-                    if let Ok(msgs) = state.api.lock().await.get_peer_messages(&mesh, &p).await {
-                        state.messages = msgs;
+                    let msgs = state.api.lock().await.get_peer_messages(&mesh, &p).await.ok();
+                    if let Some(m) = msgs {
+                        state.messages = m;
+                        state.trim_messages();
                     }
                 }
             }
@@ -188,8 +192,10 @@ async fn main() -> anyhow::Result<()> {
         if let Some(ref mesh) = state.current_mesh {
             let mesh = mesh.clone();
             let p = peer.clone();
-            if let Ok(msgs) = state.api.lock().await.get_peer_messages(&mesh, &p).await {
-                state.messages = msgs;
+            let msgs = state.api.lock().await.get_peer_messages(&mesh, &p).await.ok();
+            if let Some(m) = msgs {
+                state.messages = m;
+                state.trim_messages();
             }
         }
     }
@@ -305,6 +311,7 @@ async fn main() -> anyhow::Result<()> {
                 if let Some(m) = messages {
                     let old_len = s.messages.len();
                     s.messages = m;
+                    s.trim_messages();
                     let new_len = s.messages.len();
                     if new_len > old_len {
                         s.messages_scroll.scroll_to_bottom();
@@ -597,6 +604,7 @@ async fn main() -> anyhow::Result<()> {
                                                 l.get_group_messages(&mesh, &c, &g).await
                                             } {
                                                 s.messages = msgs;
+                                                s.trim_messages();
                                             }
                                         }
                                     } else if let Some(peer) = &chat.peer {
@@ -606,6 +614,7 @@ async fn main() -> anyhow::Result<()> {
                                             l.get_peer_messages(&mesh, &p).await
                                         } {
                                             s.messages = msgs;
+                                            s.trim_messages();
                                         }
                                     }
                                 }
@@ -619,6 +628,7 @@ async fn main() -> anyhow::Result<()> {
                                     l.get_peer_messages(&mesh, &p).await
                                 } {
                                     s.messages = msgs;
+                                    s.trim_messages();
                                 }
                             }
                         }
@@ -630,6 +640,7 @@ async fn main() -> anyhow::Result<()> {
                                 l.get_openclaw_messages(&aid).await
                             } {
                                 s.messages = msgs;
+                                s.trim_messages();
                             }
                         }
                     }

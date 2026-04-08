@@ -109,8 +109,15 @@ impl AppState {
         }
 
         self.logs.push(log_entry);
-        if self.logs.len() > 50 {
+        if self.logs.len() > 500 {
             self.logs.remove(0);
+        }
+    }
+
+    // Trim messages to max history length to prevent memory growth
+    pub fn trim_messages(&mut self) {
+        if self.messages.len() > 100 {
+            self.messages = self.messages.split_off(self.messages.len() - 100);
         }
     }
 
