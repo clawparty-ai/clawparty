@@ -62,6 +62,13 @@
           </svg>
         </button>
         <input ref="imageInputRef" type="file" accept="image/*" multiple style="display:none" @change="handleImageSelect" />
+        <button class="toolbar-btn" @click="triggerCamera" title="拍照">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M10.5 8.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/>
+            <path d="M2 4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.172a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 9.172 2H6.828a2 2 0 0 0-1.414.586l-.828.828A2 2 0 0 1 3.172 4H2zm.5 2a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1zm9 2.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z"/>
+          </svg>
+        </button>
+        <input ref="cameraInputRef" type="file" accept="image/*" capture="environment" style="display:none" @change="handleCameraCapture" />
         <button class="toolbar-btn" @click="triggerFilePicker" title="发送文件">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
             <path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5h-2z"/>
@@ -228,8 +235,89 @@ function insertMention(member) {
     textarea.setSelectionRange(newPos, newPos)
   }, 0)
 }
-// ── Image upload ─────────────────────────────────────────────────────────────
-const imageInputRef = ref(null)
+// ── Camera capture ────────────────────────────────────────────────────────────
+const cameraInputRef = ref(null)
+const videoElement = ref(null)
+const canvasElement = ref(null)
+const stream = ref(null)
+
+function isMobile() {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+}
+
+async function triggerCamera() {
+  if (isMobile()) {
+    if (cameraInputRef.value) cameraInputRef.value.click()
+  } else {
+    await openWebcam()
+  }
+}
+
+async function openWebcam() {
+  try {
+    stream.value = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+    const container = document.createElement('div')
+    container.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;'
+    
+    const video = document.createElement('video')
+    video.srcObject = stream.value
+    video.autoplay = true
+    video.style.cssText = 'max-width:90%;max-height:70%;border-radius:8px;'
+    
+    const btnContainer = document.createElement('div')
+    btnContainer.style.cssText = 'margin-top:20px;display:flex;gap:20px;'
+    
+    const captureBtn = document.createElement('button')
+    captureBtn.textContent = '拍照'
+    captureBtn.style.cssText = 'padding:12px 32px;font-size:16px;border-radius:8px;border:none;background:#22c55e;color:white;cursor:pointer;'
+    
+    const cancelBtn = document.createElement('button')
+    cancelBtn.textContent = '取消'
+    cancelBtn.style.cssText = 'padding:12px 32px;font-size:16px;border-radius:8px;border:none;background:#6b7280;color:white;cursor:pointer;'
+    
+    btnContainer.appendChild(captureBtn)
+    btnContainer.appendChild(cancelBtn)
+    container.appendChild(video)
+    container.appendChild(btnContainer)
+    document.body.appendChild(container)
+    
+    const cleanup = () => {
+      if (stream.value) {
+        stream.value.getTracks().forEach(t => t.stop())
+        stream.value = null
+      }
+      if (container.parentNode) container.remove()
+    }
+    
+    cancelBtn.onclick = cleanup
+    
+    captureBtn.onclick = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(video, 0, 0)
+      canvas.toBlob(blob => {
+        const file = new File([blob], 'camera.jpg', { type: 'image/jpeg' })
+        emitImageFiles([file])
+        cleanup()
+      }, 'image/jpeg', 0.9)
+    }
+  } catch (err) {
+    console.error('打开摄像头失败:', err)
+    alert('无法打开摄像头: ' + err.message)
+  }
+}
+
+function handleCameraCapture(e) {
+  const files = e.target.files
+  if (!files || files.length === 0) return
+  emitImageFiles(files)
+  if (cameraInputRef.value) cameraInputRef.value.value = ''
+}
+
+// ── File upload ───────────────────────────────────────────────────────────────
+const fileInputRef = ref(null)
 
 function triggerImagePicker() {
   if (imageInputRef.value) imageInputRef.value.click()
@@ -266,8 +354,6 @@ function emitImageFiles(fileList) {
   }
   emit('send-images', files)
 }
-
-const fileInputRef = ref(null)
 
 function triggerFilePicker() {
   if (fileInputRef.value) fileInputRef.value.click()
