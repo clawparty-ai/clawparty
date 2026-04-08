@@ -30,3 +30,5 @@ session-add-sse-support.md
 # console logs
 console-log*.log
 
+node_modules/
+session-recorder/
