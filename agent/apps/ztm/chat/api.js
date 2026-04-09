@@ -312,7 +312,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
     // ── Parse @ mentions ──
     // Strip trailing punctuation from @name (e.g. "@Alice," -> "Alice")
-    var mentionPunctChars = ",.!?;:'\"、。！？；："
+    var mentionPunctChars = " ,.!?;:'\"、。！？；："
     var mentionedMembers = []
     text.split(' ').forEach(function (token) {
       if (token.length > 1 && token.charAt(0) === '@') {
@@ -342,18 +342,12 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       ? text.split(' ').filter(function (token) { return !(token.length > 1 && token.charAt(0) === '@') }).join(' ').trim()
       : text
 
-    // If all content was @mentions and nothing remains, skip triggering any agent
-    if (hasMentions && !cleanedText) {
-      console.warn('[group auto-reply] skip: cleanedText is empty after stripping mentions')
-      return
-    }
-
     var groupName = chat.name || chat.group
 
     // Build rewritten message for the openclaw agent CLI
     function buildAgentMessage(isMentioned) {
       if (isMentioned) {
-        return '在group chat ' + groupName + '里，' + senderUsername + ' 给你发送了信息，给他回复一下，发送的内容是"' + cleanedText + '"'
+        return '在group chat ' + groupName + '里，' + senderUsername + ' 给你发送了信息，给他回复一下，发送的内容是"' + text + '"'
       } else {
         return '在group chat ' + groupName + '里，' + senderUsername + ' 说话了看看如何回复，说的内容是"' + text + '"'
       }
@@ -1304,7 +1298,8 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   function addGroupMessage(creator, group, message, fromAgent, sessionId) {
     var chat = findGroupChat(creator, group)
     if (!chat) return Promise.resolve(false)
-    if (app.username !== creator && !chat.members.includes(app.username)) return Promise.resolve(false)
+    var realCreator = chat.creator
+    if (app.username !== realCreator && !chat.members.includes(app.username)) return Promise.resolve(false)
     // Embed sender as [gcid]/[username] inside the message payload.
     // For agent replies use the agent's own name as the username part so the UI shows the agent.
     var gcid = chat.gcid || ''
@@ -1315,8 +1310,8 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       : Object.assign({}, message, { sender: taggedSender })
     var msgText = typeof message === 'string' ? message : (message?.text || JSON.stringify(message))
     console.info('[chat send]', taggedSender, '-> group', group, ':', firstLine(msgText))
-    var dirname = `/shared/${app.username}/publish/groups/${creator}/${group}`
-    return mesh.acl(dirname, { users: Object.fromEntries(chat.members.map(name => [name, 'readonly'])) }).then(
+    var dirname = `/shared/${realCreator}/publish/groups/${realCreator}/${group}`
+    return mesh.acl(dirname, { all: 'readonly' }).then(
       () => publishMessage(os.path.join(dirname, 'messages'), taggedMessage)
     ).then(() => {
       try {
