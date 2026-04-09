@@ -821,7 +821,39 @@ function main(listen, apiToken, noAuth) {
       'GET': function ({ agent, session }) {
         agent = URL.decodeComponent(agent)
         session = URL.decodeComponent(session)
-        var filepath = os.path.join(os.home(), '.openclaw', 'agents', agent, 'sessions', session + '.jsonl')
+        
+        // Try to resolve sessionId to actual file via sessions.json
+        var sessionsDir = os.path.join(os.home(), '.openclaw', 'agents', agent, 'sessions')
+        var sessionsJsonPath = os.path.join(sessionsDir, 'sessions.json')
+        var filepath = null
+        
+        try {
+          var sessionsData = os.read(sessionsJsonPath)
+          if (sessionsData) {
+            var sessionsObj = JSON.decode(sessionsData)
+            // Find entry where sessionId matches the requested session
+            var keys = Object.keys(sessionsObj)
+            keys.forEach(function (key) {
+              var entry = sessionsObj[key]
+              if (entry.sessionId === session) {
+                // Resolve ~ to home directory
+                var sessionFile = entry.sessionFile
+                if (sessionFile && sessionFile.indexOf('~') === 0) {
+                  sessionFile = os.home() + sessionFile.substring(1)
+                }
+                filepath = sessionFile
+              }
+            })
+          }
+        } catch (e) {
+          // sessions.json not found or parse error, will fallback
+        }
+        
+        // Fallback to original logic if not resolved
+        if (!filepath) {
+          filepath = os.path.join(sessionsDir, session + '.jsonl')
+        }
+        
         try {
           var data = os.read(filepath)
           return data ? response(200, data) : response(404)

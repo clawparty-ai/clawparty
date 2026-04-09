@@ -840,6 +840,14 @@ const loadSessionHistory = async (chat, agentId, sessionId) => {
     // Load chat history from chat_log database instead of session JSONL files
     const response = await openclawService.getChatLog(agentId)
     const messages = Array.isArray(response.data) ? response.data : []
+    
+    // Fallback to session file if chat_log returns less than 10 messages
+    if (messages.length < 10) {
+      console.log('[loadSessionHistory] chat_log has only', messages.length, 'messages, falling back to session file')
+      await loadFromSessionFile(chat, agentId, sessionId)
+      return
+    }
+    
     chat.messages = messages.map(msg => ({
       text: msg.text || '',
       time: msg.time || '',
@@ -851,33 +859,41 @@ const loadSessionHistory = async (chat, agentId, sessionId) => {
   } catch (error) {
     console.error('Failed to load chat log:', error)
     // Fallback: try session history if chat-log fails
+    await loadFromSessionFile(chat, agentId, sessionId)
+  }
+}
+
+const loadFromSessionFile = async (chat, agentId, sessionId) => {
+  try {
+    const historyResponse = await openclawService.getSessionHistory(agentId, sessionId)
+    let historyData = null
     try {
-      const historyResponse = await openclawService.getSessionHistory(agentId, sessionId)
-      let historyData = null
-      try {
-        historyData = JSON.parse(`[${historyResponse.data.replaceAll('\n',',')}{}]`)
-      } catch (e) {
-        console.error('Failed to parse history:', e)
-      }
-      chat.messages = [];
-      if (historyData) {
-        historyData.filter((n)=>n.type=='message').forEach((n,i)=>{
-          const text = n.message.content.filter((n)=>n.type=='text')[0]?.text;
-          if(!!text){
-            chat.messages.push({
-              "text": text,
-              "time": new Date(n.message.timestamp).toLocaleTimeString(),
-              "sender": n.message.role,
-              "isSent": n.message.role=='user',
-              "timestamp": n.message.timestamp
-            })
-          }
-        })
-      }
-      chat.sessionId = sessionId
-    } catch (fallbackError) {
-      console.error('Failed to load session history fallback:', fallbackError)
+      historyData = JSON.parse(`[${historyResponse.data.replaceAll('\n',',')}{}]`)
+    } catch (e) {
+      console.error('Failed to parse history:', e)
     }
+    chat.messages = [];
+    if (historyData) {
+      // Filter messages and take only latest 10
+      const allMessages = []
+      historyData.filter((n)=>n.type=='message').forEach((n,i)=>{
+        const text = n.message.content.filter((n)=>n.type=='text')[0]?.text;
+        if(!!text){
+          allMessages.push({
+            "text": text,
+            "time": new Date(n.message.timestamp).toLocaleTimeString(),
+            "sender": n.message.role,
+            "isSent": n.message.role=='user',
+            "timestamp": n.message.timestamp
+          })
+        }
+      })
+      // Reverse to get newest first, take 10, then reverse back to oldest first
+      chat.messages = allMessages.reverse().slice(0, 10).reverse()
+    }
+    chat.sessionId = sessionId
+  } catch (fallbackError) {
+    console.error('Failed to load session history fallback:', fallbackError)
   }
 }
 
@@ -886,6 +902,14 @@ const switchOpenclawSession = async (chat, sessionId) => {
     // Load chat history from chat_log database
     const response = await openclawService.getChatLog(chat.agentId)
     const messages = Array.isArray(response.data) ? response.data : []
+    
+    // Fallback to session file if chat_log returns less than 10 messages
+    if (messages.length < 10) {
+      console.log('[switchOpenclawSession] chat_log has only', messages.length, 'messages, falling back to session file')
+      await loadFromSessionFile(chat, chat.agentId, sessionId)
+      return
+    }
+    
     chat.messages = messages.map(msg => ({
       text: msg.text || '',
       time: msg.time || '',
@@ -897,19 +921,7 @@ const switchOpenclawSession = async (chat, sessionId) => {
   } catch (error) {
     console.error('Failed to fetch chat log:', error)
     // Fallback to session history
-    try {
-      const response = await openclawService.getSessionHistory(chat.agentId, sessionId)
-      let data = null
-      try {
-        data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
-      } catch (e) {
-        console.error('Failed to parse history:', e)
-      }
-      chat.messages = data?.messages || []
-      chat.sessionId = sessionId
-    } catch (fallbackError) {
-      console.error('Failed to fetch session history fallback:', fallbackError)
-    }
+    await loadFromSessionFile(chat, chat.agentId, sessionId)
   }
 }
 

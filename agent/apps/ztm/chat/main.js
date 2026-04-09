@@ -11,13 +11,19 @@ var $openclawErrorMessage = ''
 var openclawExec = pipeline($=>$
   .onStart(cmd => { $openclawCmd = cmd; $openclawStartTime = Date.now(); return new Data })
   .exec(() => $openclawCmd, {
+    stderr: true,
     onExit: (code, err) => {
       $openclawExitCode = code
       if (err) {
-        $openclawErrorMessage = err.toString()
-        $openclawErrorMessage.split('\n').filter(Boolean).forEach(
-          line => console.error('[openclaw]', line)
-        )
+        var errStr = err.toString()
+        // Skip JSON output (normal --json result), only print real errors
+        var hasJsonBraces = errStr.indexOf('{') !== -1 && errStr.indexOf('}') !== -1
+        if (!hasJsonBraces) {
+          $openclawErrorMessage = errStr
+          errStr.split('\n').filter(Boolean).forEach(
+            line => console.error('[openclaw]', line)
+          )
+        }
       }
       return new StreamEnd
     }
@@ -38,7 +44,148 @@ var openclawExec = pipeline($=>$
 )
 
 export default function ({ app, mesh, utils }) {
-  var spawnOpenclaw = (cmd) => openclawExec.spawn(cmd)
+
+  // ── Openclaw call queue ──────────────────────────────────────────────────
+  // All openclaw CLI calls are serialised through this queue to prevent
+  // gateway timeouts caused by concurrent requests. Failed jobs are retried
+  // up to maxRetries times by appending them back to the tail of the queue.
+  var jobQueue = []
+  var isQueueRunning = false
+
+  // Extract agentId from command for queue management
+  // Handles both: openclaw agent --agent <name> and openclaw gateway call agent --params <json>
+  function getAgentIdFromCmd(cmd) {
+    var agentIdx = cmd.indexOf('--agent')
+    if (agentIdx >= 0 && cmd[agentIdx + 1]) {
+      return cmd[agentIdx + 1]
+    }
+    var paramsIdx = cmd.indexOf('--params')
+    if (paramsIdx >= 0 && cmd[paramsIdx + 1]) {
+      try {
+        var params = JSON.parse(cmd[paramsIdx + 1])
+        return params.agentId || null
+      } catch { return null }
+    }
+    return null
+  }
+
+  // Extract sessionId from command for logging
+  function getSessionIdFromCmd(cmd) {
+    var sessionIdx = cmd.indexOf('--session-id')
+    if (sessionIdx >= 0 && cmd[sessionIdx + 1]) {
+      return cmd[sessionIdx + 1]
+    }
+    var paramsIdx = cmd.indexOf('--params')
+    if (paramsIdx >= 0 && cmd[paramsIdx + 1]) {
+      try {
+        var params = JSON.parse(cmd[paramsIdx + 1])
+        return params.sessionId || null
+      } catch { return null }
+    }
+    return null
+  }
+
+  // Queue stats: return string describing current queue state
+  function queueStats() {
+    if (jobQueue.length === 0) return 'empty'
+    return 'length:' + jobQueue.length + ' jobs: ' +
+      jobQueue.map(function (j) {
+        return (getAgentIdFromCmd(j.cmd) || '?') + '(retry:' + j.retries + ')'
+      }).join(' ')
+  }
+
+  function runNextJob() {
+    if (jobQueue.length === 0) { isQueueRunning = false; return }
+    isQueueRunning = true
+    var job = jobQueue.shift()
+    var agentId = getAgentIdFromCmd(job.cmd)
+    var sessionId = getSessionIdFromCmd(job.cmd)
+    console.info('[queue][pop] agentId=' + (agentId || 'unknown') + ' session=' + (sessionId || 'N/A') + ' queue-remaining:' + jobQueue.length)
+    console.info('[queue][stats]', queueStats())
+
+    // Out-of-queue merging: collect all pending jobs for the same agentId
+    var mergedJobs = []
+    if (agentId) {
+      var remaining = []
+      jobQueue.forEach(function (j) {
+        if (getAgentIdFromCmd(j.cmd) === agentId) {
+          mergedJobs.push(j)
+        } else {
+          remaining.push(j)
+        }
+      })
+      jobQueue = remaining
+    }
+
+    // Merge messages if there are pending jobs for the same agent
+    var originalMessage = null
+    if (mergedJobs.length > 0) {
+      console.info('[queue][merge] agentId=' + agentId + ' absorbing ' + mergedJobs.length + ' jobs queue-remaining:' + jobQueue.length)
+      var paramsIdx = job.cmd.indexOf('--params')
+      if (paramsIdx >= 0 && job.cmd[paramsIdx + 1]) {
+        try {
+          var params = JSON.parse(job.cmd[paramsIdx + 1])
+          originalMessage = params.message
+          var messages = [params.message]
+          mergedJobs.forEach(function (j) {
+            var pi = j.cmd.indexOf('--params')
+            if (pi >= 0 && j.cmd[pi + 1]) {
+              try {
+                messages.push(JSON.parse(j.cmd[pi + 1]).message)
+              } catch {}
+            }
+          })
+          params.message = '以下是连续收到的消息，请一并处理：\n' +
+            messages.map(function (m, i) { return (i + 1) + '. ' + m }).join('\n')
+          job.cmd[paramsIdx + 1] = JSON.stringify(params)
+          console.info('[queue][merge] merged message chars:' + params.message.length)
+        } catch {}
+      }
+    }
+
+    var attempt = job.retries + 1
+    console.info('[queue][run] agentId=' + (agentId || 'unknown') + ' session=' + (sessionId || 'N/A') + ' attempt:' + attempt + '/3')
+    var startTs = Date.now()
+
+    openclawExec.spawn(job.cmd).then(
+      function (output) {
+        console.info('[queue][done] agentId=' + (agentId || 'unknown') + ' durationMs:' + (Date.now() - startTs) + ' queue-remaining:' + jobQueue.length)
+        console.info('[queue][stats]', queueStats())
+        job.resolve(output)
+        // Resolve all merged jobs with the same output
+        mergedJobs.forEach(function (j) { j.resolve(output) })
+        runNextJob()
+      },
+      function (err) {
+        if (job.retries < job.maxRetries) {
+          job.retries++
+          console.warn('[queue][retry] agentId=' + (agentId || 'unknown') + ' attempt:' + job.retries + '/' + job.maxRetries + ' queue-length:' + jobQueue.length)
+          console.info('[queue][stats]', queueStats())
+          jobQueue.push(job)
+          // Discard merged jobs on retry (already stale)
+          mergedJobs.forEach(function (j) { j.resolve('') })
+        } else {
+          console.error('[queue][drop] agentId=' + (agentId || 'unknown') + ' exhausted ' + job.maxRetries + ' retries')
+          console.info('[queue][stats]', queueStats())
+          job.reject(err)
+          mergedJobs.forEach(function (j) { j.reject(err) })
+        }
+        runNextJob()
+      }
+    )
+  }
+
+  var spawnOpenclaw = function (cmd) {
+    var agentId = getAgentIdFromCmd(cmd)
+    var sessionId = getSessionIdFromCmd(cmd)
+    return new Promise(function (resolve, reject) {
+      jobQueue.push({ cmd: cmd, resolve: resolve, reject: reject, retries: 0, maxRetries: 2 })
+      console.info('[queue][enqueue] agentId=' + (agentId || 'unknown') + ' session=' + (sessionId || 'N/A') + ' queue-length:' + jobQueue.length)
+      if (!isQueueRunning) runNextJob()
+    })
+  }
+  // ────────────────────────────────────────────────────────────────────────
+
   var api = initAPI({ app, mesh, db, spawnOpenclaw })
   var cli = initCLI({ app, mesh, utils, api })
 
