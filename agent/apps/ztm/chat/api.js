@@ -360,11 +360,16 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         
         return spawnOpenclawViaGateway(member, agentMsg, sessionId, idempotencyKey).then(
           function (output) {
+            console.info('[group auto-reply] openclaw output received, length:', output ? output.length : 0)
+            // Check for gateway errors before attempting to parse
             if (!output || !output.trim()) {
-              console.error('[group auto-reply] empty output, agent may have failed, skipping')
+              console.warn('[group auto-reply] empty output from openclaw, skipping')
               return
             }
-            console.info('[group auto-reply] openclaw output received, length:', output.length)
+            if (output.indexOf('Gateway call failed') !== -1) {
+              console.warn('[group auto-reply] gateway error received, skipping (not sending to group):', output.substring(0, 120))
+              return
+            }
             var replyText
             try {
               var parsed = JSON.parse(output.split('\n').join(''))
@@ -373,24 +378,16 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
                           parsed?.payloads?.[0]?.text ||
                           parsed?.message || parsed?.content || parsed?.text
             } catch (e) {
-              console.error('[group auto-reply] parse error:', e)
-            }
-            if (!replyText) {
-              console.error('[group auto-reply] no replyText, output:', output.substring(0, 100))
-              replyText = output.split('\n').join('').trim()
-            }
-            if (!replyText) {
-              console.error('[group auto-reply] empty reply, skipping')
+              console.warn('[group auto-reply] parse error, skipping (not sending to group):', e?.message || e)
               return
             }
-            // Filter gateway timeout errors - skip silently but log
-            if (replyText.indexOf('Gateway call failed') !== -1) {
-              console.warn('[group auto-reply] gateway timeout detected, skipping reply (not sending to group)')
+            if (!replyText) {
+              console.warn('[group auto-reply] empty payloads from openclaw, skipping (not sending to group)')
               return
             }
             // If replyText is raw JSON (empty payloads), skip silently but log
-            if (replyText && replyText.trim().startsWith('{')) {
-              console.warn('[group auto-reply] empty payloads detected, skipping reply (not sending to group)')
+            if (replyText.trim().startsWith('{')) {
+              console.warn('[group auto-reply] replyText is raw JSON (empty payloads), skipping (not sending to group)')
               return
             }
             // muted: log the reply but do not send to ztm chat
@@ -442,7 +439,16 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       
       return spawnOpenclawViaGateway(agentName, agentMsg2, sessionId, idempotencyKey).then(
         function (output) {
-          console.info('[group auto-reply] openclaw output received, length:', output.length)
+          console.info('[group auto-reply] openclaw output received, length:', output ? output.length : 0)
+          // Check for gateway errors before attempting to parse
+          if (!output || !output.trim()) {
+            console.warn('[group auto-reply] empty output from openclaw, skipping')
+            return
+          }
+          if (output.indexOf('Gateway call failed') !== -1) {
+            console.warn('[group auto-reply] gateway error received, skipping (not sending to group):', output.substring(0, 120))
+            return
+          }
           var replyText
           try {
             var parsed = JSON.parse(output.split('\n').join(''))
@@ -451,24 +457,16 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
                         parsed?.result?.payloads?.[0]?.text ||
                         parsed?.message || parsed?.content || parsed?.text
           } catch (e) {
-            console.error('[group auto-reply] parse error:', e)
-          }
-          if (!replyText) {
-            console.error('[group auto-reply] no replyText, output:', output.substring(0, 100))
-            replyText = output.split('\n').join('').trim()
-          }
-          if (!replyText) {
-            console.error('[group auto-reply] empty reply, skipping')
+            console.warn('[group auto-reply] parse error, skipping (not sending to group):', e?.message || e)
             return
           }
-          // Filter gateway timeout errors - skip silently but log
-          if (replyText.indexOf('Gateway call failed') !== -1) {
-            console.warn('[group auto-reply] gateway timeout detected, skipping reply (not sending to group)')
+          if (!replyText) {
+            console.warn('[group auto-reply] empty payloads from openclaw, skipping (not sending to group)')
             return
           }
           // If replyText is raw JSON (empty payloads), skip silently but log
-          if (replyText && replyText.trim().startsWith('{')) {
-            console.warn('[group auto-reply] empty payloads detected, skipping reply (not sending to group)')
+          if (replyText.trim().startsWith('{')) {
+            console.warn('[group auto-reply] replyText is raw JSON (empty payloads), skipping (not sending to group)')
             return
           }
           // muted: log the reply but do not send to ztm chat
@@ -538,15 +536,29 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
           console.info('[chat auto-reply] openclaw output:', output.substring(0, 120) + ' ...')
           db.logApi('auto-reply', 'gateway call agent', {}, text, {}, output)
         }
+        // Check for gateway errors before attempting to parse
+        if (!output || !output.trim()) {
+          console.warn('[chat auto-reply] empty output from openclaw, skipping')
+          return
+        }
+        if (output.indexOf('Gateway call failed') !== -1) {
+          console.warn('[chat auto-reply] gateway error received, skipping:', output.substring(0, 120))
+          return
+        }
         var replyText
         try {
           var parsed = JSON.parse(output.split('\n').join(''))
           replyText = parsed?.payloads?.[0]?.text ||
                       parsed?.result?.payloads?.[0]?.text ||
                       parsed?.message || parsed?.content || parsed?.text
-        } catch {}
-        if (!replyText) replyText = output.split('\n').join('').trim()
-        if (!replyText) return
+        } catch (e) {
+          console.warn('[chat auto-reply] parse error, skipping:', e?.message || e)
+          return
+        }
+        if (!replyText) {
+          console.warn('[chat auto-reply] empty payloads from openclaw, skipping')
+          return
+        }
 
         // half automation: store reply for human review, do not send
         if (currentConfig.halfAutomation) {
@@ -698,40 +710,45 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     return chat
   }
 
-  function mergeMessages(chat, messages) {
-    messages.forEach(msg => {
+  function mergeMessages(chat, messages, initial) {
+    messages.forEach(function (msg) {
       var sender = msg.sender
       var time = msg.time
-      if (!chat.messages.find(m => m.time === time && m.sender === sender)) {
+      if (!chat.messages.find(function (m) { return m.time === time && m.sender === sender })) {
         chat.messages.push(msg)
         if (sender !== app.username) chat.newCount++
         if (time > chat.updateTime) chat.updateTime = time
-        // Write to chat_log — only for messages from others (own messages are logged in add*Message)
+        // Write to chat_log and trigger auto-reply only for live messages (not history replay)
         var msgText = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
-          if (sender !== app.username) {
-            console.info('[chat recv]', app.username, '<-', sender, ':', firstLine(msgText))
+        if (sender !== app.username) {
+          console.info('[chat recv]', app.username, '<-', sender, ':', firstLine(msgText), initial ? '(initial, skip auto-reply)' : '')
+          if (!initial) {
             triggerAutoReply(chat, msg)
-            try {
-              if (chat.peer) {
-                var recvSessionId = makeSessionId(sender, app.username)
-                db.logChat(mesh.name, 'peer', chat.peer, null, null, sender, 'message',
-                  typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
-                  null, recvSessionId)
-              } else if (chat.group) {
-                var senderUsername = sender.indexOf('/') !== -1 ? sender.split('/')[1] : sender
-                var recvSessionId = chat.gcid ? makeSessionId(senderUsername, chat.gcid) : null
-                db.logChat(mesh.name, 'group', chat.group, chat.name, chat.creator, sender, 'message',
-                  typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
-                  null, recvSessionId)
-              }
-            } catch {}
           }
+          try {
+            if (chat.peer) {
+              var recvSessionId = makeSessionId(sender, app.username)
+              db.logChat(mesh.name, 'peer', chat.peer, null, null, sender, 'message',
+                typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
+                null, recvSessionId)
+            } else if (chat.group) {
+              var senderUsername = sender.indexOf('/') !== -1 ? sender.split('/')[1] : sender
+              var recvSessionId = chat.gcid ? makeSessionId(senderUsername, chat.gcid) : null
+              db.logChat(mesh.name, 'group', chat.group, chat.name, chat.creator, sender, 'message',
+                typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message),
+                null, recvSessionId)
+            }
+          } catch {}
+        }
         // For group chats, trigger local agents regardless of who sent the message.
         // Local agents are virtual members of this EP — we proxy their participation.
         // Skip if this message was itself posted by a local agent (avoid infinite loop).
-        var isAgentReply = typeof msg.message === 'object' && !!msg.message?.agentName
-        if (chat.group && !isAgentReply) {
-          triggerGroupAutoReply(chat, msg)
+        // Skip entirely during history replay (initial=true) to avoid re-triggering on startup.
+        if (!initial) {
+          var isAgentReply = typeof msg.message === 'object' && !!msg.message?.agentName
+          if (chat.group && !isAgentReply) {
+            triggerGroupAutoReply(chat, msg)
+          }
         }
       }
     })
@@ -839,10 +856,10 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
                 }
               })
             }
-            mergeMessages(chat, messages)
+            mergeMessages(chat, messages, initial)
             if (hasIncoming) {
               var cfg = db.getChatPeer(mesh.name, chat.peer)
-              if (cfg && !cfg.autoReply && !chat.messages.some(m => m.isPeerRequest)) {
+              if (cfg && !cfg.autoReply && !chat.messages.some(function (m) { return m.isPeerRequest })) {
                 notifyAutoReplySetup(chat)
               }
             }
@@ -934,7 +951,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
               msg.sender = embeddedSender || pathSender
             })
             var beforeCount = chat.messages.length
-            mergeMessages(chat, messages)
+            mergeMessages(chat, messages, initial)
             // Collect only the newly merged messages for auto-reply
             if (!initial) {
               newMsgs = chat.messages.slice(beforeCount)
