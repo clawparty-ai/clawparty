@@ -183,6 +183,14 @@ cd chat-gui && npm run build && echo "Build successful"
 - **No continue/break**: PipyJS does not support `continue` or `break` statements in loops. Use `if` blocks to wrap logic instead of `if (!condition) continue`.
 - **No arrow functions**: PipyJS does not fully support arrow functions (`=>`). Use traditional `function` declarations instead. Also avoid methods that rely on arrow functions for callbacks (e.g., `.map(x => x)`, `.filter(x => x)`, `.forEach(x => {})`). Use traditional loops or named function expressions instead.
 - **No Number.isNaN**: PipyJS does not support `Number.isNaN()`. Use a try-catch with `Number()` cast or compare with `!==` against a known NaN value.
+- **No while loops**: PipyJS does not support `while` statements. Use `for` loops instead. Example:
+  ```javascript
+  // ❌ Not supported
+  while (condition) { ... }
+  
+  // ✅ Use for loop instead
+  for (var i = 0; i < max && condition; i++) { ... }
+  ```
 
 ### Comments
 - Keep comments minimal.

@@ -4,7 +4,7 @@ var DEFAULT_FILTER_CHAIN = 'repeat-message,blocked-keywords'
 function firstLine(text) {
   if (typeof text !== 'string') return text
   var idx = text.indexOf('\n')
-  return idx === -1 ? text : text.slice(0, idx) + '...'
+  return idx === -1 ? text : text.substring(0, idx) + '...'
 }
 
 function makeSessionId(peerA, peerB) {
@@ -41,13 +41,15 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   
   // Helper: spawn openclaw via gateway call instead of CLI
   // This allows gateway to queue requests for the same session
-  function spawnOpenclawViaGateway(agentId, message, sessionId, idempotencyKey) {
+  function spawnOpenclawViaGateway(agentId, message, sessionId, idempotencyKey, timeoutMs) {
+    var timeout = timeoutMs || 60000
     var cmd = [
       'openclaw', 'gateway', 'call', 'agent',
       '--params', JSON.stringify({ agentId: agentId, message: message, sessionId: sessionId, idempotencyKey: idempotencyKey }),
-      '--json', '--expect-final'
+      '--json', '--expect-final',
+      '--timeout', timeout + ''
     ]
-    console.info('[spawnOpenclawViaGateway]', cmd.join(' ').slice(0, 100))
+    console.info('[spawnOpenclawViaGateway] timeout:', timeout, 'ms, cmd:', cmd.join(' ').substring(0, 100))
     return spawnOpenclaw(cmd)
   }
 
@@ -305,6 +307,28 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     if (!chat.group) { console.info('[group auto-reply] skip: no chat.group'); return }
     var gcid = chat.gcid || ''
     var text = typeof msg.message === 'string' ? msg.message : (msg.message?.text || '')
+
+    // 解析自定义超时时间，格式: [timeout:120]（单位：秒）
+    var customTimeout = 60000  // 默认 60 秒
+    var timeoutStart = text.indexOf('[timeout:')
+    if (timeoutStart !== -1) {
+      var timeoutEnd = text.indexOf(']', timeoutStart)
+      if (timeoutEnd !== -1) {
+        var timeoutStr = text.substring(timeoutStart + 9, timeoutEnd)
+        var timeoutSec = Number(timeoutStr)
+        if (timeoutSec > 0) {
+          customTimeout = timeoutSec * 1000
+          console.info('[group auto-reply] custom timeout detected:', customTimeout, 'ms')
+          text = text.substring(0, timeoutStart) + text.substring(timeoutEnd + 1)
+          // 清理连续空格 (使用 for 循环替代 while)
+          for (var s = text.indexOf('  '); s !== -1; s = text.indexOf('  ')) {
+            text = text.substring(0, s) + text.substring(s + 1)
+          }
+          text = text.trim()
+        }
+      }
+    }
+
     // Skip auto-reply for image-only messages with no text
     if (!text) { console.info('[group auto-reply] skip: empty text (possibly image-only)'); return }
     var senderField = msg.sender || ''
@@ -378,36 +402,43 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         console.info('[group auto-reply] calling local agent', member, 'for group', gcid || chat.group)
         console.info('[group auto-reply] gateway call agent, session:', sessionId)
         
-        return spawnOpenclawViaGateway(member, agentMsg, sessionId, idempotencyKey).then(
+        return spawnOpenclawViaGateway(member, agentMsg, sessionId, idempotencyKey, customTimeout).then(
           function (output) {
             console.info('[group auto-reply] openclaw output received, length:', output ? output.length : 0)
+            console.info('[group auto-reply] raw output:', output ? output.substring(0, 150) : 'EMPTY')
             // Check for gateway errors before attempting to parse
             if (!output || !output.trim()) {
-              console.warn('[group auto-reply] empty output from openclaw, skipping')
+              console.warn('[group auto-reply] skipping: output is empty or whitespace')
               return
             }
             if (output.indexOf('Gateway call failed') !== -1) {
-              console.warn('[group auto-reply] gateway error received, skipping (not sending to group):', output.substring(0, 120))
+              console.warn('[group auto-reply] gateway error detected, sending timeout message to group')
+              var timeoutMsg = '关于 "' + text.substring(0, 30) + '..." 的响应超时了'
+              new Timeout(1).wait().then(function () {
+                addGroupMessage(chat.creator, chat.group, { text: timeoutMsg, agentName: member }, true, sessionId)
+              })
               return
             }
             var replyText
             try {
               var parsed = JSON.parse(output.split('\n').join(''))
+              console.info('[group auto-reply] parsed object:', JSON.stringify(parsed).substring(0, 200))
               console.info('[group auto-reply] parsed, payloads:', parsed?.result?.payloads?.[0]?.text?.substring(0, 50))
               replyText = parsed?.result?.payloads?.[0]?.text ||
                           parsed?.payloads?.[0]?.text ||
                           parsed?.message || parsed?.content || parsed?.text
+              console.info('[group auto-reply] extracted replyText:', replyText ? replyText.substring(0, 100) : 'EMPTY')
             } catch (e) {
               console.warn('[group auto-reply] parse error, skipping (not sending to group):', e?.message || e)
               return
             }
             if (!replyText) {
-              console.warn('[group auto-reply] empty payloads from openclaw, skipping (not sending to group)')
+              console.warn('[group auto-reply] skipping: replyText is empty after parsing')
               return
             }
             // If replyText is raw JSON (empty payloads), skip silently but log
             if (replyText.trim().startsWith('{')) {
-              console.warn('[group auto-reply] replyText is raw JSON (empty payloads), skipping (not sending to group)')
+              console.warn('[group auto-reply] skipping: replyText starts with {, raw JSON detected')
               return
             }
             // muted: log the reply but do not send to ztm chat
@@ -457,36 +488,43 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       console.info('[group auto-reply] calling agent', agentName, 'for self in group', gcid)
       console.info('[group auto-reply] gateway call agent, session:', sessionId)
       
-      return spawnOpenclawViaGateway(agentName, agentMsg2, sessionId, idempotencyKey).then(
+      return spawnOpenclawViaGateway(agentName, agentMsg2, sessionId, idempotencyKey, customTimeout).then(
         function (output) {
           console.info('[group auto-reply] openclaw output received, length:', output ? output.length : 0)
+          console.info('[group auto-reply] raw output (self):', output ? output.substring(0, 150) : 'EMPTY')
           // Check for gateway errors before attempting to parse
           if (!output || !output.trim()) {
-            console.warn('[group auto-reply] empty output from openclaw, skipping')
+            console.warn('[group auto-reply] skipping (self): output is empty or whitespace')
             return
           }
           if (output.indexOf('Gateway call failed') !== -1) {
-            console.warn('[group auto-reply] gateway error received, skipping (not sending to group):', output.substring(0, 120))
+            console.warn('[group auto-reply] skipping (self): gateway error detected')
+            var timeoutMsg = '关于 "' + text.substring(0, 30) + '..." 的响应超时了'
+            new Timeout(1).wait().then(function () {
+              addGroupMessage(chat.creator, chat.group, { text: timeoutMsg, agentName: app.username }, true, sessionId)
+            })
             return
           }
           var replyText
           try {
             var parsed = JSON.parse(output.split('\n').join(''))
-            console.info('[group auto-reply] parsed, payloads:', parsed?.payloads?.[0]?.text?.substring(0, 50))
+            console.info('[group auto-reply] parsed object (self):', JSON.stringify(parsed).substring(0, 200))
+            console.info('[group auto-reply] parsed (self), payloads:', parsed?.payloads?.[0]?.text?.substring(0, 50))
             replyText = parsed?.payloads?.[0]?.text ||
                         parsed?.result?.payloads?.[0]?.text ||
                         parsed?.message || parsed?.content || parsed?.text
+            console.info('[group auto-reply] extracted replyText (self):', replyText ? replyText.substring(0, 100) : 'EMPTY')
           } catch (e) {
             console.warn('[group auto-reply] parse error, skipping (not sending to group):', e?.message || e)
             return
           }
           if (!replyText) {
-            console.warn('[group auto-reply] empty payloads from openclaw, skipping (not sending to group)')
+            console.warn('[group auto-reply] skipping (self): replyText is empty after parsing')
             return
           }
           // If replyText is raw JSON (empty payloads), skip silently but log
           if (replyText.trim().startsWith('{')) {
-            console.warn('[group auto-reply] replyText is raw JSON (empty payloads), skipping (not sending to group)')
+            console.warn('[group auto-reply] skipping (self): replyText starts with {, raw JSON detected')
             return
           }
           // muted: log the reply but do not send to ztm chat
