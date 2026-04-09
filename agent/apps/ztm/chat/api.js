@@ -311,18 +311,43 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var senderUsername = senderField.indexOf('/') !== -1 ? senderField.split('/')[1] : senderField
 
     // ── Parse @ mentions ──
+    // Strip trailing punctuation from @name (e.g. "@Alice," -> "Alice")
+    var mentionPunctChars = ",.!?;:'\"、。！？；："
     var mentionedMembers = []
     text.split(' ').forEach(function (token) {
       if (token.length > 1 && token.charAt(0) === '@') {
-        mentionedMembers.push(token.substring(1))
+        var mname = token.substring(1)
+        for (var mi = 0; mi < mname.length; mi++) {
+          if (mentionPunctChars.indexOf(mname.charAt(mi)) !== -1) {
+            mname = mname.substring(0, mi)
+            break
+          }
+        }
+        if (mname.length > 0) mentionedMembers.push(mname)
       }
     })
     var hasMentions = mentionedMembers.length > 0
+
+    // Case-insensitive check: is a name in mentionedMembers? (using for loop instead of .some())
+    function isMentioned(name) {
+      var lower = name.toLowerCase()
+      for (var mi = 0; mi < mentionedMembers.length; mi++) {
+        if (mentionedMembers[mi].toLowerCase() === lower) return true
+      }
+      return false
+    }
 
     // Clean message text: remove all @name tokens and trim
     var cleanedText = hasMentions
       ? text.split(' ').filter(function (token) { return !(token.length > 1 && token.charAt(0) === '@') }).join(' ').trim()
       : text
+
+    // If all content was @mentions and nothing remains, skip triggering any agent
+    if (hasMentions && !cleanedText) {
+      console.warn('[group auto-reply] skip: cleanedText is empty after stripping mentions')
+      return
+    }
+
     var groupName = chat.name || chat.group
 
     // Build rewritten message for the openclaw agent CLI
@@ -344,14 +369,14 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         if (member === senderUsername) return   // skip sender
         if (member === app.username) return     // skip self (handled below)
         if (localAgents.indexOf(member) === -1) return  // skip remote EP members
-        // @ filter: if mentions exist, only trigger mentioned members
-        if (hasMentions && mentionedMembers.indexOf(member) === -1) return
+        // @ filter: if mentions exist, only trigger mentioned members (case-insensitive)
+        if (hasMentions && !isMentioned(member)) return
         targetMembers.push(member)
       })
       
       // Parallel execution via gateway (gateway handles queuing internally)
       targetMembers.forEach(function (member) {
-        var agentMsg = buildAgentMessage(hasMentions && mentionedMembers.indexOf(member) !== -1)
+        var agentMsg = buildAgentMessage(hasMentions && isMentioned(member))
         var sessionId = gcid + '-' + member
         var idempotencyKey = sessionId + '-' + Date.now()
         
@@ -419,8 +444,8 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       if (senderUsername === app.username) return
       if (localAgents.indexOf(senderUsername) !== -1) return
       if (!gcid) return
-      // @ filter: if mentions exist and self is not mentioned, skip EP-level auto-reply
-      if (hasMentions && mentionedMembers.indexOf(app.username) === -1) return
+      // @ filter: if mentions exist and self is not mentioned, skip EP-level auto-reply (case-insensitive)
+      if (hasMentions && !isMentioned(app.username)) return
       var peerConfig = getPeerConfig(gcid)
       if (!peerConfig.autoReply) {
         // Show approve hint in this group's message flow so the user can enable auto-reply
@@ -428,7 +453,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         return
       }
       var agentName = peerConfig.autoReplyAgent || 'main'
-      var agentMsg2 = buildAgentMessage(hasMentions && mentionedMembers.indexOf(app.username) !== -1)
+      var agentMsg2 = buildAgentMessage(hasMentions && isMentioned(app.username))
       var credit = onReceive(gcid, senderUsername, agentMsg2)
       var sessionId = gcid
       var thinkingTime2 = peerConfig.thinkingTime !== undefined ? peerConfig.thinkingTime : 3
