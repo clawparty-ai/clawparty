@@ -300,6 +300,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   }
 
   function triggerGroupAutoReply(chat, msg) {
+    console.info('[triggerGroupAutoReply] called, gcid:', chat.gcid, 'group:', chat.group)
     if (!spawnOpenclaw) { console.info('[group auto-reply] skip: no spawnOpenclaw'); return }
     if (!chat.group) { console.info('[group auto-reply] skip: no chat.group'); return }
     var gcid = chat.gcid || ''
@@ -515,8 +516,12 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   }
 
   function triggerAutoReply(chat, msg) {
+    console.info('[triggerAutoReply] called, chat.peer:', chat.peer, 'chat.group:', chat.group)
     if (!spawnOpenclaw) return
-    if (!chat.peer) return
+    if (!chat.peer) {
+      console.info('[triggerAutoReply] skipped, no chat.peer')
+      return
+    }
     var peerConfig = getPeerConfig(chat.peer)
     if (!peerConfig.autoReply) return
     var agentName = peerConfig.autoReplyAgent || 'main'
@@ -742,6 +747,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         if (sender !== app.username) {
           console.info('[chat recv]', app.username, '<-', sender, ':', firstLine(msgText), initial ? '(initial, skip auto-reply)' : '')
           if (!initial) {
+            console.info('[mergeMessages] triggering auto-reply, chat.peer:', chat.peer, 'chat.group:', chat.group)
             triggerAutoReply(chat, msg)
           }
           try {
@@ -1296,6 +1302,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
   // fromAgent: true means this message is an auto-reply from a local agent — do not re-trigger
   function addGroupMessage(creator, group, message, fromAgent, sessionId) {
+    console.info('[addGroupMessage] called, creator:', creator, 'group:', group, 'fromAgent:', fromAgent, 'app.username:', app.username)
     var chat = findGroupChat(creator, group)
     if (!chat) return Promise.resolve(false)
     var realCreator = chat.creator
