@@ -787,6 +787,10 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
           if (!initial) {
             console.info('[mergeMessages] triggering auto-reply, chat.peer:', chat.peer, 'chat.group:', chat.group)
             triggerAutoReply(chat, msg)
+            // 同时触发群聊自动回复
+            if (chat.group) {
+              triggerGroupAutoReply(chat, msg)
+            }
           }
           try {
             if (chat.peer) {

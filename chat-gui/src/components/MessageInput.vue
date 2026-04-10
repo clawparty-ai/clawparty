@@ -318,6 +318,7 @@ function handleCameraCapture(e) {
 
 // ── File upload ───────────────────────────────────────────────────────────────
 const fileInputRef = ref(null)
+const imageInputRef = ref(null)
 
 function triggerImagePicker() {
   if (imageInputRef.value) imageInputRef.value.click()
