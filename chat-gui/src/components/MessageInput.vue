@@ -538,8 +538,8 @@ function handleSend() {
   align-items: flex-start;
   padding: 8px 12px;
   margin-bottom: 8px;
-  background: rgba(0, 0, 0, 0.05);
-  border-left: 3px solid #0A2E6F;
+  background: rgba(0, 0, 0, 0.03);
+  border-left: 3px solid #ccc;
   border-radius: 4px;
 }
 

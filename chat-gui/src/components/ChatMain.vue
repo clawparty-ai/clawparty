@@ -733,13 +733,13 @@ const buildChatHtml = () => {
     .message-quote {
       margin-top: 8px;
       padding: 8px 12px;
-      background: rgba(0,0,0,0.05);
-      border-left: 3px solid #0A2E6F;
+      background: rgba(0,0,0,0.03);
+      border-left: 3px solid #ccc;
       border-radius: 4px;
     }
     .message.sent .message-quote {
-      background: rgba(255,255,255,0.1);
-      border-left-color: #5a9cd6;
+      background: rgba(255,255,255,0.08);
+      border-left-color: #888;
     }
     .message-quote-header {
       display: flex;
