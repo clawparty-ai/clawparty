@@ -23,7 +23,6 @@
         :key="index"
         class="message"
         :class="{ sent: isMessageSent(msg), typing: msg.isTyping }"
-        @contextmenu="handleMessageContextMenu($event, msg)"
       >
           <div class="message-avatar">
           <div v-if="chat.isOpenclaw && !isMessageSent(msg) && !msg.isTyping" class="avatar-emoji">
@@ -82,7 +81,9 @@
                 </template>
                 <button class="approve-btn" @click="approveGroupRequest(msg)">Approve</button>
               </div>
+              <button class="quote-btn" @click="quoteMessage(msg)" title="引用此消息">↩ 引用</button>
             </div>
+            <button v-if="!msg.isGroupRequest && !msg.isPeerRequest" class="quote-btn" @click="quoteMessage(msg)" title="引用此消息">↩ 引用</button>
           </template>
         </div>
       </div>
@@ -120,13 +121,6 @@
       @update:peerMode="handlePeerModeChange"
       @clear-quote="handleClearQuote"
     />
-    <!-- Quote menu -->
-    <div v-if="showQuoteMenu" 
-         class="quote-menu"
-         :style="{ left: quoteMenuPosition.x + 'px', top: quoteMenuPosition.y + 'px' }">
-      <div class="quote-menu-item" @click="handleQuoteMessage">引用此消息</div>
-      <div class="quote-menu-item" @click="closeQuoteMenu">取消</div>
-    </div>
   </main>
 </template>
 
@@ -194,51 +188,18 @@ const currentSessionId = ref('')
 
 // Quote feature
 const quotedMessage = ref(null)
-const showQuoteMenu = ref(false)
-const quoteMenuPosition = ref({ x: 0, y: 0 })
-const quoteTargetMsg = ref(null)
 
-// Quote functions
-const handleMessageContextMenu = (event, msg) => {
-  event.preventDefault()
-  quoteTargetMsg.value = msg
-  quoteMenuPosition.value = { x: event.clientX, y: event.clientY }
-  showQuoteMenu.value = true
-}
-
-const handleQuoteMessage = () => {
-  if (quoteTargetMsg.value) {
-    quotedMessage.value = {
-      messageId: quoteTargetMsg.value.id || Date.now().toString(),
-      sender: quoteTargetMsg.value.sender || quoteTargetMsg.value.name,
-      preview: (quoteTargetMsg.value.text || '').substring(0, 100),
-      time: quoteTargetMsg.value.time
-    }
-  }
-  closeQuoteMenu()
-}
-
-const closeQuoteMenu = () => {
-  showQuoteMenu.value = false
-  quoteTargetMsg.value = null
-}
-
-// Close quote menu on click outside
-const handleGlobalClick = (event) => {
-  if (showQuoteMenu.value && !event.target.closest('.quote-menu')) {
-    closeQuoteMenu()
+// Quote function
+const quoteMessage = (msg) => {
+  quotedMessage.value = {
+    messageId: msg.id || Date.now().toString(),
+    sender: msg.sender || msg.name,
+    preview: (msg.text || '').substring(0, 100),
+    time: msg.time
   }
 }
 
-onMounted(() => {
-  document.addEventListener('click', handleGlobalClick)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('click', handleGlobalClick)
-})
-
-// Handle send with quote
+// Handle clear quote
 const handleSendWithQuote = () => {
   const quote = quotedMessage.value
   quotedMessage.value = null
@@ -746,6 +707,33 @@ const buildChatHtml = () => {
     }
     .quote-menu-item:hover {
       background: #f0f0f0;
+    }
+    /* Quote button on message bubble */
+    .quote-btn {
+      background: none;
+      border: none;
+      color: #999;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 2px 8px;
+      margin-top: 4px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .message:hover .quote-btn {
+      opacity: 1;
+    }
+    .quote-btn:hover {
+      background: rgba(0,0,0,0.1);
+      color: #666;
+    }
+    .message.sent .quote-btn {
+      color: #aaa;
+    }
+    .message.sent .quote-btn:hover {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
     }
     /* Quote preview in message */
     .message-quote {
