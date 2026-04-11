@@ -121,7 +121,7 @@
         </div>
         <button 
           class="toolbar-btn send-btn" 
-          @click="$emit('send')" 
+          @click="handleSendBtnClick" 
           :disabled="loading"
           :class="{ loading: loading }"
           title="发送 (Ctrl+Enter)"
@@ -500,14 +500,28 @@ const handleKeydown = (e) => {
     insertFormat('*', '*')
   } else if (e.key === 'Enter' && !e.shiftKey && !e.metaKey) {
     e.preventDefault()
-    const val = e.target.value
-    // Only intercept # commands in main agent chat
-    if (props.isOpenclaw && props.agentId === 'main' && val.startsWith('#')) {
-      emit('hash-command', val)
-      emit('update:modelValue', '')
-    } else {
-      emit('send')
-    }
+    handleSend()
+  }
+}
+
+function handleSendBtnClick() {
+  handleSend()
+}
+
+function handleSend() {
+  let val = textareaRef.value?.value || ''
+  // Add quote prefix if quote exists
+  if (props.quote) {
+    val = `「${props.quote.sender}: ${props.quote.preview}」\n` + val
+    emit('update:modelValue', val)
+    emit('clear-quote')
+  }
+  // Only intercept # commands in main agent chat
+  if (props.isOpenclaw && props.agentId === 'main' && val.startsWith('#')) {
+    emit('hash-command', val)
+    emit('update:modelValue', '')
+  } else {
+    emit('send')
   }
 }
 </script>

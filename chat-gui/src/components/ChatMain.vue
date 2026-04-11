@@ -81,7 +81,6 @@
                 </template>
                 <button class="approve-btn" @click="approveGroupRequest(msg)">Approve</button>
               </div>
-              <button class="quote-btn" @click="quoteMessage(msg)" title="引用此消息">↩ 引用</button>
             </div>
             <button v-if="!msg.isGroupRequest && !msg.isPeerRequest" class="quote-btn" @click="quoteMessage(msg)" title="引用此消息">↩ 引用</button>
           </template>
@@ -172,7 +171,7 @@ const props = defineProps({
   }
 })
 
-defineEmits(['send', 'update:modelValue', 'switchSession', 'deleteGroup', 'leaveGroup', 'back', 'send-images', 'send-files', 'clear-quote'])
+const emit = defineEmits(['send', 'update:modelValue', 'switchSession', 'deleteGroup', 'leaveGroup', 'back', 'send-images', 'send-files', 'clear-quote'])
 
 const messagesContainer = ref(null)
 let pollTimer = null
@@ -199,15 +198,10 @@ const quoteMessage = (msg) => {
   }
 }
 
-// Handle clear quote
+// Handle send - always emit send event
 const handleSendWithQuote = () => {
-  const quote = quotedMessage.value
   quotedMessage.value = null
-  if (quote) {
-    emit('send', { withQuote: quote })
-  } else {
-    emit('send')
-  }
+  emit('send')
 }
 
 // Handle clear quote
