@@ -729,6 +729,25 @@ const buildChatHtml = () => {
       background: rgba(255,255,255,0.1);
       color: #fff;
     }
+    /* Quote content from 「 marks */
+    .quote-content {
+      display: block;
+      background: #0A2E6F;
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin-top: 8px;
+    }
+    .quote-author {
+      display: block;
+      font-weight: 500;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .quote-preview {
+      display: block;
+      font-size: 13px;
+    }
     /* Quote preview in message */
     .message-quote {
       margin-top: 8px;
@@ -930,7 +949,11 @@ const formatTime = (timestamp) => {
 
 const renderMarkdown = (text) => {
   if (!text) return ''
-  return marked.parse(text)
+  // Replace 「sender: preview」 with HTML quote bubble
+  const processedText = text.replace(/「([^:]+): ([^」]+)」/g, (match, sender, preview) => {
+    return `<span class="quote-content"><span class="quote-author">${sender}</span><span class="quote-preview">${preview}</span></span>`
+  })
+  return marked.parse(processedText)
 }
 
 const isMessageSent = (msg) => {
