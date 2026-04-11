@@ -331,6 +331,8 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
     // Skip auto-reply for image-only messages with no text
     if (!text) { console.info('[group auto-reply] skip: empty text (possibly image-only)'); return }
+    // Skip auto-reply for messages containing NO_REPLY marker
+    if (text.indexOf('NO_REPLY') !== -1) { console.info('[group auto-reply] skip: message contains NO_REPLY'); return }
     var senderField = msg.sender || ''
     // Derive the plain username from a possibly-tagged sender (gcid/username)
     var senderUsername = senderField.indexOf('/') !== -1 ? senderField.split('/')[1] : senderField
@@ -441,6 +443,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
               console.warn('[group auto-reply] skipping: replyText starts with {, raw JSON detected')
               return
             }
+            // Skip sending if replyText contains NO_REPLY marker
+            if (replyText.indexOf('NO_REPLY') !== -1) {
+              console.info('[group auto-reply] skip: agent output contains NO_REPLY')
+              return
+            }
             // muted: log the reply but do not send to ztm chat
             var gcidCfg = gcid ? db.getChatPeer(mesh.name, gcid) : null
             if (gcidCfg && gcidCfg.muted) {
@@ -525,6 +532,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
           // If replyText is raw JSON (empty payloads), skip silently but log
           if (replyText.trim().startsWith('{')) {
             console.warn('[group auto-reply] skipping (self): replyText starts with {, raw JSON detected')
+            return
+          }
+          // Skip sending if replyText contains NO_REPLY marker
+          if (replyText.indexOf('NO_REPLY') !== -1) {
+            console.info('[group auto-reply] skip (self): agent output contains NO_REPLY')
             return
           }
           // muted: log the reply but do not send to ztm chat
