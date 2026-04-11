@@ -733,13 +733,12 @@ const buildChatHtml = () => {
     .message-quote {
       margin-top: 8px;
       padding: 8px 12px;
-      background: rgba(0,0,0,0.03);
-      border-left: 3px solid #ccc;
+      background: #0A2E6F;
       border-radius: 4px;
+      color: #fff;
     }
     .message.sent .message-quote {
-      background: rgba(255,255,255,0.08);
-      border-left-color: #888;
+      background: #0A2E6F;
     }
     .message-quote-header {
       display: flex;
@@ -749,17 +748,17 @@ const buildChatHtml = () => {
     }
     .message-quote-author {
       font-weight: 500;
-      color: #666;
+      color: #fff;
     }
     .message.sent .message-quote-author {
-      color: #aaa;
+      color: #fff;
     }
     .message-quote-time {
-      color: #999;
+      color: #ccc;
     }
     .message-quote-preview {
       font-size: 13px;
-      color: #666;
+      color: #fff;
       overflow: hidden;
       text-overflow: ellipsis;
       display: -webkit-box;

@@ -538,9 +538,9 @@ function handleSend() {
   align-items: flex-start;
   padding: 8px 12px;
   margin-bottom: 8px;
-  background: rgba(0, 0, 0, 0.03);
-  border-left: 3px solid #ccc;
+  background: #0A2E6F;
   border-radius: 4px;
+  color: #fff;
 }
 
 .quote-preview-content {
@@ -557,7 +557,7 @@ function handleSend() {
 
 .quote-preview-author {
   font-weight: 500;
-  color: #666;
+  color: #fff;
 }
 
 .quote-preview-time {
@@ -566,7 +566,7 @@ function handleSend() {
 
 .quote-preview-text {
   font-size: 13px;
-  color: #666;
+  color: #fff;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -577,7 +577,7 @@ function handleSend() {
 .quote-preview-close {
   background: none;
   border: none;
-  color: #999;
+  color: #fff;
   cursor: pointer;
   font-size: 14px;
   padding: 0 4px;
