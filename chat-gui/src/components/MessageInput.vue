@@ -510,9 +510,11 @@ function handleSendBtnClick() {
 
 function handleSend() {
   let val = textareaRef.value?.value || ''
-  // Add quote prefix if quote exists
-  if (props.quote) {
-    val = `「${props.quote.sender}: ${props.quote.preview}」\n` + val
+  // Clear quote but pass it to send event
+  const quoteToSend = props.quote
+  if (quoteToSend) {
+    // New text first, then quote - for proper display order
+    val = val + `\n\n「${quoteToSend.sender}: ${quoteToSend.preview}」`
     emit('update:modelValue', val)
     emit('clear-quote')
   }
