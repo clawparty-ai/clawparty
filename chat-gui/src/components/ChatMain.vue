@@ -193,7 +193,7 @@ const quoteMessage = (msg) => {
   quotedMessage.value = {
     messageId: msg.id || Date.now().toString(),
     sender: msg.sender || msg.name,
-    preview: (msg.text || '').substring(0, 100),
+    preview: msg.text || '',
     time: msg.time
   }
 }
@@ -730,23 +730,6 @@ const buildChatHtml = () => {
       color: #fff;
     }
     /* Quote content from 「 marks */
-    .quote-content {
-      display: block;
-      background: #0A2E6F;
-      color: #fff;
-      padding: 8px 12px;
-      border-radius: 4px;
-      margin-top: 8px;
-    }
-    .quote-author {
-      display: block;
-      font-weight: 500;
-      font-size: 12px;
-      margin-bottom: 4px;
-    }
-    .quote-preview {
-      display: block;
-      font-size: 13px;
     }
     /* Quote preview in message */
     .message-quote {
@@ -951,7 +934,7 @@ const renderMarkdown = (text) => {
   if (!text) return ''
   // Replace 「sender: preview」 with HTML quote bubble
   const processedText = text.replace(/「([^:]+): ([^」]+)」/g, (match, sender, preview) => {
-    return `<span class="quote-content"><span class="quote-author">${sender}</span><span class="quote-preview">${preview}</span></span>`
+    return `<div class="quote-content" style="background:#0A2E6F;color:#fff;padding:8px 12px;border-radius:4px;margin-top:8px;"><div style="font-weight:500;font-size:12px;margin-bottom:4px;">${sender}</div><div style="font-size:13px;">${preview}</div></div>`
   })
   return marked.parse(processedText)
 }
