@@ -23,6 +23,7 @@
         :key="index"
         class="message"
         :class="{ sent: isMessageSent(msg), typing: msg.isTyping }"
+        @contextmenu="handleMessageContextMenu($event, msg)"
       >
           <div class="message-avatar">
           <div v-if="chat.isOpenclaw && !isMessageSent(msg) && !msg.isTyping" class="avatar-emoji">
@@ -64,6 +65,14 @@
   </div>
 </div>
                 <div v-if="msg.text" class="message-content" v-html="msg.isHtml ? msg.text : renderMarkdown(msg.text)"></div>
+                <!-- Quote preview -->
+                <div v-if="msg.quote" class="message-quote">
+                  <div class="message-quote-header">
+                    <span class="message-quote-author">{{ msg.quote.sender }}</span>
+                    <span class="message-quote-time">{{ msg.quote.time }}</span>
+                  </div>
+                  <div class="message-quote-preview">{{ msg.quote.preview }}</div>
+                </div>
               </template>
               <div v-if="msg.isGroupRequest || msg.isPeerRequest" class="group-request-actions">
                 <template v-if="(msg.isPeerRequest || msg.isGroupEpRequest) && msg.availableAgents && msg.availableAgents.length > 0">
@@ -102,18 +111,27 @@
       :agentGroups="agentGroupChats"
       :peerMode="peerMode"
       :showPeerMode="!chat.isOpenclaw && !!chat.name"
+      :quote="quotedMessage"
       @update:modelValue="$emit('update:modelValue', $event)" 
-      @send="$emit('send')"
+      @send="handleSendWithQuote"
       @send-images="$emit('send-images', $event)"
       @send-files="$emit('send-files', $event)"
       @hash-command="handleHashCommand"
       @update:peerMode="handlePeerModeChange"
+      @clear-quote="handleClearQuote"
     />
+    <!-- Quote menu -->
+    <div v-if="showQuoteMenu" 
+         class="quote-menu"
+         :style="{ left: quoteMenuPosition.x + 'px', top: quoteMenuPosition.y + 'px' }">
+      <div class="quote-menu-item" @click="handleQuoteMessage">引用此消息</div>
+      <div class="quote-menu-item" @click="closeQuoteMenu">取消</div>
+    </div>
   </main>
 </template>
 
 <script setup>
-import { ref, watch, nextTick, computed, onUnmounted, inject } from 'vue'
+import { ref, watch, nextTick, computed, onUnmounted, onMounted, onBeforeUnmount, inject } from 'vue'
 import { marked } from 'marked'
 import ChatHeader from './ChatHeader.vue'
 import MessageInput from './MessageInput.vue'
@@ -160,7 +178,7 @@ const props = defineProps({
   }
 })
 
-defineEmits(['send', 'update:modelValue', 'switchSession', 'deleteGroup', 'leaveGroup', 'back', 'send-images', 'send-files'])
+defineEmits(['send', 'update:modelValue', 'switchSession', 'deleteGroup', 'leaveGroup', 'back', 'send-images', 'send-files', 'clear-quote'])
 
 const messagesContainer = ref(null)
 let pollTimer = null
@@ -173,6 +191,68 @@ const allPeerConfigs = ref([])  // 存储所有 peer 的配置数据
 const halfInputRef = ref(null)
 const halfDraftText = ref('')
 const currentSessionId = ref('')
+
+// Quote feature
+const quotedMessage = ref(null)
+const showQuoteMenu = ref(false)
+const quoteMenuPosition = ref({ x: 0, y: 0 })
+const quoteTargetMsg = ref(null)
+
+// Quote functions
+const handleMessageContextMenu = (event, msg) => {
+  event.preventDefault()
+  quoteTargetMsg.value = msg
+  quoteMenuPosition.value = { x: event.clientX, y: event.clientY }
+  showQuoteMenu.value = true
+}
+
+const handleQuoteMessage = () => {
+  if (quoteTargetMsg.value) {
+    quotedMessage.value = {
+      messageId: quoteTargetMsg.value.id || Date.now().toString(),
+      sender: quoteTargetMsg.value.sender || quoteTargetMsg.value.name,
+      preview: (quoteTargetMsg.value.text || '').substring(0, 100),
+      time: quoteTargetMsg.value.time
+    }
+  }
+  closeQuoteMenu()
+}
+
+const closeQuoteMenu = () => {
+  showQuoteMenu.value = false
+  quoteTargetMsg.value = null
+}
+
+// Close quote menu on click outside
+const handleGlobalClick = (event) => {
+  if (showQuoteMenu.value && !event.target.closest('.quote-menu')) {
+    closeQuoteMenu()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleGlobalClick)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleGlobalClick)
+})
+
+// Handle send with quote
+const handleSendWithQuote = () => {
+  const quote = quotedMessage.value
+  quotedMessage.value = null
+  if (quote) {
+    emit('send', { withQuote: quote })
+  } else {
+    emit('send')
+  }
+}
+
+// Handle clear quote
+const handleClearQuote = () => {
+  quotedMessage.value = null
+}
 
 // 我的显示名，带 autoReplyAgent 名称后缀（如 "lord-argyll-8384/龙闺蜜"）
 const myDisplayNameWithAgent = computed(() => {
@@ -648,6 +728,64 @@ const buildChatHtml = () => {
     .message.sent .message-content blockquote {
       border-left-color: rgba(255,255,255,0.5);
       color: rgba(255,255,255,0.75);
+    }
+    /* Quote menu */
+    .quote-menu {
+      position: fixed;
+      background: #fff;
+      border-radius: 6px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      z-index: 1000;
+      overflow: hidden;
+    }
+    .quote-menu-item {
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      color: #333;
+    }
+    .quote-menu-item:hover {
+      background: #f0f0f0;
+    }
+    /* Quote preview in message */
+    .message-quote {
+      margin-top: 8px;
+      padding: 8px 12px;
+      background: rgba(0,0,0,0.05);
+      border-left: 3px solid #0A2E6F;
+      border-radius: 4px;
+    }
+    .message.sent .message-quote {
+      background: rgba(255,255,255,0.1);
+      border-left-color: #5a9cd6;
+    }
+    .message-quote-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+    .message-quote-author {
+      font-weight: 500;
+      color: #666;
+    }
+    .message.sent .message-quote-author {
+      color: #aaa;
+    }
+    .message-quote-time {
+      color: #999;
+    }
+    .message-quote-preview {
+      font-size: 13px;
+      color: #666;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .message.sent .message-quote-preview {
+      color: #ccc;
     }
     .message-content a {
       color: #1d9bd1;

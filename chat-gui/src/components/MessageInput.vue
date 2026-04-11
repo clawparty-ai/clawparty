@@ -1,6 +1,16 @@
 <template>
   <div class="input-area" style="position:relative;">
     <div class="resize-handle" @mousedown="startResize"></div>
+    <div class="quote-preview" v-if="quote">
+      <div class="quote-preview-content">
+        <div class="quote-preview-header">
+          <span class="quote-preview-author">{{ quote.sender }}</span>
+          <span class="quote-preview-time">{{ quote.time }}</span>
+        </div>
+        <div class="quote-preview-text">{{ quote.preview }}</div>
+      </div>
+      <button class="quote-preview-close" @click="clearQuote" title="取消引用">✕</button>
+    </div>
     <div class="editor-wrapper" :style="{ height: editorHeight + 'px' }">
       <div class="editor-toolbar">
         <!-- Format buttons (hidden, kept for future use) -->
@@ -191,10 +201,14 @@ const props = defineProps({
   members: {
     type: Array,
     default: () => []
+  },
+  quote: {
+    type: Object,
+    default: null
   }
 })
 
-const emit = defineEmits(['send', 'update:modelValue', 'hash-command', 'update:peerMode', 'send-images', 'send-files'])
+const emit = defineEmits(['send', 'update:modelValue', 'hash-command', 'update:peerMode', 'send-images', 'send-files', 'clear-quote'])
 
 const resolveEpDisplayName = inject('resolveEpDisplayName', (u) => u)
 
@@ -218,6 +232,10 @@ function closeMentionList() {
   mentionFilter.value = ''
   mentionStartPos.value = -1
   selectedMentionIndex.value = 0
+}
+
+function clearQuote() {
+  emit('clear-quote')
 }
 
 function insertMention(member) {
@@ -497,6 +515,61 @@ const handleKeydown = (e) => {
 <style scoped>
 .input-area {
   padding: 0 20px 24px;
+}
+
+.quote-preview {
+  display: flex;
+  align-items: flex-start;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: rgba(0, 0, 0, 0.05);
+  border-left: 3px solid #0A2E6F;
+  border-radius: 4px;
+}
+
+.quote-preview-content {
+  flex: 1;
+  overflow: hidden;
+}
+
+.quote-preview-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.quote-preview-author {
+  font-weight: 500;
+  color: #666;
+}
+
+.quote-preview-time {
+  color: #999;
+}
+
+.quote-preview-text {
+  font-size: 13px;
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.quote-preview-close {
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+  margin-left: 8px;
+}
+
+.quote-preview-close:hover {
+  color: #333;
 }
 
 .resize-handle {
