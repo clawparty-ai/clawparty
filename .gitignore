@@ -2,6 +2,7 @@
 .vscode/
 
 /bin
+*.log
 cli/version.json
 hub/version.json
 agent/version.json
@@ -33,3 +34,4 @@ console-log*.log
 node_modules/
 session-recorder/
 tui/target/
+zeroclaw/target/
