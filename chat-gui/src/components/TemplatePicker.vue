@@ -251,7 +251,7 @@ const handleBackToEdit = () => {
           <div v-if="industries.length === 0" class="template-empty">
             <div class="template-empty-title">No templates found</div>
             <div class="template-empty-hint">
-              {{ source === 'local' ? 'Place templates in ~/.agent-template/' : 'No shared templates available on the mesh' }}
+              {{ source === 'local' ? 'Place templates in ~/.clawparty/.agent-template/' : 'No shared templates available on the mesh' }}
             </div>
           </div>
         </template>

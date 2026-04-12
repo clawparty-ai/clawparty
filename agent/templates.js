@@ -4,7 +4,7 @@ var dbApi = null
 
 function init(rootDir, db) {
   var home = os.env['HOME'] || '/tmp'
-  templateDir = os.path.join(home, '.agent-template')
+  templateDir = os.path.join(home, '.clawparty', '.agent-template')
   sharedTemplateDir = os.path.join(templateDir, '.shared')
   dbApi = db
 }
