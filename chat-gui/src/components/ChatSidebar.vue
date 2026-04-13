@@ -45,7 +45,7 @@
         @click="activeOrg = 'zeroclaw'"
         title="ZeroClaw Sessions"
       >
-        <span class="org-emoji">🦀</span>
+        <span class="org-emoji">🀄</span>
         <span class="org-active-bar" v-if="activeOrg === 'zeroclaw'"></span>
       </div>
 
@@ -262,7 +262,7 @@
                   :checked="pickerSelected.includes(session.session_id)"
                   @change="togglePickerUser(session.session_id)"
                 />
-                <div class="item-avatar zeroclaw-avatar">🦀</div>
+                <div class="item-avatar zeroclaw-avatar">🀄</div>
                 <span class="item-name">{{ session.name || session.session_id }}</span>
                 <span class="item-tag">zeroclaw</span>
               </label>
@@ -452,7 +452,7 @@
               :class="{ active: activeZeroClawSession?.session_id === session.session_id }"
               @click="selectZeroClawSession(session)"
             >
-              <div class="item-avatar zeroclaw-avatar">🦀</div>
+              <div class="item-avatar zeroclaw-avatar">🀄</div>
               <span class="item-name">{{ session.name || session.session_id }}</span>
             </div>
           </template>

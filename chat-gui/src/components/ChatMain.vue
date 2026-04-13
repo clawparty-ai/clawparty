@@ -26,10 +26,10 @@
       >
           <div class="message-avatar">
           <div v-if="(chat.isOpenclaw || chat.isZeroClaw) && !isMessageSent(msg) && !msg.isTyping" class="avatar-emoji">
-            {{ chat.emoji || '🦀' }}
+            {{ chat.emoji || '🀄' }}
           </div>
           <div v-else-if="msg.isTyping && (chat.isOpenclaw || chat.isZeroClaw)" class="avatar-emoji">
-            {{ chat.emoji || '🦀' }}
+            {{ chat.emoji || '🀄' }}
           </div>
           <div v-else-if="!msg.isTyping" class="avatar-placeholder" :style="{ background: getAvatarColor(isMessageSent(msg) ? (currentUserName || 'You') : (msg.sender || chat.name)) }">
             {{ (isMessageSent(msg) ? (currentUserName || 'You') : (msg.sender || chat.name))[0].toUpperCase() }}
@@ -77,7 +77,7 @@
                 <template v-if="(msg.isPeerRequest || msg.isGroupEpRequest) && msg.availableAgents && msg.availableAgents.length > 0">
                   <select v-model="msg.selectedAgent" class="agent-select">
                     <option v-for="a in msg.availableAgents" :key="a" :value="a">
-                      {{ a.startsWith('zeroclaw:') ? '🦀 ' + a.substring(9) : a }}
+                      {{ a.startsWith('zeroclaw:') ? '🀄 ' + a.substring(9) : a }}
                     </option>
                   </select>
                 </template>
@@ -462,7 +462,7 @@ const buildChatHtml = () => {
         : (msg.sender || chatName)
       const time = escapeHtml(msg.time || '')
       const isOpenclawOrZeroClaw = (props.chat.isOpenclaw || props.chat.isZeroClaw) && !isSent
-      const emoji = props.chat.emoji || (props.chat.isZeroClaw ? '🦀' : '')
+      const emoji = props.chat.emoji || (props.chat.isZeroClaw ? '🀄' : '')
 
       // Avatar HTML
       let avatarHtml
