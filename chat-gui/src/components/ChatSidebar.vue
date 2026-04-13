@@ -38,6 +38,19 @@
 
       <div class="org-divider"></div>
 
+      <!-- Zeroclaw Sessions icon -->
+      <div
+        class="org-icon"
+        :class="{ active: activeOrg === 'zeroclaw' }"
+        @click="activeOrg = 'zeroclaw'"
+        title="ZeroClaw Sessions"
+      >
+        <span class="org-emoji">🦀</span>
+        <span class="org-active-bar" v-if="activeOrg === 'zeroclaw'"></span>
+      </div>
+
+      <div class="org-divider"></div>
+
       <!-- 3. My Agents (single lobster) -->
       <div
         class="org-icon"
@@ -379,17 +392,20 @@
 
         
         <!-- ZeroClaw Sessions -->
-        <template v-if="zeroclawSessions && zeroclawSessions.length > 0">
-          <div
-            v-for="session in zeroclawSessions"
-            :key="session.session_id"
-            class="panel-item agent-item"
-            :class="{ active: activeZeroClawSession?.session_id === session.session_id }"
-            @click="selectZeroClawSession(session)"
-          >
-            <div class="item-avatar zeroclaw-avatar">🦀</div>
-            <span class="item-name">{{ session.name || session.user_id }}</span>
-          </div>
+        <template v-if="activeOrg === 'zeroclaw'">
+          <template v-if="zeroclawSessions && zeroclawSessions.length > 0">
+            <div
+              v-for="session in zeroclawSessions"
+              :key="session.session_id"
+              class="panel-item"
+              :class="{ active: activeZeroClawSession?.session_id === session.session_id }"
+              @click="selectZeroClawSession(session)"
+            >
+              <div class="item-avatar zeroclaw-avatar">🦀</div>
+              <span class="item-name">{{ session.name || session.session_id }}</span>
+            </div>
+          </template>
+          <div v-else class="panel-empty">No ZeroClaw sessions</div>
         </template>
 
         <!-- My Agents -->
@@ -440,23 +456,23 @@
         </template>
 
         <!-- Mesh: users + groups -->
-        <template v-else>
+        <template v-if="meshes.some(m => m.name === activeOrg)">
           <!-- Direct message users (one entry per EP) -->
-          <div
-            v-for="user in users"
-            :key="'ep-' + user.id"
-            class="panel-item"
-            :class="{ active: getChatIndex(user.username || user.name) === activeChat }"
-            @click="selectUser(user)"
-          >
-            <div class="item-avatar" :style="{ background: getAvatarColor(user.username || user.name) }">
-              {{ (user.username || user.name)[0].toUpperCase() }}
+            <div
+              v-for="user in users"
+              :key="'ep-' + user.id"
+              class="panel-item"
+              :class="{ active: getChatIndex(user.username || user.name) === activeChat }"
+              @click="selectUser(user)"
+            >
+              <div class="item-avatar" :style="{ background: getAvatarColor(user.username || user.name) }">
+                {{ (user.username || user.name)[0].toUpperCase() }}
+              </div>
+              <span class="item-name">{{ user.name }}</span>
+              <span class="item-subname" v-if="user.username">{{ user.name }}/{{ user.username }}</span>
+              <span v-if="getChatUpdated(user.username || user.name) > 0" class="unread-badge">{{ getChatUpdated(user.username || user.name) > 99 ? '99+' : getChatUpdated(user.username || user.name) }}</span>
+              <span class="item-status" :class="{ online: user.online }"></span>
             </div>
-            <span class="item-name">{{ user.name }}</span>
-            <span class="item-subname" v-if="user.username">{{ user.name }}/{{ user.username }}</span>
-            <span v-if="getChatUpdated(user.username || user.name) > 0" class="unread-badge">{{ getChatUpdated(user.username || user.name) > 99 ? '99+' : getChatUpdated(user.username || user.name) }}</span>
-            <span class="item-status" :class="{ online: user.online }"></span>
-          </div>
 
           <!-- Non-group chats: only show peers not already in the users list -->
           <div
@@ -474,7 +490,8 @@
             <span class="item-subname" v-if="chat.name !== chat.displayName">{{ chat.displayName }}/{{ chat.name }}</span>
             <span v-if="chat.updated > 0" class="unread-badge">{{ chat.updated > 99 ? '99+' : chat.updated }}</span>
           </div>
-        </template>
+
+          </template>
       </div>
     </aside>
 
@@ -632,7 +649,7 @@ const handleLeaveMesh = async (meshName) => {
 
 // Chats split by type
 const groupChats = computed(() =>
-  props.chats.filter(c => c.isGroup && !c.isOpenclaw)
+  props.chats.filter(c => c.isGroup && c.groupId && !c.isOpenclaw)
 )
 const dmChats = computed(() =>
   props.chats.filter(c => !c.isGroup && !c.isOpenclaw)

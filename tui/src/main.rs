@@ -264,6 +264,13 @@ async fn main() -> anyhow::Result<()> {
                 state.trim_messages();
             }
         }
+    } else if let Some(ref session) = state.current_zeroclaw_session {
+        let sid = session.session_id.clone();
+        let msgs = state.api.lock().await.get_zeroclaw_messages(&sid).await.ok();
+        if let Some(m) = msgs {
+            state.messages = m;
+            state.trim_messages();
+        }
     }
 
     let state = Arc::new(RwLock::new(state));
@@ -285,11 +292,11 @@ async fn main() -> anyhow::Result<()> {
             // Fast poll when in openclaw agent chat (streaming responses)
             let poll_interval = {
                 let s = poll_state.read().await;
-                if s.current_openclaw_agent.is_some() { 500 } else { 2000 }
+                if s.current_openclaw_agent.is_some() || s.current_zeroclaw_session.is_some() { 500 } else { 2000 }
             };
             sleep(Duration::from_millis(poll_interval)).await;
 
-            let (agent_running, current_mesh, current_chat, current_agent, current_peer) = {
+            let (agent_running, current_mesh, current_chat, current_agent, current_peer, current_zeroclaw_session) = {
                 let s = poll_state.read().await;
                 (
                     s.agent_running,
@@ -297,6 +304,7 @@ async fn main() -> anyhow::Result<()> {
                     s.current_chat,
                     s.current_openclaw_agent.clone(),
                     s.current_peer.clone(),
+                    s.current_zeroclaw_session.clone(),
                 )
             };
 
@@ -351,6 +359,11 @@ async fn main() -> anyhow::Result<()> {
                         };
                     }
                 }
+            } else if let Some(ref session) = current_zeroclaw_session {
+                messages = {
+                    let l = api_client.lock().await;
+                    l.get_zeroclaw_messages(&session.session_id).await.ok()
+                };
             } else if let Some(ref agent) = current_agent {
                 messages = {
                     let l = api_client.lock().await;
@@ -587,10 +600,75 @@ async fn main() -> anyhow::Result<()> {
                             let cur_agent = s.current_openclaw_agent.as_ref().map(|a| a.id.clone());
                             let cur_peer = s.current_peer.clone();
                             let cur_mesh = s.current_mesh.clone();
+                            let cur_zeroclaw = s.current_zeroclaw_session.as_ref().map(|z| z.session_id.clone());
                             let api_client = s.api.clone();
                             let state_clone = state.clone();
                             let text_clone = text.clone();
                             drop(s);
+
+                            // ZeroClaw: 独立后台任务，不受 10 秒 timeout 控制
+                            if let Some(ref zc_session_id) = cur_zeroclaw {
+                                let sid = zc_session_id.clone();
+                                let api_cl = api_client.clone();
+                                let st_cl = state_clone.clone();
+                                let txt_cl = text_clone.clone();
+                                let sid_for_handle = sid.clone();
+
+                                // Abort 之前该 session 的 pending 任务
+                                if let Some(prev_handle) = state_clone.write().await.zeroclaw_pending_tasks.get(&sid) {
+                                    prev_handle.abort();
+                                }
+
+                                let task_handle = tokio::spawn(async move {
+                                    {
+                                        let mut s = st_cl.write().await;
+                                        let cnt = s.zeroclaw_pending_tasks.len();
+                                        s.add_log("INFO", &format!("正在等待 ZeroClaw 响应... ({} 个任务进行中)", cnt + 1));
+                                    }
+
+                                    match timeout(Duration::from_secs(60), async {
+                                        let l = api_cl.lock().await;
+                                        l.send_zeroclaw_message(&sid, &txt_cl).await
+                                    }).await {
+                                        Ok(Ok(response)) => {
+                                            let msgs = {
+                                                let l = api_cl.lock().await;
+                                                l.get_zeroclaw_messages(&sid).await
+                                            };
+                                            let mut s = st_cl.write().await;
+                                            if let Ok(msgs) = msgs {
+                                                s.messages = msgs;
+                                                s.trim_messages();
+                                            }
+                                            s.add_log("ZERO", &response);
+                                            s.add_log("INFO", "ZeroClaw 响应已收到");
+                                        }
+                                        Ok(Err(e)) => {
+                                            let mut s = st_cl.write().await;
+                                            s.add_log("ERROR", &format!("Failed: {}", e));
+                                        }
+                                        Err(_) => {
+                                            let mut s = st_cl.write().await;
+                                            s.add_log("ERROR", "ZeroClaw 响应超时（60秒）");
+                                        }
+                                    }
+                                    {
+                                        let mut s = st_cl.write().await;
+                                        s.zeroclaw_pending_tasks.remove(&sid);
+                                        if !s.zeroclaw_pending_tasks.is_empty() {
+                                            let remaining = s.zeroclaw_pending_tasks.len();
+                                            drop(s);
+                                            let mut s = st_cl.write().await;
+                                            s.add_log("INFO", &format!("还有 {} 个 ZeroClaw 任务在进行中", remaining));
+                                        }
+                                    }
+                                });
+
+                                {
+                                    let mut s = state_clone.write().await;
+                                    s.zeroclaw_pending_tasks.insert(sid_for_handle, task_handle.abort_handle());
+                                }
+                            }
 
                             // Spawn send in a separate task to avoid blocking the main event loop
                             tokio::spawn(async move {
@@ -623,6 +701,9 @@ async fn main() -> anyhow::Result<()> {
                                         } else {
                                             Err(anyhow::anyhow!("Chat not found"))
                                         }
+                                    } else if let Some(ref zc_session_id) = cur_zeroclaw {
+                                        // ZeroClaw 在独立任务中处理
+                                        Ok(())
                                     } else if let Some(ref aid) = cur_agent {
                                         let l = api_client.lock().await;
                                         l.send_openclaw_message(aid, &text_clone).await
@@ -704,6 +785,15 @@ async fn main() -> anyhow::Result<()> {
                             if let Ok(msgs) = {
                                 let l = s.api.lock().await;
                                 l.get_openclaw_messages(&aid).await
+                            } {
+                                s.messages = msgs;
+                                s.trim_messages();
+                            }
+                        } else if let Some(ref session) = s.current_zeroclaw_session {
+                            let sid = session.session_id.clone();
+                            if let Ok(msgs) = {
+                                let l = s.api.lock().await;
+                                l.get_zeroclaw_messages(&sid).await
                             } {
                                 s.messages = msgs;
                                 s.trim_messages();

@@ -172,6 +172,7 @@ const showSharedTemplates = ref(false)
 let appStarted = false
 let chatsPollTimer = null
 let usersPollTimer = null
+let zeroclawSessionsPollTimer = null
 
 const handleResize = () => {
   isMobile.value = window.innerWidth <= 768
@@ -339,7 +340,17 @@ const selectZeroClawSession = (session) => {
   activeZeroClawSession.value = session
   activeChat.value = null
   activeOpenclawAgent.value = null
-  loadZeroClawChatHistory(session)
+}
+
+const fetchZeroClawSessions = async () => {
+  try {
+    const response = await zeroclawService.getSessions()
+    if (response.data && response.data.sessions) {
+      zeroclawSessions.value = response.data.sessions
+    }
+  } catch (error) {
+    console.error('Failed to fetch zeroclaw sessions:', error)
+  }
 }
 
 const selectChat = (index) => {
@@ -1294,6 +1305,15 @@ const stopChatsPolling = () => {
     clearInterval(usersPollTimer)
     usersPollTimer = null
   }
+  if (zeroclawSessionsPollTimer) {
+    clearInterval(zeroclawSessionsPollTimer)
+    zeroclawSessionsPollTimer = null
+  }
+}
+
+const startZeroClawSessionsPolling = () => {
+  fetchZeroClawSessions()
+  zeroclawSessionsPollTimer = setInterval(fetchZeroClawSessions, 10000)
 }
 
 onMounted(async () => {
@@ -1313,6 +1333,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopChatsPolling()
+  stopZeroClawSessionsPolling()
 })
 
 const startApp = () => {
@@ -1326,6 +1347,7 @@ const startApp = () => {
     startChatsPolling()
   })
   fetchOpenclawAgents()
+  startZeroClawSessionsPolling()
 }
 
 const verifyToken = async (token) => {

@@ -36,7 +36,6 @@ pub struct SidebarItem {
 #[derive(Debug, Clone)]
 pub struct ZeroClawSession {
     pub session_id: String,
-    pub user_id: String,
     pub name: String,
     pub last_activity: String,
 }
@@ -71,6 +70,7 @@ pub struct AppState {
     pub current_zeroclaw_session: Option<ZeroClawSession>,
     pub zeroclaw_running: bool,
     pub zeroclaw_mgr: Option<ZeroClawDaemon>,
+    pub zeroclaw_pending_tasks: std::collections::HashMap<String, tokio::task::AbortHandle>,
 }
 
 impl AppState {
@@ -114,6 +114,7 @@ impl AppState {
             current_zeroclaw_session: None,
             zeroclaw_running: false,
             zeroclaw_mgr: None,
+            zeroclaw_pending_tasks: std::collections::HashMap::new(),
         }
     }
 
@@ -230,6 +231,11 @@ impl AppState {
 
         // Group Chats
         if !self.group_chats.is_empty() {
+            items.push(SidebarItem {
+                label: "Group Chats".to_string(),
+                section: "groups_header".to_string(),
+                index: 0,
+            });
             for (i, chat) in self.group_chats.iter().enumerate() {
                 items.push(SidebarItem {
                     label: format!("# {}", chat.display_name()),
@@ -240,12 +246,19 @@ impl AppState {
         }
 
         // Remote Agents
-        for (i, ep) in self.members.iter().enumerate() {
+        if !self.members.is_empty() {
             items.push(SidebarItem {
-                label: format!("● {}", ep.name),
-                section: "remote_agents".to_string(),
-                index: i,
+                label: "Remote Agents".to_string(),
+                section: "remote_agents_header".to_string(),
+                index: 0,
             });
+            for (i, ep) in self.members.iter().enumerate() {
+                items.push(SidebarItem {
+                    label: format!("● {}", ep.name),
+                    section: "remote_agents".to_string(),
+                    index: i,
+                });
+            }
         }
 
         items
@@ -262,7 +275,8 @@ impl AppState {
         match item.section.as_str() {
             "zeroclaw_sessions" => {
                 if item.index < self.zeroclaw_sessions.len() {
-                    self.current_zeroclaw_session = Some(self.zeroclaw_sessions[item.index].clone());
+                    self.current_zeroclaw_session =
+                        Some(self.zeroclaw_sessions[item.index].clone());
                     self.current_openclaw_agent = None;
                     self.current_chat = None;
                     self.current_peer = None;

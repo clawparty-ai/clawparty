@@ -4,7 +4,7 @@ import axios from "axios";
 
 const API_TOKEN_KEY = 'ztm_api_token'
 
-let apiToken = (typeof localStorage !== 'undefined' && localStorage.getItem(API_TOKEN_KEY)) || ''
+let apiToken = (typeof localStorage !== 'undefined' && localStorage.getItem(API_TOKEN_KEY)) || 'enjoy-party'
 
 const axiosapi = axios.create({
   baseURL: '/api',

@@ -95,13 +95,36 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &mut AppState) {
     let mut list_items: Vec<ListItem> = Vec::new();
     let mut global_idx = 0;
 
-    if !state.local_agents.is_empty() {
+    if !state.zeroclaw_sessions.is_empty() {
         list_items.push(ListItem::new(Line::from(Span::styled(
-            "Local Agents",
+            "ZeroClaw Sessions",
             Style::default()
                 .fg(THEME_SECTION_HEADER)
                 .add_modifier(Modifier::BOLD),
         ))));
+        global_idx += 1; // section header is indexed
+        for session in &state.zeroclaw_sessions {
+            let style = if global_idx == state.selected_index {
+                Style::default()
+                    .bg(THEME_SELECTED_BG)
+                    .fg(THEME_SELECTED_FG)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(THEME_DEFAULT_TEXT)
+            };
+            list_items.push(ListItem::new(format!("🦀 {}", session.name)).style(style));
+            global_idx += 1;
+        }
+    }
+
+    if !state.local_agents.is_empty() {
+        list_items.push(ListItem::new(Line::from(Span::styled(
+            "OpenClaw Agents",
+            Style::default()
+                .fg(THEME_SECTION_HEADER)
+                .add_modifier(Modifier::BOLD),
+        ))));
+        global_idx += 1; // section header is indexed
         for agent in &state.local_agents {
             let style = if global_idx == state.selected_index {
                 Style::default()
@@ -130,6 +153,7 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &mut AppState) {
                 .fg(THEME_SECTION_HEADER)
                 .add_modifier(Modifier::BOLD),
         ))));
+        global_idx += 1; // section header is indexed
         for chat in &state.group_chats {
             let style = if global_idx == state.selected_index {
                 Style::default()
@@ -151,6 +175,7 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &mut AppState) {
                 .fg(THEME_SECTION_HEADER)
                 .add_modifier(Modifier::BOLD),
         ))));
+        global_idx += 1; // section header is indexed
         for ep in &state.members {
             let style = if global_idx == state.selected_index {
                 Style::default()
@@ -211,7 +236,9 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &mut AppState) {
 }
 
 fn render_messages(frame: &mut Frame, area: Rect, state: &mut AppState) {
-    let title = if let Some(chat_idx) = state.current_chat {
+    let title = if let Some(session) = &state.current_zeroclaw_session {
+        format!(" {} ", session.name)
+    } else if let Some(chat_idx) = state.current_chat {
         if let Some(chat) = state.chats.get(chat_idx) {
             format!(" {} ", chat.display_name())
         } else {

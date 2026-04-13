@@ -127,7 +127,7 @@ export const zeroclawService = {
   },
   
   getSessions() {
-    return api.get('http://localhost:42617/api/ztm/sessions')
+    return api.get('/zeroclaw/sessions')
   },
   
   sendMessage(sessionId, message) {

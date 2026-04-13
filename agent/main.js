@@ -261,6 +261,16 @@ function main(listen, apiToken, noAuth) {
       },
     },
 
+    // Zeroclaw sessions proxy
+    '/api/zeroclaw/sessions': {
+      'GET': function () {
+        var zeroclawAgent = new http.Agent('localhost:42617')
+        return zeroclawAgent.request('GET', '/api/sessions').then(
+          res => response(res.head.status, res.body.toString())
+        )
+      },
+    },
+
     //
     // Mesh
     //   name: string
