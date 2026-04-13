@@ -201,29 +201,90 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       console.log('[getLocalAgentNames] Attempting to get cache local_agent_ids')
       var ids = db.getCache('local_agent_ids')
       console.log('[getLocalAgentNames] Got cache, ids =', ids, 'type =', typeof ids)
+      var openclawAgents = []
       if (ids && typeof ids.forEach === 'function') {
-        var fresh = []
-        ids.forEach(function (id) { fresh.push('' + id) })
-        console.log('[getLocalAgentNames] Returning fresh array:', fresh)
-        return Promise.resolve(fresh)
+        ids.forEach(function (id) { openclawAgents.push('' + id) })
+      } else if (Array.isArray(ids)) {
+        openclawAgents = ids.map(String)
       }
-
-      console.log('[getLocalAgentNames] ids is not array-like, checking if array:', Array.isArray(ids))
-      if (Array.isArray(ids)) {
-        console.log('[getLocalAgentNames] Converting array, ids =', ids)
-        return Promise.resolve(ids.map(String))
-      }
-      console.log('[getLocalAgentNames] ids is null or undefined, returning empty')
     } catch (e) {
       console.error('[getLocalAgentNames] Error:', e)
+      openclawAgents = []
     }
-    console.log('[getLocalAgentNames] Returning empty array')
-    return Promise.resolve([])
+    console.log('[getLocalAgentNames] openclaw agents:', openclawAgents)
+
+    // Fetch zeroclaw sessions and prepend them to the list
+    return getZeroclawSessionsFromAgent().then(function(zeroclawSessions) {
+      var zeroclawAgents = []
+      if (zeroclawSessions && zeroclawSessions.length > 0) {
+        zeroclawSessions.forEach(function(session) {
+          zeroclawAgents.push('zeroclaw:' + session.session_id)
+        })
+      }
+      console.log('[getLocalAgentNames] zeroclaw agents:', zeroclawAgents)
+      console.log('[getLocalAgentNames] Returning combined list:', zeroclawAgents.concat(openclawAgents))
+      // Return zeroclaw sessions first, then openclaw agents
+      return zeroclawAgents.concat(openclawAgents)
+    })
+  }
+
+  // Fetch zeroclaw sessions from zeroclaw gateway
+  function getZeroclawSessionsFromAgent() {
+    console.log('[getZeroclawSessionsFromAgent] Fetching zeroclaw sessions')
+    try {
+      var agent = new http.Agent('localhost:42617')
+      return agent.request('GET', '/api/sessions').then(function(res) {
+        var data = JSON.decode(res.body)
+        console.log('[getZeroclawSessionsFromAgent] Got sessions:', data)
+        return data.sessions || []
+      }).catch(function(e) {
+        console.error('[getZeroclawSessionsFromAgent] Error:', e)
+        return []
+      })
+    } catch (e) {
+      console.error('[getZeroclawSessionsFromAgent] Error:', e)
+      return Promise.resolve([])
+    }
   }
 
   // Key used in chat_peer for a local agent's auto-reply config within a specific group
   function groupAgentKey(gcid, agentName) {
     return gcid + '~' + agentName
+  }
+
+  // Call zeroclaw session directly for auto-reply
+  function callZeroclawSessionDirect(sessionId, message) {
+    console.info('[callZeroclawSessionDirect] sessionId:', sessionId, 'message:', message.substring(0, 50))
+    return new Promise(function(resolve, reject) {
+      try {
+        var agent = new http.Agent('localhost:42617')
+        var body = JSON.encode({ message: message })
+        agent.request('POST', '/api/sessions/' + sessionId + '/chat', 
+          { 'Content-Type': 'application/json' }, body).then(function(res) {
+          var data = JSON.decode(res.body)
+          console.info('[callZeroclawSessionDirect] response data:', JSON.stringify(data).substring(0, 120))
+          
+          // Find the last assistant message
+          if (data.messages) {
+            for (var i = data.messages.length - 1; i >= 0; i--) {
+              if (data.messages[i].role === 'assistant') {
+                console.info('[callZeroclawSessionDirect] found assistant reply:', data.messages[i].content.substring(0, 50))
+                resolve(data.messages[i].content)
+                return
+              }
+            }
+          }
+          console.warn('[callZeroclawSessionDirect] no assistant message found in response')
+          resolve('')
+        }).catch(function(e) {
+          console.error('[callZeroclawSessionDirect] Error:', e)
+          reject(e)
+        })
+      } catch (e) {
+        console.error('[callZeroclawSessionDirect] Error:', e)
+        reject(e)
+      }
+    })
   }
 
   // Remove any group EP request hints from the group chat message list (called after approve)
@@ -587,6 +648,29 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var sessionId = makeSessionId(app.username, chat.peer)
     var idempotencyKey = sessionId + '-' + Date.now()
     var thinkingTime = peerConfig.thinkingTime !== undefined ? peerConfig.thinkingTime : 3
+    
+    // Check if this is a zeroclaw session
+    if (agentName.startsWith('zeroclaw:')) {
+      var zeroclawSessionId = agentName.substring(9)
+      console.info('[chat auto-reply] using zeroclaw session:', zeroclawSessionId)
+      callZeroclawSessionDirect(zeroclawSessionId, text).then(function(replyText) {
+        // Re-read config in case it changed while zeroclaw was running
+        var currentConfig = getPeerConfig(chat.peer)
+        if (!currentConfig.autoReply) {
+          console.info('[chat auto-reply] auto-reply disabled during zeroclaw execution, aborting for', chat.peer)
+          return
+        }
+        if (replyText) {
+          addPeerMessage(chat.peer, { text: replyText, agentName: agentName }, sessionId)
+        }
+      }).catch(function(e) {
+        console.error('[chat auto-reply] zeroclaw error, falling back to main agent:', e)
+        spawnOpenclawViaGateway('main', text, sessionId, idempotencyKey, function(replyText) {
+          addPeerMessage(chat.peer, { text: replyText, agentName: 'main' }, sessionId)
+        })
+      })
+      return
+    }
     
     console.info('[chat auto-reply] gateway call agent, session:', sessionId)
     spawnOpenclawViaGateway(agentName, text, sessionId, idempotencyKey).then(

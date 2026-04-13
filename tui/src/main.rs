@@ -338,6 +338,11 @@ async fn main() -> anyhow::Result<()> {
                 l.get_openclaw_agents().await.ok()
             };
 
+            let zeroclaw_sessions = {
+                let l = api_client.lock().await;
+                l.get_zeroclaw_sessions().await.ok()
+            };
+
             let mut messages = None;
             if let Some(chat_idx) = current_chat {
                 let chat_info = {
@@ -386,6 +391,9 @@ async fn main() -> anyhow::Result<()> {
                 }
                 if let Some(a) = agents {
                     s.openclaw_agents = a;
+                }
+                if let Some(zs) = zeroclaw_sessions {
+                    s.zeroclaw_sessions = zs;
                 }
                 if let Some(m) = messages {
                     let old_len = s.messages.len();

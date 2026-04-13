@@ -436,21 +436,25 @@ const sendMessage = async () => {
       // Remove typing indicator
       session.messages.splice(typingIdx, 1)
       
-      // Process response messages
+      // Process response messages - zeroclaw returns all messages including the new ones
       const newMessages = response.data?.messages || []
       const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
       
-      newMessages.forEach((msg, idx) => {
-        if (idx >= session.messages.length - 1 || session.messages[typingIdx] === undefined) {
-          session.messages.push({
-            text: msg.content,
-            time: replyTime,
-            sender: msg.role === 'user' ? (currentMeshAgentUsername.value || 'You') : (session.name || 'ZeroClaw'),
-            timestamp: new Date().getTime() + idx + 1,
-            isSent: msg.role === 'user',
-            isTemp: false
-          })
-        }
+      // Get the user message count to determine where new messages start
+      // The response includes all history, so we need to find our new user message and get messages after it
+      const userMsgIdx = session.messages.findIndex(m => m.text === text && m.isSent === true && m.timestamp === now.getTime())
+      const startFrom = userMsgIdx >= 0 ? userMsgIdx + 1 : session.messages.length
+      
+      // Add new messages from response (after our sent message)
+      newMessages.slice(startFrom).forEach((msg) => {
+        session.messages.push({
+          text: msg.content,
+          time: replyTime,
+          sender: msg.role === 'user' ? (currentMeshAgentUsername.value || 'You') : (session.name || 'ZeroClaw'),
+          timestamp: new Date().getTime(),
+          isSent: msg.role === 'user',
+          isTemp: false
+        })
       })
       
       session.lastMessage = text

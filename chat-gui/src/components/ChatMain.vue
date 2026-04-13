@@ -76,7 +76,9 @@
               <div v-if="msg.isGroupRequest || msg.isPeerRequest" class="group-request-actions">
                 <template v-if="(msg.isPeerRequest || msg.isGroupEpRequest) && msg.availableAgents && msg.availableAgents.length > 0">
                   <select v-model="msg.selectedAgent" class="agent-select">
-                    <option v-for="a in msg.availableAgents" :key="a" :value="a">{{ a }}</option>
+                    <option v-for="a in msg.availableAgents" :key="a" :value="a">
+                      {{ a.startsWith('zeroclaw:') ? '🦀 ' + a.substring(9) : a }}
+                    </option>
                   </select>
                 </template>
                 <button class="approve-btn" @click="approveGroupRequest(msg)">Approve</button>
@@ -1013,7 +1015,9 @@ return {
       agentName: item.agentName || '',
       groupName: item.groupName || '',
       availableAgents: item.availableAgents || [],
-      selectedAgent: item.availableAgents?.[0] || 'main',
+      selectedAgent: (item.availableAgents?.find(a => a.startsWith('zeroclaw:'))) 
+                     || item.availableAgents?.[0] 
+                     || 'main',
     }
   })
 }

@@ -248,7 +248,27 @@
               </label>
             </template>
 
-            <div v-if="filteredUsers.length === 0 && filteredAgents.length === 0" class="modal-empty">
+            <!-- ZeroClaw sessions -->
+            <template v-if="filteredZeroclawSessions.length > 0">
+              <div class="modal-section-label">ZeroClaw Sessions</div>
+              <label
+                v-for="session in filteredZeroclawSessions"
+                :key="'z-' + session.session_id"
+                class="modal-item"
+                :class="{ selected: pickerSelected.includes(session.session_id) }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="pickerSelected.includes(session.session_id)"
+                  @change="togglePickerUser(session.session_id)"
+                />
+                <div class="item-avatar zeroclaw-avatar">🦀</div>
+                <span class="item-name">{{ session.name || session.session_id }}</span>
+                <span class="item-tag">zeroclaw</span>
+              </label>
+            </template>
+
+            <div v-if="filteredUsers.length === 0 && filteredAgents.length === 0 && filteredZeroclawSessions.length === 0" class="modal-empty">
               <span v-if="!currentMesh">Not connected to a party yet.</span>
               <span v-else-if="users.length === 0">No other members in the party yet. They may still be connecting.</span>
               <span v-else>No members match your search.</span>
@@ -736,6 +756,15 @@ const filteredAgents = computed(() => {
   return openclawAgents.value.filter(a => a.name.toLowerCase().includes(q))
 })
 
+const filteredZeroclawSessions = computed(() => {
+  const q = pickerSearch.value.trim().toLowerCase()
+  if (!q) return zeroclawSessions.value
+  return zeroclawSessions.value.filter(s => 
+    (s.session_id || '').toLowerCase().includes(q) ||
+    (s.name || '').toLowerCase().includes(q)
+  )
+})
+
 const togglePickerUser = (name) => {
   const idx = pickerSelected.value.indexOf(name)
   if (idx === -1) pickerSelected.value.push(name)
@@ -802,19 +831,23 @@ const handleJoinParty = async () => {
 
 const handleCreateGroup = async () => {
   if (pickerSelected.value.length === 0) return
-  // pickerSelected stores username (for EP users) or agent name (for agents)
+  // pickerSelected stores username (for EP users), agent id (for agents), or session_id (for zeroclaw)
   const fromUsers = users.value.filter(u => pickerSelected.value.includes(u.username || u.name))
   const fromAgents = openclawAgents.value.filter(a => pickerSelected.value.includes(a.id))
+  const fromZeroclaw = zeroclawSessions.value.filter(s => pickerSelected.value.includes(s.session_id))
   const selectedObjs = [
     // EP users: pass username as the member identifier
     ...fromUsers.map(u => ({ name: u.username || u.name })),
     // Agents: use agent id (e.g. "video-agent") so it matches getLocalAgentNames() output
-    ...fromAgents.map(a => ({ name: a.id }))
+    ...fromAgents.map(a => ({ name: a.id })),
+    // ZeroClaw sessions: pass session_id as the member identifier
+    ...fromZeroclaw.map(s => ({ name: s.session_id, isZeroclawSession: true }))
   ]
   // Build a human-friendly group name using display names
   const displayNames = [
     ...fromUsers.map(u => u.name || u.username),
-    ...fromAgents.map(a => a.name)
+    ...fromAgents.map(a => a.name),
+    ...fromZeroclaw.map(s => s.name || s.session_id)
   ]
   const groupName = displayNames.join(', ')
   await createGroupChat(selectedObjs, groupName)
