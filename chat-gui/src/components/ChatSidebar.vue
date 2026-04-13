@@ -377,6 +377,21 @@
           <div v-else class="panel-empty">No group chats yet</div>
         </template>
 
+        
+        <!-- ZeroClaw Sessions -->
+        <template v-if="zeroclawSessions && zeroclawSessions.length > 0">
+          <div
+            v-for="session in zeroclawSessions"
+            :key="session.session_id"
+            class="panel-item agent-item"
+            :class="{ active: activeZeroClawSession?.session_id === session.session_id }"
+            @click="selectZeroClawSession(session)"
+          >
+            <div class="item-avatar zeroclaw-avatar">🦀</div>
+            <span class="item-name">{{ session.name || session.user_id }}</span>
+          </div>
+        </template>
+
         <!-- My Agents -->
         <template v-else-if="activeOrg === 'agents'">
           <div
@@ -478,6 +493,7 @@ const props = defineProps({
 const currentMesh = inject('currentMesh')
 const meshes = inject('meshes')
 const openclawAgents = inject('openclawAgents')
+const zeroclawSessions = inject('zeroclawSessions')
 const switchMesh = inject('switchMesh')
 const users = inject('users')
 const selectUser = inject('selectUser')
@@ -486,6 +502,8 @@ const renameGroupChat = inject('renameGroupChat')
 const updateGroupMembers = inject('updateGroupMembers')
 const currentMeshAgentUsername = inject('currentMeshAgentUsername')
 const activeOpenclawAgent = inject('activeOpenclawAgent')
+const activeZeroClawSession = inject('activeZeroClawSession')
+const selectZeroClawSession = inject('selectZeroClawSession')
 const joinParty = inject('joinParty')
 const leaveMesh = inject('leaveMesh')
 const resolveEpDisplayName = inject('resolveEpDisplayName')
@@ -1839,5 +1857,25 @@ const closeEditor = () => {
   font-size: 12px;
   color: #666;
   padding: 2px 8px;
+}
+
+/* ZeroClaw session avatar */
+.zeroclaw-avatar {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+/* ZeroClaw section header */
+.zeroclaw-section-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: #667eea;
+  padding: 8px 12px;
+  margin-top: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 </style>

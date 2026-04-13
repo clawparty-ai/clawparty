@@ -1,6 +1,7 @@
 use crate::agent::AgentManager;
 use crate::api::ApiClient;
 use crate::models::*;
+use crate::zeroclaw::ZeroClawDaemon;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::Arc;
@@ -32,6 +33,14 @@ pub struct SidebarItem {
     pub index: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct ZeroClawSession {
+    pub session_id: String,
+    pub user_id: String,
+    pub name: String,
+    pub last_activity: String,
+}
+
 pub struct AppState {
     pub api: Arc<Mutex<ApiClient>>,
     pub meshes: Vec<Mesh>,
@@ -57,6 +66,11 @@ pub struct AppState {
     pub messages_scroll: ScrollViewState,
     pub logs_scroll: ScrollViewState,
     pub agent_mgr: Option<AgentManager>,
+    // ZeroClaw fields
+    pub zeroclaw_sessions: Vec<ZeroClawSession>,
+    pub current_zeroclaw_session: Option<ZeroClawSession>,
+    pub zeroclaw_running: bool,
+    pub zeroclaw_mgr: Option<ZeroClawDaemon>,
 }
 
 impl AppState {
@@ -95,6 +109,11 @@ impl AppState {
             messages_scroll: ScrollViewState::new(),
             logs_scroll: ScrollViewState::new(),
             agent_mgr: None,
+            // ZeroClaw fields
+            zeroclaw_sessions: Vec::new(),
+            current_zeroclaw_session: None,
+            zeroclaw_running: false,
+            zeroclaw_mgr: None,
         }
     }
 
@@ -105,7 +124,7 @@ impl AppState {
 
         // Write to log file
         if let Some(ref mut file) = self.log_file {
-            let _ = writeln!(file, "{}", log_entry);
+            let _ = writeln!(*file, "{}", log_entry);
         }
 
         self.logs.push(log_entry);
@@ -177,7 +196,29 @@ impl AppState {
     pub fn get_sidebar_items(&self) -> Vec<SidebarItem> {
         let mut items = Vec::new();
 
+        // ZeroClaw Sessions
+        if !self.zeroclaw_sessions.is_empty() {
+            items.push(SidebarItem {
+                label: "🦀 ZeroClaw".to_string(),
+                section: "zeroclaw_header".to_string(),
+                index: 0,
+            });
+            for (i, session) in self.zeroclaw_sessions.iter().enumerate() {
+                items.push(SidebarItem {
+                    label: format!("🦀 {}", session.name),
+                    section: "zeroclaw_sessions".to_string(),
+                    index: i,
+                });
+            }
+        }
+
+        // OpenClaw Agents
         if !self.local_agents.is_empty() {
+            items.push(SidebarItem {
+                label: "🤖 OpenClaw Agents".to_string(),
+                section: "openclaw_header".to_string(),
+                index: 0,
+            });
             for (i, agent) in self.local_agents.iter().enumerate() {
                 items.push(SidebarItem {
                     label: format!("{} {}", agent.display_emoji(), agent.display_name()),
@@ -187,6 +228,7 @@ impl AppState {
             }
         }
 
+        // Group Chats
         if !self.group_chats.is_empty() {
             for (i, chat) in self.group_chats.iter().enumerate() {
                 items.push(SidebarItem {
@@ -197,6 +239,7 @@ impl AppState {
             }
         }
 
+        // Remote Agents
         for (i, ep) in self.members.iter().enumerate() {
             items.push(SidebarItem {
                 label: format!("● {}", ep.name),
@@ -217,11 +260,20 @@ impl AppState {
         let item = &items[index];
 
         match item.section.as_str() {
+            "zeroclaw_sessions" => {
+                if item.index < self.zeroclaw_sessions.len() {
+                    self.current_zeroclaw_session = Some(self.zeroclaw_sessions[item.index].clone());
+                    self.current_openclaw_agent = None;
+                    self.current_chat = None;
+                    self.current_peer = None;
+                }
+            }
             "local_agents" => {
                 if item.index < self.local_agents.len() {
                     self.current_openclaw_agent = Some(self.local_agents[item.index].clone());
                     self.current_chat = None;
                     self.current_peer = None;
+                    self.current_zeroclaw_session = None;
                 }
             }
             "groups" => {
@@ -233,17 +285,17 @@ impl AppState {
                         self.current_chat = Some(orig_idx);
                         self.current_openclaw_agent = None;
                         self.current_peer = None;
+                        self.current_zeroclaw_session = None;
                     }
                 }
             }
             "remote_agents" => {
                 if item.index < self.members.len() {
                     let ep = &self.members[item.index];
-                    // Always set the current peer, even if no chat exists
                     self.current_peer = Some(ep.name.clone());
                     self.current_openclaw_agent = None;
+                    self.current_zeroclaw_session = None;
 
-                    // Try to find existing chat
                     if let Some(chat_idx) = self
                         .chats
                         .iter()

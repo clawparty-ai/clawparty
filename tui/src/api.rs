@@ -193,6 +193,88 @@ impl ApiClient {
         }
     }
 
+    pub async fn check_zeroclaw_health(&self) -> bool {
+        self.client
+            .get("http://localhost:42617/api/health")
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+    }
+
+    pub async fn get_zeroclaw_sessions(&self) -> Result<Vec<crate::app::ZeroClawSession>> {
+        let resp = self.client
+            .get("http://localhost:42617/api/ztm/sessions")
+            .send()
+            .await?;
+        
+        if resp.status().is_success() {
+            let result: serde_json::Value = resp.json().await?;
+            let sessions: Vec<crate::app::ZeroClawSession> = result["sessions"]
+                .as_array()
+                .unwrap_or(&vec![])
+                .iter()
+                .filter_map(|s| {
+                    Some(crate::app::ZeroClawSession {
+                        session_id: s["session_id"].as_str()?.to_string(),
+                        user_id: s["user_id"].as_str()?.to_string(),
+                        name: s["name"].as_str()?.to_string(),
+                        last_activity: s["last_activity"].as_str()?.to_string(),
+                    })
+                })
+                .collect();
+            Ok(sessions)
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    pub async fn send_zeroclaw_message(&self, session_id: &str, text: &str) -> Result<String> {
+        let body = serde_json::json!({ "message": text });
+        let resp = self.client
+            .post(&format!("http://localhost:42617/api/sessions/{}/chat", session_id))
+            .json(&body)
+            .send()
+            .await?;
+        
+        if resp.status().is_success() {
+            let result: serde_json::Value = resp.json().await?;
+            Ok(result["response"].as_str().unwrap_or("").to_string())
+        } else {
+            anyhow::bail!("Failed to send message: {}", resp.status())
+        }
+    }
+
+    pub async fn get_zeroclaw_messages(&self, session_id: &str) -> Result<Vec<Message>> {
+        let resp = self.client
+            .get(&format!("http://localhost:42617/api/sessions/{}/messages", session_id))
+            .send()
+            .await?;
+        
+        if resp.status().is_success() {
+            let result: serde_json::Value = resp.json().await?;
+            let messages: Vec<Message> = result["messages"]
+                .as_array()
+                .unwrap_or(&vec![])
+                .iter()
+                .filter_map(|m| {
+                    Some(Message {
+                        message: None,
+                        text: m["text"].as_str().map(|s| s.to_string()),
+                        sender: m["sender"].as_str().map(|s| s.to_string()),
+                        time: m["timestamp"].as_u64().map(|t| crate::models::TimeValue::Number(t)),
+                        timestamp: Some(m["timestamp"].as_u64().unwrap_or(0)),
+                        is_sent: m["is_sent"].as_bool(),
+                        
+                    })
+                })
+                .collect();
+            Ok(messages)
+        } else {
+            Ok(vec![])
+        }
+    }
+
     pub async fn send_openclaw_message(&self, agent_id: &str, text: &str) -> Result<()> {
         let resp = self.client
             .post(format!("{}/api/openclaw/chat/{}", self.base_url, agent_id))

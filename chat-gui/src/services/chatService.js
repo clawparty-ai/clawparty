@@ -121,6 +121,26 @@ export const picoclawService = {
   }
 }
 
+export const zeroclawService = {
+  checkHealth() {
+    return api.get('http://localhost:42617/api/health')
+  },
+  
+  getSessions() {
+    return api.get('http://localhost:42617/api/ztm/sessions')
+  },
+  
+  sendMessage(sessionId, message) {
+    return api.post(`http://localhost:42617/api/sessions/${sessionId}/chat`, { 
+      message 
+    })
+  },
+  
+  getMessages(sessionId) {
+    return api.get(`http://localhost:42617/api/sessions/${sessionId}/messages`)
+  }
+}
+
 export const chatService = {
   getChats(meshName) {
     return api.get(`/meshes/${meshName}/apps/ztm/chat/api/chats`)

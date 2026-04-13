@@ -88,8 +88,8 @@
       </div>
     </div>
     <ChatMain
-      v-if="(activeChat !== null && activeChat < chats.length) || activeOpenclawAgent"
-      :chat="activeOpenclawAgent || chats[activeChat]"
+      v-if="(activeChat !== null && activeChat < chats.length) || activeOpenclawAgent || activeZeroClawSession"
+      :chat="activeZeroClawSession || activeOpenclawAgent || chats[activeChat]"
       :meshName="(activeOpenclawAgent && activeOpenclawAgent.agentId !== 'main') ? null : currentMesh"
       :currentUserName="currentMeshAgentUsername"
       :sending="sending"
@@ -141,7 +141,7 @@ import { ref, onMounted, onUnmounted, provide, computed } from 'vue'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
 import TemplatePicker from './components/TemplatePicker.vue'
-import { meshService, chatService, openclawService, setApiToken, getApiToken } from './services/chatService'
+import { meshService, chatService, openclawService, zeroclawService, setApiToken, getApiToken } from './services/chatService'
 import ShellService from './services/ShellService'
 import { platform } from '@tauri-apps/plugin-os';
 import { getAvatarColor } from './utils/avatar'
@@ -150,6 +150,8 @@ const shellService = new ShellService();
 const meshes = ref([])
 const openclawAgents = ref([])
 const openclawSessions = ref([])
+const zeroclawSessions = ref([])
+const activeZeroClawSession = ref(null)
 const currentMesh = ref('')
 const currentMeshAgentUsername = ref('')
 const chats = ref([])
@@ -332,6 +334,14 @@ const fetchChats = async () => {
   }
 }
 
+
+const selectZeroClawSession = (session) => {
+  activeZeroClawSession.value = session
+  activeChat.value = null
+  activeOpenclawAgent.value = null
+  loadZeroClawChatHistory(session)
+}
+
 const selectChat = (index) => {
   activeOpenclawAgent.value = null
   activeChat.value = index
@@ -341,11 +351,57 @@ const selectChat = (index) => {
 }
 
 const sendMessage = async () => {
-  if (!newMessage.value.trim() || (!activeOpenclawAgent.value && activeChat.value === null) || sending.value) return
+  if (!newMessage.value.trim() || (!activeOpenclawAgent.value && !activeZeroClawSession.value && activeChat.value === null) || sending.value) return
   
   const chat = activeOpenclawAgent.value || chats.value[activeChat.value]
   const text = newMessage.value
   sending.value = true
+
+  // ZeroClaw message sending
+  if (activeZeroClawSession.value) {
+    const session = activeZeroClawSession.value
+    if (!session.messages) session.messages = []
+    const now = new Date()
+    const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+    
+    // Add user message
+    session.messages.push({
+      text: text,
+      time: time,
+      sender: currentMeshAgentUsername.value || 'You',
+      timestamp: now.getTime(),
+      isSent: true
+    })
+    
+    zeroclawService.sendMessage(session.session_id, text).then((response) => {
+      const replyText = response.data?.response || ''
+      const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
+      session.messages.push({
+        text: replyText,
+        time: replyTime,
+        sender: session.name || 'ZeroClaw',
+        timestamp: new Date().getTime(),
+        isSent: false
+      })
+      session.lastMessage = replyText
+      session.time = replyTime
+    }).catch((e) => {
+      console.error('ZeroClaw send error:', e)
+      const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
+      session.messages.push({
+        text: 'Failed to get response from ZeroClaw',
+        time: replyTime,
+        sender: session.name || 'ZeroClaw',
+        timestamp: new Date().getTime(),
+        isSent: false
+      })
+    })
+    
+    newMessage.value = ''
+    sending.value = false
+    return
+  }
+
   
   try {
       if (chat.isOpenclaw) {
@@ -1193,6 +1249,10 @@ const installedAgentIds = computed(() => {
 provide('switchMesh', switchMesh)
 provide('meshes', meshes)
 provide('openclawAgents', openclawAgents)
+provide('zeroclawSessions', zeroclawSessions)
+provide('activeZeroClawSession', activeZeroClawSession)
+provide('selectZeroClawSession', selectZeroClawSession)
+provide('zeroclawSessions', zeroclawSessions)
 provide('fetchUsers', fetchUsers)
 provide('users', users)
 provide('selectUser', selectUser)

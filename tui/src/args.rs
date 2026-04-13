@@ -13,6 +13,9 @@ pub struct Args {
     #[arg(long)]
     pub pipy_bin: Option<String>,
 
+    #[arg(long)]
+    pub zeroclaw_bin: Option<String>,
+
     #[arg(long, default_value = "~/.clawparty")]
     pub data: String,
 

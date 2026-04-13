@@ -4,6 +4,7 @@ mod models;
 mod api;
 mod app;
 mod ui;
+mod zeroclaw;
 
 use agent::AgentManager;
 use args::Args;
@@ -61,18 +62,68 @@ async fn main() -> anyhow::Result<()> {
     let mut state = AppState::new(api);
     state.add_log("INFO", &format!("Connecting to {}", args.api_host));
 
-    // Check if agent is already running
+    // Find zeroclaw binary path
+    let zeroclaw_bin = args.zeroclaw_bin.clone().unwrap_or_else(|| {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let zeroclaw = dir.join("zeroclaw");
+                if zeroclaw.exists() {
+                    return zeroclaw.to_string_lossy().to_string();
+                }
+            }
+        }
+        "zeroclaw".to_string()
+    });
+
+    // Start ZeroClaw daemon FIRST
+    state.add_log("INFO", "🦀 Starting ZeroClaw daemon...");
+    let zeroclaw_mgr = zeroclaw::ZeroClawDaemon::new(
+        zeroclaw_bin,
+        args.data.clone(),
+        42617, // ZeroClaw Gateway port
+        log_tx.clone(),
+    );
+
+    // Wait for ZeroClaw to be ready (20 second timeout)
+    let mut zeroclaw_ready = false;
+    for i in 0..40 {
+        sleep(Duration::from_millis(500)).await;
+        let api_lock = state.api.lock().await;
+        if api_lock.check_zeroclaw_health().await {
+            zeroclaw_ready = true;
+            drop(api_lock);
+            break;
+        }
+        drop(api_lock);
+        if i == 0 {
+            state.add_log("INFO", "Waiting for ZeroClaw Gateway...");
+        }
+    }
+
+    if !zeroclaw_ready {
+        state.add_log("ERROR", "❌ ZeroClaw daemon failed to start within timeout");
+        drop(zeroclaw_mgr);
+        disable_raw_mode()?;
+        io::stdout().execute(LeaveAlternateScreen)?;
+        return Err(anyhow::anyhow!("ZeroClaw startup failed"));
+    }
+
+    state.zeroclaw_running = true;
+    state.zeroclaw_mgr = Some(zeroclaw_mgr);
+    state.add_log("INFO", "✅ ZeroClaw daemon started successfully");
+
+    // Check if ZTM agent is already running
     let agent_already_running = {
         let api_lock = state.api.lock().await;
         api_lock.check_health().await
     };
 
     if agent_already_running {
-        state.add_log("INFO", "Agent is already running");
+        state.add_log("INFO", "ZTM Agent is already running");
         state.agent_running = true;
     } else {
-        // Start the agent (output captured to log channel)
-        state.add_log("INFO", &format!("Starting agent ({})...", pipy_bin));
+        // Start the ZTM agent (output captured to log channel)
+        state.add_log("INFO", &format!("Starting ZTM agent ({})...", pipy_bin));
         let agent_mgr = AgentManager::new(
             pipy_bin.clone(),
             args.data.clone(),
@@ -92,14 +143,14 @@ async fn main() -> anyhow::Result<()> {
             }
             drop(api_lock);
             if i == 0 {
-                state.add_log("INFO", "Waiting for agent to start...");
+                state.add_log("INFO", "Waiting for ZTM agent to start...");
             }
         }
         if ready {
             state.agent_running = true;
-            state.add_log("INFO", "Agent started successfully");
+            state.add_log("INFO", "ZTM Agent started successfully");
         } else {
-            state.add_log("ERROR", "Agent failed to start within timeout");
+            state.add_log("ERROR", "ZTM Agent failed to start within timeout");
         }
         // Store agent manager in state for cleanup on exit
         state.agent_mgr = Some(agent_mgr);
@@ -132,6 +183,21 @@ async fn main() -> anyhow::Result<()> {
         match agents_result {
             Ok(agents) => state.openclaw_agents = agents,
             Err(e) => state.add_log("ERROR", &format!("Failed to fetch agents: {}", e)),
+        }
+
+        // Fetch ZeroClaw sessions
+        if state.zeroclaw_running {
+            let zeroclaw_sessions_result = {
+                let api_lock = state.api.lock().await;
+                api_lock.get_zeroclaw_sessions().await
+            };
+            match zeroclaw_sessions_result {
+                Ok(sessions) => {
+                    state.zeroclaw_sessions = sessions.clone();
+                    state.add_log("INFO", &format!("Loaded {} ZeroClaw sessions", sessions.len()));
+                }
+                Err(e) => state.add_log("WARN", &format!("Failed to fetch ZeroClaw sessions: {}", e)),
+            }
         }
     }
 

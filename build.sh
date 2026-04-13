@@ -27,6 +27,7 @@ if [ "$CLEAN" = true ]; then
   echo "=== Clean build ==="
   rm -rf "$ZTM_DIR/pipy/build"
   rm -rf "$ZTM_DIR/tui/target"
+  rm -rf "$ZTM_DIR/zeroclaw/target"
   rm -rf "$ZTM_DIR/bin"
   rm -rf "$ZTM_DIR/chat-gui/node_modules"
   rm -rf "$ZTM_DIR/chat-gui/dist"
@@ -40,6 +41,21 @@ build/deps.sh
 
 cd "$ZTM_DIR"
 build/gui.sh
+
+# Build ZeroClaw (Rust)
+echo "Building ZeroClaw..."
+cd "$ZTM_DIR/zeroclaw"
+# Create config directory
+mkdir -p "$HOME/.clawparty/.zeroclaw"
+# Build with gateway feature
+cargo build --release --features gateway
+mkdir -p "$ZTM_DIR/bin"
+cp -f "$ZTM_DIR/zeroclaw/target/release/zeroclaw" "$ZTM_DIR/bin/zeroclaw"
+# Ad-hoc sign the binary on macOS
+if [ "$(uname)" = "Darwin" ]; then
+  codesign -s - --force --deep "$ZTM_DIR/bin/zeroclaw" 2>/dev/null || true
+fi
+echo "ZeroClaw built: $ZTM_DIR/bin/zeroclaw"
 
 # Build TUI (Rust)
 echo "Building TUI..."
