@@ -271,6 +271,26 @@ function main(listen, apiToken, noAuth) {
       },
     },
 
+    // Zeroclaw session messages proxy
+    '/api/zeroclaw/sessions/{sessionId}/messages': {
+      'GET': function (params) {
+        var zeroclawAgent = new http.Agent('localhost:42617')
+        return zeroclawAgent.request('GET', '/api/sessions/' + params.sessionId + '/messages').then(
+          res => response(res.head.status, res.body.toString())
+        )
+      },
+    },
+
+    // Zeroclaw send message proxy
+    '/api/zeroclaw/sessions/{sessionId}/chat': {
+      'POST': function (params, req) {
+        var zeroclawAgent = new http.Agent('localhost:42617')
+        return zeroclawAgent.request('POST', '/api/sessions/' + params.sessionId + '/chat', {'Content-Type': 'application/json'}, req.body).then(
+          res => response(res.head.status, res.body.toString())
+        )
+      },
+    },
+
     //
     // Mesh
     //   name: string

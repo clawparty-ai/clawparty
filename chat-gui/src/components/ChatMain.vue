@@ -25,11 +25,11 @@
         :class="{ sent: isMessageSent(msg), typing: msg.isTyping }"
       >
           <div class="message-avatar">
-          <div v-if="chat.isOpenclaw && !isMessageSent(msg) && !msg.isTyping" class="avatar-emoji">
-            {{ chat.emoji }}
+          <div v-if="(chat.isOpenclaw || chat.isZeroClaw) && !isMessageSent(msg) && !msg.isTyping" class="avatar-emoji">
+            {{ chat.emoji || '🦀' }}
           </div>
-          <div v-else-if="msg.isTyping && chat.isOpenclaw" class="avatar-emoji">
-            {{ chat.emoji }}
+          <div v-else-if="msg.isTyping && (chat.isOpenclaw || chat.isZeroClaw)" class="avatar-emoji">
+            {{ chat.emoji || '🦀' }}
           </div>
           <div v-else-if="!msg.isTyping" class="avatar-placeholder" :style="{ background: getAvatarColor(isMessageSent(msg) ? (currentUserName || 'You') : (msg.sender || chat.name)) }">
             {{ (isMessageSent(msg) ? (currentUserName || 'You') : (msg.sender || chat.name))[0].toUpperCase() }}
@@ -459,12 +459,12 @@ const buildChatHtml = () => {
         ? myDisplayNameWithAgent.value
         : (msg.sender || chatName)
       const time = escapeHtml(msg.time || '')
-      const isOpenclaw = props.chat.isOpenclaw && !isSent
-      const emoji = props.chat.emoji || ''
+      const isOpenclawOrZeroClaw = (props.chat.isOpenclaw || props.chat.isZeroClaw) && !isSent
+      const emoji = props.chat.emoji || (props.chat.isZeroClaw ? '🦀' : '')
 
       // Avatar HTML
       let avatarHtml
-      if (isOpenclaw) {
+      if (isOpenclawOrZeroClaw) {
         avatarHtml = `<div class="avatar-emoji">${escapeHtml(emoji)}</div>`
       } else {
         const color = getColor(senderName)

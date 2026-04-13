@@ -99,18 +99,22 @@
         <span class="panel-title">{{
           activeOrg === 'agents' ? '我的助手' :
           activeOrg === 'groups' ? 'Group Chats' :
+          activeOrg === 'zeroclaw' ? 'ZeroClaw Sessions' :
           activeOrg
         }}</span>
         <div v-if="activeOrg === 'agents'" class="panel-header-actions">
           <button class="add-agent-btn" @click="$emit('openLocalTemplates')" title="添加本地 Agent">+A</button>
           <button class="add-agent-btn shared-btn" @click="$emit('openSharedTemplates')" title="添加共享 Agent">#A</button>
         </div>
-        <div v-if="activeOrg !== 'agents' && activeOrg !== 'groups' && activeOrg" class="panel-header-actions">
+        <div v-if="activeOrg !== 'agents' && activeOrg !== 'groups' && activeOrg !== 'zeroclaw' && activeOrg" class="panel-header-actions">
           <button class="leave-mesh-btn" @click="handleLeaveMesh(activeOrg)" title="Leave mesh">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
               <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
             </svg>
           </button>
+        </div>
+        <div v-if="activeOrg === 'zeroclaw'" class="panel-header-actions">
+          <button class="add-agent-btn" @click="showCreateSessionDialog = true" title="创建 Session">+A</button>
         </div>
       </div>
 
@@ -149,6 +153,33 @@
               :disabled="joinPartyLoading"
               @click="handleJoinParty"
             >{{ joinPartyLoading ? '加入中...' : '加入组织' }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Create Session Dialog -->
+    <Teleport to="body">
+      <div v-if="showCreateSessionDialog" class="modal-backdrop" @click.self="showCreateSessionDialog = false">
+        <div class="modal-dialog">
+          <div class="modal-header">
+            <span class="modal-title">创建 Session</span>
+            <button class="modal-close" @click="showCreateSessionDialog = false">✕</button>
+          </div>
+
+          <div class="join-party-body">
+            <label class="join-party-label">Session Name</label>
+            <input
+              v-model="newSessionName"
+              class="search-input"
+              placeholder="请输入名字"
+              @keyup.enter="handleCreateSession"
+            />
+          </div>
+
+          <div class="modal-footer">
+            <button class="modal-cancel-btn" @click="showCreateSessionDialog = false">取消</button>
+            <button class="modal-create-btn" @click="handleCreateSession">创建</button>
           </div>
         </div>
       </div>
@@ -525,6 +556,8 @@ const joinParty = inject('joinParty')
 const leaveMesh = inject('leaveMesh')
 const resolveEpDisplayName = inject('resolveEpDisplayName')
 const localOpenclawAvailable = inject('localOpenclawAvailable')
+const createSession = inject('createSession')
+const fetchZeroClawSessions = inject('fetchZeroClawSessions')
 
 // Group expand / rename state
 const expandedGroups = ref(new Set())
@@ -731,6 +764,21 @@ const closeJoinParty = () => {
   joinPartyError.value = ''
   joinPartySuccess.value = ''
   joinPartyUserName.value = ''
+}
+
+// Create Session state
+const showCreateSessionDialog = ref(false)
+const newSessionName = ref('')
+
+const handleCreateSession = async () => {
+  if (!newSessionName.value.trim()) return
+  try {
+    await createSession(newSessionName.value.trim())
+    showCreateSessionDialog.value = false
+    newSessionName.value = ''
+  } catch (error) {
+    console.error('Failed to create session:', error)
+  }
 }
 
 const handleJoinParty = async () => {

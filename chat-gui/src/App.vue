@@ -340,6 +340,25 @@ const selectZeroClawSession = (session) => {
   activeZeroClawSession.value = session
   activeChat.value = null
   activeOpenclawAgent.value = null
+  loadZeroClawChatHistory(session)
+}
+
+const loadZeroClawChatHistory = async (session) => {
+  try {
+    const response = await zeroclawService.getMessages(session.session_id)
+    if (response.data && response.data.messages) {
+      session.messages = response.data.messages.map(msg => ({
+        text: msg.content,
+        sender: msg.role === 'user' ? (currentMeshAgentUsername.value || 'You') : (session.name || 'ZeroClaw'),
+        time: new Date().toLocaleTimeString(),
+        isSent: msg.role === 'user',
+        isTemp: false
+      }))
+      session.isZeroClaw = true
+    }
+  } catch (error) {
+    console.error('Failed to load zeroclaw chat history:', error)
+  }
 }
 
 const fetchZeroClawSessions = async () => {
@@ -350,6 +369,20 @@ const fetchZeroClawSessions = async () => {
     }
   } catch (error) {
     console.error('Failed to fetch zeroclaw sessions:', error)
+  }
+}
+
+const createSession = async (sessionName) => {
+  try {
+    await zeroclawService.sendMessage(sessionName, 'Hello claw~')
+    await fetchZeroClawSessions()
+    const newSession = zeroclawSessions.value.find(s => s.session_id === sessionName)
+    if (newSession) {
+      selectZeroClawSession(newSession)
+    }
+  } catch (error) {
+    console.error('Failed to create session:', error)
+    throw error
   }
 }
 
@@ -381,35 +414,64 @@ const sendMessage = async () => {
       time: time,
       sender: currentMeshAgentUsername.value || 'You',
       timestamp: now.getTime(),
-      isSent: true
+      isSent: true,
+      isTemp: true
     })
     
-    zeroclawService.sendMessage(session.session_id, text).then((response) => {
-      const replyText = response.data?.response || ''
-      const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
-      session.messages.push({
-        text: replyText,
-        time: replyTime,
-        sender: session.name || 'ZeroClaw',
-        timestamp: new Date().getTime(),
-        isSent: false
-      })
-      session.lastMessage = replyText
-      session.time = replyTime
-    }).catch((e) => {
-      console.error('ZeroClaw send error:', e)
-      const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
-      session.messages.push({
-        text: 'Failed to get response from ZeroClaw',
-        time: replyTime,
-        sender: session.name || 'ZeroClaw',
-        timestamp: new Date().getTime(),
-        isSent: false
-      })
+    // Add typing indicator
+    const typingIdx = session.messages.length
+    session.messages.push({
+      text: '',
+      time: time,
+      sender: session.name || 'ZeroClaw',
+      timestamp: now.getTime() + 1,
+      isSent: false,
+      isTyping: true
     })
     
     newMessage.value = ''
-    sending.value = false
+    sending.value = true
+    
+    zeroclawService.sendMessage(session.session_id, text).then((response) => {
+      // Remove typing indicator
+      session.messages.splice(typingIdx, 1)
+      
+      // Process response messages
+      const newMessages = response.data?.messages || []
+      const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
+      
+      newMessages.forEach((msg, idx) => {
+        if (idx >= session.messages.length - 1 || session.messages[typingIdx] === undefined) {
+          session.messages.push({
+            text: msg.content,
+            time: replyTime,
+            sender: msg.role === 'user' ? (currentMeshAgentUsername.value || 'You') : (session.name || 'ZeroClaw'),
+            timestamp: new Date().getTime() + idx + 1,
+            isSent: msg.role === 'user',
+            isTemp: false
+          })
+        }
+      })
+      
+      session.lastMessage = text
+      session.time = replyTime
+    }).catch((e) => {
+      console.error('ZeroClaw send error:', e)
+      // Remove typing indicator
+      session.messages.splice(typingIdx, 1)
+      const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
+      session.messages.push({
+        text: 'Failed to get response from ZeroClaw: ' + (e.message || 'Unknown error'),
+        time: replyTime,
+        sender: session.name || 'ZeroClaw',
+        timestamp: new Date().getTime(),
+        isSent: false,
+        isTemp: false
+      })
+    }).finally(() => {
+      sending.value = false
+    })
+    
     return
   }
 
@@ -1275,6 +1337,8 @@ provide('currentMeshAgentUsername', currentMeshAgentUsername)
 provide('joinParty', joinParty)
 provide('leaveMesh', leaveMesh)
 provide('deleteAgent', deleteAgent)
+provide('createSession', createSession)
+provide('fetchZeroClawSessions', fetchZeroClawSessions)
 provide('localOpenclawAvailable', localOpenclawAvailable)
 
 const resolveEpDisplayName = (username) => {

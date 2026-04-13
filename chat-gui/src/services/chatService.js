@@ -131,13 +131,13 @@ export const zeroclawService = {
   },
   
   sendMessage(sessionId, message) {
-    return api.post(`http://localhost:42617/api/sessions/${sessionId}/chat`, { 
+    return api.post(`/zeroclaw/sessions/${sessionId}/chat`, { 
       message 
     })
   },
   
   getMessages(sessionId) {
-    return api.get(`http://localhost:42617/api/sessions/${sessionId}/messages`)
+    return api.get(`/zeroclaw/sessions/${sessionId}/messages`)
   }
 }
 
