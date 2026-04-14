@@ -1137,6 +1137,13 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
             console.info('[chat] group blocked, silently discarding messages for group', group)
             return
           }
+          // Check if user is a member of this group
+          if (chat.members instanceof Array && chat.members.length > 0) {
+            if (app.username !== chat.creator && !chat.members.includes(app.username)) {
+              console.info('[chat] user not a member of group, skipping:', app.username, group)
+              return
+            }
+          }
           var newMsgs = []
           try {
             var messages = JSON.decode(data)
@@ -1516,7 +1523,10 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var msgText = typeof message === 'string' ? message : (message?.text || JSON.stringify(message))
     console.info('[chat send]', taggedSender, '-> group', group, ':', firstLine(msgText))
     var dirname = `/shared/${realCreator}/publish/groups/${realCreator}/${group}`
-    return mesh.acl(dirname, { all: 'readonly' }).then(
+    var membersAcl = (chat.members instanceof Array && chat.members.length > 0)
+      ? { users: Object.fromEntries(chat.members.map(name => [name, 'readonly'])) }
+      : { all: 'readonly' }
+    return mesh.acl(dirname, membersAcl).then(
       () => publishMessage(os.path.join(dirname, 'messages'), taggedMessage)
     ).then(() => {
       try {
