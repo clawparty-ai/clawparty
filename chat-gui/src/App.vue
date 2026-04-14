@@ -23,6 +23,7 @@
       @select="selectChat"
       @selectOpenclaw="selectOpenclawAgent"
       @changeOrg="(org) => { mobileActiveOrg = org; activeChat = null; activeOpenclawAgent = null; }"
+      @resetActiveChat="activeChat = null"
       @openLocalTemplates="openLocalTemplates"
       @openSharedTemplates="openSharedTemplates"
     />

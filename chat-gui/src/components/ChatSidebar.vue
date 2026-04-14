@@ -673,7 +673,7 @@ const handleUpdateMembers = async () => {
 // Active org
 const activeOrg = ref('agents')
 
-const emit = defineEmits(['select', 'selectOpenclaw', 'changeOrg', 'openLocalTemplates', 'openSharedTemplates'])
+const emit = defineEmits(['select', 'selectOpenclaw', 'changeOrg', 'openLocalTemplates', 'openSharedTemplates', 'resetActiveChat'])
 
 watch(currentMesh, (val) => {
   if (val && activeOrg.value !== 'agents') activeOrg.value = val
@@ -681,6 +681,7 @@ watch(currentMesh, (val) => {
 
 watch(activeOrg, (val) => {
   emit('changeOrg', val)
+  emit('resetActiveChat')
 })
 
 const handleSelectMesh = async (meshName) => {

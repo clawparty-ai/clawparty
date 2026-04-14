@@ -872,7 +872,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     messages.forEach(function (msg) {
       var sender = msg.sender
       var time = msg.time
-      if (!chat.messages.find(function (m) { return m.time === time && m.sender === sender })) {
+      var msgStr = typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message)
+      if (!chat.messages.find(function (m) {
+        var mStr = typeof m.message === 'string' ? m.message : JSON.stringify(m.message)
+        return m.time === time && m.sender === sender && mStr === msgStr
+      })) {
         chat.messages.push(msg)
         if (sender !== app.username) chat.newCount++
         if (time > chat.updateTime) chat.updateTime = time
@@ -902,16 +906,6 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
                 null, recvSessionId)
             }
           } catch {}
-        }
-        // For group chats, trigger local agents regardless of who sent the message.
-        // Local agents are virtual members of this EP — we proxy their participation.
-        // Skip if this message was itself posted by a local agent (avoid infinite loop).
-        // Skip entirely during history replay (initial=true) to avoid re-triggering on startup.
-        if (!initial) {
-          var isAgentReply = typeof msg.message === 'object' && !!msg.message?.agentName
-          if (chat.group && !isAgentReply) {
-            triggerGroupAutoReply(chat, msg)
-          }
         }
       }
     })
@@ -951,10 +945,16 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     () => watchMessages()
   )
 
+  var isReadingMessages = false
+
   function watchMessages() {
-    mesh.watch('/shared').then(paths => Promise.all(
-      paths.map(path => readMessages(path, false))
-    ).then(() => watchMessages()))
+    mesh.watch('/shared').then(paths => {
+      if (isReadingMessages) return Promise.resolve()
+      isReadingMessages = true
+      return Promise.all(
+        paths.map(path => readMessages(path, false))
+      ).then(() => { isReadingMessages = false })
+    }).then(() => watchMessages())
   }
 
   function readMessages(path, initial) {
@@ -1019,7 +1019,33 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
                 }
               })
             }
-            mergeMessages(chat, messages, initial)
+            // Drop duplicated messages before processing (check both chat.messages and within the batch)
+            var uniqueMessages = []
+            var seenKeys = new Map()
+            messages.forEach(function (msg) {
+              var msgStr = typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message)
+              var key = msg.time + '|' + msg.sender + '|' + msgStr
+              // Check if already seen in this batch
+              if (seenKeys.has(key)) {
+                var msgText = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
+                console.info('[drop duplicated message]', msg.sender, ':', firstLine(msgText))
+                return
+              }
+              seenKeys.set(key, true)
+              // Also check chat.messages
+              var isDuplicated = chat.messages.some(function (m) {
+                var mStr = typeof m.message === 'string' ? m.message : JSON.stringify(m.message)
+                return m.time === msg.time && m.sender === msg.sender && mStr === msgStr
+              })
+              if (isDuplicated) {
+                var msgText = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
+                console.info('[drop duplicated message]', msg.sender, ':', firstLine(msgText))
+              } else {
+                uniqueMessages.push(msg)
+              }
+            })
+            if (uniqueMessages.length === 0) return
+            mergeMessages(chat, uniqueMessages, initial)
             if (hasIncoming) {
               var cfg = db.getChatPeer(mesh.name, chat.peer)
               if (cfg && !cfg.autoReply && !chat.messages.some(function (m) { return m.isPeerRequest })) {
@@ -1113,8 +1139,35 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
               var embeddedSender = typeof msg.message === 'object' ? msg.message?.sender : null
               msg.sender = embeddedSender || pathSender
             })
+            // Drop duplicated messages before processing (check both chat.messages and within the batch)
+            // Use sender + messageStr as key (ignore time because hub may resend with slightly different timestamps)
+            var uniqueMessages = []
+            var seenKeys = new Map()
+            messages.forEach(function (msg) {
+              var msgStr = typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message)
+              var key = msg.sender + '|' + msgStr
+              // Check if already seen in this batch
+              if (seenKeys.has(key)) {
+                var msgText = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
+                console.info('[drop duplicated message]', msg.sender, ':', firstLine(msgText))
+                return
+              }
+              seenKeys.set(key, true)
+              // Also check chat.messages (use sender + messageStr for comparison, ignore time)
+              var isDuplicated = chat.messages.some(function (m) {
+                var mStr = typeof m.message === 'string' ? m.message : JSON.stringify(m.message)
+                return m.sender === msg.sender && mStr === msgStr
+              })
+              if (isDuplicated) {
+                var msgText = typeof msg.message === 'string' ? msg.message : (msg.message?.text || JSON.stringify(msg.message))
+                console.info('[drop duplicated message]', msg.sender, ':', firstLine(msgText))
+              } else {
+                uniqueMessages.push(msg)
+              }
+            })
+            if (uniqueMessages.length === 0) return
             var beforeCount = chat.messages.length
-            mergeMessages(chat, messages, initial)
+            mergeMessages(chat, uniqueMessages, initial)
             // Collect only the newly merged messages for auto-reply
             if (!initial) {
               newMsgs = chat.messages.slice(beforeCount)
