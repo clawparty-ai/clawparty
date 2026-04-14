@@ -1298,9 +1298,8 @@ pub async fn handle_api_sessions_list(
     let gw_sessions: Vec<serde_json::Value> = all_metadata
         .into_iter()
         .filter_map(|meta| {
-            let session_id = meta.key.strip_prefix("gw_")?;
             let mut entry = serde_json::json!({
-                "session_id": session_id,
+                "session_id": meta.key,
                 "created_at": meta.created_at.to_rfc3339(),
                 "last_activity": meta.last_activity.to_rfc3339(),
                 "message_count": meta.message_count,

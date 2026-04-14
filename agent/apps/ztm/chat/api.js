@@ -822,6 +822,8 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     return chats.find(c => c.gcid === gcid)
   }
 
+  var creatingGroups = new Map()
+
   function newPeerChat(peer) {
     var chat = {
       peer,
@@ -850,8 +852,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     }
     var existing = findGroupChat(creator, group)
     if (existing) {
-      console.info('[newGroupChat] group already exists:', creator, group)
       return existing
+    }
+    var key = creator + '|' + group
+    if (creatingGroups.has(key)) {
+      return creatingGroups.get(key)
     }
     var chat = {
       creator,
@@ -864,7 +869,9 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       updateTime: 0,
       checkTime: 0,
     }
+    creatingGroups.set(key, chat)
     chats.push(chat)
+    creatingGroups.delete(key)
     return chat
   }
 
