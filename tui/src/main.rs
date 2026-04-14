@@ -9,6 +9,7 @@ mod zeroclaw;
 use agent::AgentManager;
 use args::Args;
 use api::ApiClient;
+use zeroclaw::ZeroClawDaemon;
 use app::{AppState, ActivePanel, ActiveOrg};
 use clap::Parser;
 use crossterm::{
@@ -25,6 +26,11 @@ use tokio::time::{sleep, timeout, Duration};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+
+    if args.service {
+        let (_agent_mgr, _zeroclaw_mgr) = run_service_mode(args).await?;
+        return Ok(());
+    }
 
     // Check if we have a TTY
     if !io::stdin().is_terminal() {
@@ -867,4 +873,130 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, ZeroClawDaemon)> {
+    println!("🀄 ClawParty Service Mode");
+    println!("========================");
+    
+    let pipy_bin = args.pipy_bin.clone().unwrap_or_else(|| {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let ztm = dir.join("ztm");
+                if ztm.exists() {
+                    return ztm.to_string_lossy().to_string();
+                }
+            }
+        }
+        "ztm".to_string()
+    });
+    println!("📦 ZTM binary: {}", pipy_bin);
+    
+    let zeroclaw_bin = args.zeroclaw_bin.clone().unwrap_or_else(|| {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let zeroclaw = dir.join("zeroclaw");
+                if zeroclaw.exists() {
+                    return zeroclaw.to_string_lossy().to_string();
+                }
+            }
+        }
+        "zeroclaw".to_string()
+    });
+    println!("🦀 ZeroClaw binary: {}", zeroclaw_bin);
+    
+    let (log_tx, mut log_rx) = mpsc::channel::<String>(100);
+    
+    println!("\n🔄 Starting ZeroClaw daemon...");
+    let zeroclaw_mgr = zeroclaw::ZeroClawDaemon::new(
+        zeroclaw_bin,
+        args.data.clone(),
+        42617,
+        log_tx.clone(),
+    );
+    
+    let client = reqwest::Client::new();
+    let mut zeroclaw_ready = false;
+    for i in 0..40 {
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        if let Ok(resp) = client.get("http://localhost:42617/api/health").send().await {
+            if resp.status().is_success() {
+                zeroclaw_ready = true;
+                break;
+            }
+        }
+        if i == 0 {
+            eprintln!("Waiting for ZeroClaw Gateway...");
+        }
+    }
+    
+    if !zeroclaw_ready {
+        eprintln!("❌ ZeroClaw daemon failed to start within timeout");
+        return Err(anyhow::anyhow!("ZeroClaw startup failed"));
+    }
+    println!("✅ ZeroClaw daemon started successfully on port 42617");
+    
+    let api = ApiClient::new(args.api_host.clone(), args.token.clone());
+    let mut agent_mgr: Option<AgentManager> = None;
+    
+    if api.check_health().await {
+        println!("✅ ZTM Agent is already running at {}", args.api_host);
+    } else {
+        println!("\n🔄 Starting ZTM agent ({})...", pipy_bin);
+        let mut mgr = AgentManager::new(
+            pipy_bin,
+            args.data.clone(),
+            args.listen.clone(),
+            args.token.clone(),
+            log_tx,
+        );
+        
+        let mut ready = false;
+        for i in 0..20 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            if api.check_health().await {
+                ready = true;
+                break;
+            }
+            if i == 0 {
+                eprintln!("Waiting for ZTM agent to start...");
+            }
+        }
+        
+        if ready {
+            println!("✅ ZTM Agent started successfully");
+            agent_mgr = Some(mgr);
+        } else {
+            eprintln!("❌ ZTM Agent failed to start within timeout");
+            return Err(anyhow::anyhow!("ZTM Agent startup failed"));
+        }
+    }
+    
+    println!("\n📋 Service Mode Ready");
+    println!("========================");
+    println!("ZeroClaw Gateway: http://localhost:42617");
+    println!("ZTM Agent API: {}", args.api_host);
+    println!("\nPress Ctrl+C to stop...");
+    
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut sigint = signal(SignalKind::interrupt())?;
+    let mut sigterm = signal(SignalKind::terminate())?;
+    
+    loop {
+        tokio::select! {
+            Some(log_msg) = log_rx.recv() => {
+                println!("[ZEROCLAW] {}", log_msg);
+            }
+            _ = sigint.recv() => {
+                println!("\nReceived SIGINT, shutting down...");
+                break;
+            }
+            _ = sigterm.recv() => {
+                println!("\nReceived SIGTERM, shutting down...");
+                break;
+            }
+        }
+    }
+    
+    Ok((agent_mgr, zeroclaw_mgr))
 }

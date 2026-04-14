@@ -21,4 +21,7 @@ pub struct Args {
 
     #[arg(long, default_value = "127.0.0.1:6789")]
     pub listen: String,
+
+    #[arg(short, long, default_value = "false")]
+    pub service: bool,
 }
