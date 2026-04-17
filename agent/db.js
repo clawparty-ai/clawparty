@@ -224,6 +224,28 @@ function open(pathname) {
   try { db.exec(`ALTER TABLE cli_log ADD COLUMN success INTEGER NOT NULL DEFAULT 0`) } catch {}
   try { db.exec(`ALTER TABLE cli_log ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0`) } catch {}
   try { db.exec(`ALTER TABLE cli_log ADD COLUMN error_message TEXT NOT NULL DEFAULT ''`) } catch {}
+
+  // Agents table for AI-Agent process management
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agents (
+      agent_name      TEXT PRIMARY KEY,
+      display_name    TEXT,
+      directory       TEXT NOT NULL,
+      config_path     TEXT NOT NULL,
+      workspace_dir   TEXT NOT NULL,
+      port            INTEGER NOT NULL,
+      pid             INTEGER,
+      status          TEXT NOT NULL DEFAULT 'stopped',
+      created_at      REAL NOT NULL,
+      updated_at      REAL NOT NULL,
+      config_json     TEXT,
+      error_msg       TEXT
+    )
+  `)
+
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status)`)
+  } catch {}
 }
 
 function allZones() {
@@ -894,6 +916,88 @@ function getChatLog(mesh, chatType, chatId, limit, msgTypes) {
   }))
 }
 
+// ── Agents Management ────────────────────────────────────────────────
+
+function createAgent(agent) {
+  var t = Date.now() / 1000
+  db.sql(`
+    INSERT INTO agents(agent_name, display_name, directory, config_path, workspace_dir, port, status, created_at, updated_at, config_json)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(1, agent.agent_name)
+    .bind(2, agent.display_name || null)
+    .bind(3, agent.directory)
+    .bind(4, agent.config_path)
+    .bind(5, agent.workspace_dir)
+    .bind(6, agent.port)
+    .bind(7, 'created')
+    .bind(8, t)
+    .bind(9, t)
+    .bind(10, agent.config_json ? JSON.stringify(agent.config_json) : null)
+    .exec()
+}
+
+function allAgents() {
+  return db.sql('SELECT * FROM agents ORDER BY created_at DESC').exec()
+    .map(r => ({
+      agent_name: r.agent_name,
+      display_name: r.display_name || null,
+      directory: r.directory,
+      config_path: r.config_path,
+      workspace_dir: r.workspace_dir,
+      port: r.port,
+      pid: r.pid,
+      status: r.status,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+      config_json: r.config_json ? JSON.parse(r.config_json) : null,
+      error_msg: r.error_msg || null,
+    }))
+}
+
+function getAgent(name) {
+  var row = db.sql('SELECT * FROM agents WHERE agent_name = ?').bind(1, name).exec()[0]
+  if (!row) return null
+  return {
+    agent_name: row.agent_name,
+    display_name: row.display_name || null,
+    directory: row.directory,
+    config_path: row.config_path,
+    workspace_dir: row.workspace_dir,
+    port: row.port,
+    pid: row.pid,
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    config_json: row.config_json ? JSON.parse(row.config_json) : null,
+    error_msg: row.error_msg || null,
+  }
+}
+
+function updateAgentStatus(name, status, pid, errorMsg) {
+  var t = Date.now() / 1000
+  db.sql(`
+    UPDATE agents
+    SET status = ?, pid = ?, error_msg = ?, updated_at = ?
+    WHERE agent_name = ?
+  `)
+    .bind(1, status)
+    .bind(2, pid !== undefined ? pid : null)
+    .bind(3, errorMsg || null)
+    .bind(4, t)
+    .bind(5, name)
+    .exec()
+}
+
+function deleteAgent(name) {
+  db.sql('DELETE FROM agents WHERE agent_name = ?').bind(1, name).exec()
+}
+
+function isPortUsed(port) {
+  var row = db.sql('SELECT 1 FROM agents WHERE port = ?').bind(1, port).exec()[0]
+  return !!row
+}
+
 export default {
   open,
   allZones,
@@ -925,6 +1029,13 @@ export default {
   getChatPeer,
   setChatPeer,
   allChatPeers,
+  // Agents
+  createAgent,
+  allAgents,
+  getAgent,
+  updateAgentStatus,
+  deleteAgent,
+  isPortUsed,
   adjustCredit,
   getBlockedKeywords,
   addBlockedKeyword,

@@ -1,0 +1,293 @@
+# ZTM Agent AI-Agent Management Tests
+
+## ✅ 已测试通过的功能
+
+1. **创建 Agent** - ✅ 正常工作
+2. **列出 Agents** - ✅ 正常工作
+3. **启动 Agent** - ✅ 正常工作（使用 pipeline 异步启动）
+4. **查询状态** - ✅ 正常工作（自动检测进程状态）
+5. **停止 Agent** - ✅ 正常工作（发送 SIGTERM 信号）
+6. **删除 Agent** - ✅ 正常工作（数据库记录删除）
+7. **ZeroClaw Gateway 健康检查** - ✅ 正常工作
+
+## Build & Start
+
+```bash
+# 1. Build ZTM Agent
+cd /Users/caishu/github/clawparty
+./build.sh
+
+# 2. Start ZTM Agent (test instance)
+pkill -f "run agent" 2>/dev/null
+sleep 2
+./bin/ztm run agent -l 127.0.0.1:6790 -d ~/.clawparty.test --no-auth &
+
+# Wait for startup
+sleep 5
+
+# 3. Verify ZTM Agent is running
+curl http://localhost:6790/api/version
+```
+
+## API Tests
+
+### Test 1: List Agents (Empty)
+```bash
+curl -s http://localhost:6790/api/agents
+# Expected: []
+```
+
+### Test 2: Create Agent
+```bash
+curl -X POST http://localhost:6790/api/agents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_name": "aliyun",
+    "display_name": "阿里云通义"
+  }'
+
+# Expected Response:
+# {
+#   "agent_name": "aliyun",
+#   "display_name": "阿里云通义",
+#   "directory": "/Users/caishu/.clawparty.test/agents/aliyun",
+#   "port": 42617,
+#   "status": "created"
+# }
+```
+
+### Test 3: Verify Directory Structure
+```bash
+# Check agent directory exists
+ls -la ~/.clawparty.test/agents/aliyun/
+
+# Expected files:
+# - config.toml (copied from ~/.clawparty.test/.zeroclaw/config.toml)
+# - workspace/ (directory)
+
+# Verify config.toml was copied
+cat ~/.clawparty.test/agents/aliyun/config.toml
+```
+
+### Test 4: List Agents (After Create)
+```bash
+curl -s http://localhost:6790/api/agents | jq .
+
+# Expected: Array with one agent object
+```
+
+### Test 5: Get Agent Status
+```bash
+curl -s http://localhost:6790/api/agents/aliyun/status | jq .
+
+# Expected:
+# {
+#   "agent_name": "aliyun",
+#   "status": "created",
+#   "port": 42617,
+#   ...
+# }
+```
+
+### Test 6: Start Agent
+```bash
+curl -X POST http://localhost:6790/api/agents/aliyun/start
+
+# Expected Response:
+# {
+#   "agent_name": "aliyun",
+#   "pid": <number>,
+#   "status": "starting"
+# }
+
+# Wait for health check
+sleep 6
+```
+
+### Test 7: Verify ZeroClaw Process
+```bash
+# Check if ZeroClaw process is running
+ps aux | grep "zeroclaw daemon" | grep -v grep
+
+# Check if port is listening
+lsof -i:42617
+
+# Expected: zeroclaw process running, port 42617 listening
+```
+
+### Test 8: Check Agent Status (Running)
+```bash
+curl -s http://localhost:6790/api/agents/aliyun/status | jq .
+
+# Expected:
+# {
+#   "agent_name": "aliyun",
+#   "status": "running",
+#   "pid": <number>,
+#   "port": 42617
+# }
+```
+
+### Test 9: Test ZeroClaw Gateway Health
+```bash
+curl -s http://127.0.0.1:42617/health
+
+# Expected: {"status":"ok"} or similar
+```
+
+### Test 10: Create Second Agent (Different Port)
+```bash
+curl -X POST http://localhost:6790/api/agents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_name": "qwen",
+    "display_name": "通义千问"
+  }'
+
+# Expected: port should be 42618 (auto-incremented)
+```
+
+### Test 11: List Agents (Multiple)
+```bash
+curl -s http://localhost:6790/api/agents | jq '.[] | {name: .agent_name, port: .port}'
+
+# Expected: Two agents with different ports (42617, 42618)
+```
+
+### Test 12: Stop Agent
+```bash
+curl -X POST http://localhost:6790/api/agents/aliyun/stop
+
+# Expected Response:
+# {
+#   "status": "stopped",
+#   "agent_name": "aliyun"
+# }
+
+# Verify process stopped
+sleep 2
+ps aux | grep "zeroclaw daemon" | grep -v grep
+# Expected: No process for aliyun (port 42617)
+```
+
+### Test 13: Start Agent Again
+```bash
+curl -X POST http://localhost:6790/api/agents/aliyun/start
+
+# Wait for health check
+sleep 6
+
+# Verify running
+curl -s http://localhost:6790/api/agents/aliyun/status | jq .status
+# Expected: "running"
+```
+
+### Test 14: Delete Agent (While Running)
+```bash
+curl -X DELETE http://localhost:6790/api/agents/aliyun
+
+# Expected: Should stop agent first, then delete
+# Response: { "status": "deleted", "agent_name": "aliyun" }
+
+# Verify directory removed
+ls ~/.clawparty.test/agents/aliyun/ 2>&1
+# Expected: No such file or directory
+
+# Verify database record removed
+curl -s http://localhost:6790/api/agents | jq 'map(.agent_name) | contains(["aliyun"])'
+# Expected: false
+```
+
+### Test 15: Error Cases
+
+#### Create duplicate agent
+```bash
+curl -X POST http://localhost:6790/api/agents \
+  -H "Content-Type: application/json" \
+  -d '{"agent_name":"qwen"}'
+
+# Expected: 400 error "Agent already exists"
+```
+
+#### Start non-existent agent
+```bash
+curl -X POST http://localhost:6790/api/agents/nonexistent/start
+
+# Expected: 400 error "Agent not found"
+```
+
+#### Stop agent that's not running
+```bash
+# First ensure it's stopped
+curl -X POST http://localhost:6790/api/agents/qwen/stop
+
+# Try to stop again
+curl -X POST http://localhost:6790/api/agents/qwen/stop
+
+# Expected: 400 error "Agent not running"
+```
+
+### Test 16: Database Verification
+```bash
+sqlite3 ~/.clawparty.test/ztm.db "SELECT agent_name, port, status, pid FROM agents"
+
+# Verify data matches API responses
+```
+
+### Test 17: Log Verification
+```bash
+# Check ZTM logs for agent operations
+cat /tmp/ztm.log | grep "\[AGENT\]"
+
+# Expected logs:
+# [AGENT] Creating agent: aliyun
+# [AGENT] Allocated port: 42617
+# [AGENT] Created directory: ...
+# [AGENT] Copied config: ...
+# [AGENT] Agent created successfully: aliyun, port=42617
+# [AGENT] Starting agent: aliyun
+# [AGENT] Command: zeroclaw daemon --config-dir ... -p 42617
+# [AGENT] Process spawned: pid=...
+# [AGENT] Health check passed: aliyun
+```
+
+## Cleanup
+
+```bash
+# Stop all agents
+curl -X POST http://localhost:6790/api/agents/qwen/stop
+
+# Delete all agents
+curl -X DELETE http://localhost:6790/api/agents/qwen
+
+# Stop ZTM Agent
+pkill -f "run agent"
+
+# Cleanup test directory
+rm -rf ~/.clawparty.test
+```
+
+## Manual Verification Checklist
+
+- [ ] Agent directory structure created correctly
+- [ ] config.toml copied from template
+- [ ] workspace directory created
+- [ ] Port allocation works (no conflicts)
+- [ ] ZeroClaw process starts successfully
+- [ ] ZeroClaw Gateway responds to health checks
+- [ ] Agent status updates correctly (created → starting → running)
+- [ ] Stop gracefully terminates ZeroClaw process
+- [ ] Delete removes directory and database record
+- [ ] Error handling works for all edge cases
+- [ ] Logs are written for all operations
+- [ ] Multiple agents can run simultaneously on different ports
+
+## Next Steps
+
+After basic CRUD tests pass:
+
+1. **WebSocket Integration**: Implement POST /api/chat that forwards to ZeroClaw WebSocket
+2. **Session Management**: Test multiple sessions per agent
+3. **Process Recovery**: Test what happens if ZeroClaw crashes
+4. **Resource Limits**: Test CPU/memory monitoring
+5. **Auto-restart**: Implement and test automatic restart on failure

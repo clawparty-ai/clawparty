@@ -291,6 +291,90 @@ function main(listen, apiToken, noAuth) {
       },
     },
 
+    // ── AI-Agent Management APIs ────────────────────────────────────────
+
+    '/api/agents': {
+      'GET': function () {
+        console.log('[API] GET /api/agents')
+        return response(200, api.allAgentStatuses())
+      },
+
+      'POST': function (_, req) {
+        var body = JSON.decode(req.body)
+        var agentName = body.agent_name
+        var displayName = body.display_name
+
+        console.log('[API] POST /api/agents - Creating agent: ' + agentName)
+
+        try {
+          var result = api.createAgent(agentName, displayName)
+          console.log('[API] Agent created: ' + agentName + ', result=OK')
+          return response(201, result)
+        } catch (e) {
+          console.log('[API] Agent creation failed: ' + e.message)
+          return response(400, { error: e.message })
+        }
+      },
+    },
+
+    '/api/agents/{name}': {
+      'GET': function ({ name }) {
+        console.log('[API] GET /api/agents/' + name)
+        var agent = api.getAgentStatus(name)
+        if (!agent) return response(404, { error: 'Agent not found' })
+        return response(200, agent)
+      },
+
+      'DELETE': function ({ name }) {
+        console.log('[API] DELETE /api/agents/' + name)
+        try {
+          var result = api.deleteAgent(name)
+          console.log('[API] Agent deleted: ' + name + ', result=OK')
+          return response(200, result)
+        } catch (e) {
+          console.log('[API] Agent deletion failed: ' + e.message)
+          return response(400, { error: e.message })
+        }
+      },
+    },
+
+    '/api/agents/{name}/start': {
+      'POST': function ({ name }) {
+        console.log('[API] POST /api/agents/' + name + '/start')
+        try {
+          var result = api.startAgent(name)
+          console.log('[API] Agent start initiated: ' + name + ', result=OK')
+          return response(200, result)
+        } catch (e) {
+          console.log('[API] Agent start failed: ' + e.message)
+          return response(400, { error: e.message })
+        }
+      },
+    },
+
+    '/api/agents/{name}/stop': {
+      'POST': function ({ name }) {
+        console.log('[API] POST /api/agents/' + name + '/stop')
+        try {
+          var result = api.stopAgent(name)
+          console.log('[API] Agent stopped: ' + name + ', result=OK')
+          return response(200, result)
+        } catch (e) {
+          console.log('[API] Agent stop failed: ' + e.message)
+          return response(400, { error: e.message })
+        }
+      },
+    },
+
+    '/api/agents/{name}/status': {
+      'GET': function ({ name }) {
+        console.log('[API] GET /api/agents/' + name + '/status')
+        var agent = api.getAgentStatus(name)
+        if (!agent) return response(404, { error: 'Agent not found' })
+        return response(200, agent)
+      },
+    },
+
     //
     // Mesh
     //   name: string
