@@ -138,11 +138,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, provide, computed } from 'vue'
+import { ref, onMounted, onUnmounted, provide, computed, watch } from 'vue'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
 import TemplatePicker from './components/TemplatePicker.vue'
-import { meshService, chatService, openclawService, zeroclawService, setApiToken, getApiToken } from './services/chatService'
+import { meshService, chatService, openclawService, zeroclawService, zagentService, ZeroClawWS, setApiToken, getApiToken } from './services/chatService'
 import ShellService from './services/ShellService'
 import { platform } from '@tauri-apps/plugin-os';
 import { getAvatarColor } from './utils/avatar'
@@ -153,6 +153,8 @@ const openclawAgents = ref([])
 const openclawSessions = ref([])
 const zeroclawSessions = ref([])
 const activeZeroClawSession = ref(null)
+const zAgents = ref([])
+const activeZAgent = ref(null)
 const currentMesh = ref('')
 const currentMeshAgentUsername = ref('')
 const chats = ref([])
@@ -174,6 +176,7 @@ let appStarted = false
 let chatsPollTimer = null
 let usersPollTimer = null
 let zeroclawSessionsPollTimer = null
+let zeroclawWS = null
 
 const handleResize = () => {
   isMobile.value = window.innerWidth <= 768
@@ -338,10 +341,27 @@ const fetchChats = async () => {
 
 
 const selectZeroClawSession = (session) => {
+  // Close existing WebSocket connection
+  if (zeroclawWS) {
+    zeroclawWS.close()
+    zeroclawWS = null
+  }
+
   activeZeroClawSession.value = session
   activeChat.value = null
   activeOpenclawAgent.value = null
   loadZeroClawChatHistory(session)
+
+  // Create new WebSocket connection
+  zeroclawWS = new ZeroClawWS(
+    'main',  // agentName - default to 'main'
+    session.session_id,
+    handleZeroClawMessage,
+    handleZeroClawOpen,
+    handleZeroClawClose,
+    handleZeroClawError
+  )
+  zeroclawWS.connect()
 }
 
 const loadZeroClawChatHistory = async (session) => {
@@ -362,6 +382,156 @@ const loadZeroClawChatHistory = async (session) => {
   }
 }
 
+const fetchZAgents = async () => {
+  try {
+    const response = await zagentService.getAgents()
+    zAgents.value = response.data || []
+  } catch (error) {
+    console.error('Failed to fetch zAgents:', error)
+  }
+}
+
+const createZAgent = async (agentName) => {
+  try {
+    await zagentService.createAgent(agentName, agentName)
+    await zagentService.startAgent(agentName)
+    await fetchZAgents()
+  } catch (error) {
+    console.error('Failed to create zAgent:', error)
+    throw error
+  }
+}
+
+const deleteZAgent = async (agentName) => {
+  try {
+    await zagentService.deleteAgent(agentName)
+    await fetchZAgents()
+    if (activeZAgent.value?.agent_name === agentName) {
+      activeZAgent.value = null
+    }
+  } catch (error) {
+    console.error('Failed to delete zAgent:', error)
+    throw error
+  }
+}
+
+const selectZAgent = async (agent) => {
+  if (zeroclawWS) {
+    zeroclawWS.close()
+    zeroclawWS = null
+  }
+
+  activeZAgent.value = agent
+  activeZeroClawSession.value = null
+  activeChat.value = null
+  activeOpenclawAgent.value = null
+
+  if (agent.status !== 'running') {
+    console.log('[zAgent] Starting agent:', agent.agent_name)
+    try {
+      await zagentService.startAgent(agent.agent_name)
+      await fetchZAgents()
+    } catch (error) {
+      console.error('[zAgent] Failed to start agent:', error)
+      return
+    }
+  }
+
+  zeroclawWS = new ZeroClawWS(
+    agent.agent_name,
+    'me',
+    handleZeroClawMessage,
+    handleZeroClawOpen,
+    handleZeroClawClose,
+    handleZeroClawError
+  )
+  zeroclawWS.connect()
+}
+
+const handleZeroClawOpen = () => {
+  console.log('[ZeroClaw] WebSocket connected')
+}
+
+const handleZeroClawClose = (event) => {
+  console.log('[ZeroClaw] WebSocket closed:', event.code, event.reason)
+}
+
+const handleZeroClawError = (error) => {
+  console.error('[ZeroClaw] WebSocket error:', error)
+}
+
+const handleZeroClawMessage = (data) => {
+  const session = activeZeroClawSession.value
+  if (!session) return
+
+  const now = new Date()
+  const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+
+  if (data.type === 'session_start') {
+    console.log('[ZeroClaw] Session started:', data.session_id)
+    session.session_id = data.session_id || session.session_id
+  } else if (data.type === 'chunk' || data.type === 'thinking') {
+    // Find typing indicator and replace with actual response
+    const typingIdx = session.messages?.findIndex(m => m.isTyping)
+    if (typingIdx >= 0) {
+      session.messages[typingIdx] = {
+        text: data.content,
+        time: time,
+        sender: session.name || 'ZeroClaw',
+        timestamp: now.getTime(),
+        isSent: false,
+        isTemp: true,
+        isStreaming: true
+      }
+    } else if (session.messages) {
+      session.messages.push({
+        text: data.content,
+        time: time,
+        sender: session.name || 'ZeroClaw',
+        timestamp: now.getTime(),
+        isSent: false,
+        isTemp: true,
+        isStreaming: true
+      })
+    }
+  } else if (data.type === 'done') {
+    // Final response
+    const typingIdx = session.messages?.findIndex(m => m.isTyping)
+    if (typingIdx >= 0) {
+      session.messages.splice(typingIdx, 1)
+    }
+    // Mark all streaming messages as not temp
+    if (session.messages) {
+      session.messages.forEach(m => {
+        if (m.isTemp && !m.isSent) {
+          m.isTemp = false
+          m.isStreaming = false
+        }
+      })
+    }
+    sending.value = false
+  } else if (data.type === 'error') {
+    console.error('[ZeroClaw] Error:', data.message)
+    const typingIdx = session.messages?.findIndex(m => m.isTyping)
+    if (typingIdx >= 0) {
+      session.messages.splice(typingIdx, 1)
+    }
+    session.messages?.push({
+      text: 'Error: ' + (data.message || 'Unknown error'),
+      time: time,
+      sender: session.name || 'ZeroClaw',
+      timestamp: now.getTime(),
+      isSent: false,
+      isTemp: false
+    })
+    sending.value = false
+  } else if (data.type === 'tool_call') {
+    console.log('[ZeroClaw] Tool call:', data.name, data.args)
+  } else if (data.type === 'tool_result') {
+    console.log('[ZeroClaw] Tool result:', data.name, data.output)
+  }
+}
+
 const fetchZeroClawSessions = async () => {
   try {
     const response = await zeroclawService.getSessions()
@@ -374,10 +544,22 @@ const fetchZeroClawSessions = async () => {
 }
 
 const createSession = async (sessionName) => {
+  // With WebSocket, session is created automatically when connecting
+  // For now, just trigger a session fetch and try to select the session
   try {
-    await zeroclawService.sendMessage(sessionName, 'Hello claw~')
     await fetchZeroClawSessions()
-    const newSession = zeroclawSessions.value.find(s => s.session_id === sessionName)
+    let newSession = zeroclawSessions.value.find(s => s.session_id === sessionName)
+    if (!newSession && sessionName) {
+      // Create a placeholder session that will be created on WS connect
+      newSession = {
+        session_id: sessionName,
+        name: sessionName,
+        created_at: new Date().toISOString(),
+        last_activity: new Date().toISOString(),
+        message_count: 0
+      }
+      zeroclawSessions.value.push(newSession)
+    }
     if (newSession) {
       selectZeroClawSession(newSession)
     }
@@ -402,7 +584,7 @@ const sendMessage = async () => {
   const text = newMessage.value
   sending.value = true
 
-  // ZeroClaw message sending
+  // ZeroClaw message sending via WebSocket
   if (activeZeroClawSession.value) {
     const session = activeZeroClawSession.value
     if (!session.messages) session.messages = []
@@ -420,7 +602,6 @@ const sendMessage = async () => {
     })
     
     // Add typing indicator
-    const typingIdx = session.messages.length
     session.messages.push({
       text: '',
       time: time,
@@ -431,51 +612,26 @@ const sendMessage = async () => {
     })
     
     newMessage.value = ''
-    sending.value = true
     
-    zeroclawService.sendMessage(session.session_id, text).then((response) => {
-      // Remove typing indicator
-      session.messages.splice(typingIdx, 1)
-      
-      // Process response messages - zeroclaw returns all messages including the new ones
-      const newMessages = response.data?.messages || []
-      const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
-      
-      // Get the user message count to determine where new messages start
-      // The response includes all history, so we need to find our new user message and get messages after it
-      const userMsgIdx = session.messages.findIndex(m => m.text === text && m.isSent === true && m.timestamp === now.getTime())
-      const startFrom = userMsgIdx >= 0 ? userMsgIdx + 1 : session.messages.length
-      
-      // Add new messages from response (after our sent message)
-      newMessages.slice(startFrom).forEach((msg) => {
-        session.messages.push({
-          text: msg.content,
-          time: replyTime,
-          sender: msg.role === 'user' ? (currentMeshAgentUsername.value || 'You') : (session.name || 'ZeroClaw'),
-          timestamp: new Date().getTime(),
-          isSent: msg.role === 'user',
-          isTemp: false
-        })
-      })
-      
-      session.lastMessage = text
-      session.time = replyTime
-    }).catch((e) => {
-      console.error('ZeroClaw send error:', e)
-      // Remove typing indicator
-      session.messages.splice(typingIdx, 1)
-      const replyTime = new Date().getHours().toString().padStart(2, '0') + ':' + new Date().getMinutes().toString().padStart(2, '0')
+    // Send via WebSocket
+    if (zeroclawWS && zeroclawWS.isConnected()) {
+      zeroclawWS.sendMessage(text)
+    } else {
+      // WebSocket not connected, show error
+      const typingIdx = session.messages.findIndex(m => m.isTyping)
+      if (typingIdx >= 0) {
+        session.messages.splice(typingIdx, 1)
+      }
       session.messages.push({
-        text: 'Failed to get response from ZeroClaw: ' + (e.message || 'Unknown error'),
-        time: replyTime,
+        text: 'WebSocket not connected. Please select the session again.',
+        time: time,
         sender: session.name || 'ZeroClaw',
         timestamp: new Date().getTime(),
         isSent: false,
         isTemp: false
       })
-    }).finally(() => {
       sending.value = false
-    })
+    }
     
     return
   }
@@ -1331,6 +1487,12 @@ provide('zeroclawSessions', zeroclawSessions)
 provide('activeZeroClawSession', activeZeroClawSession)
 provide('selectZeroClawSession', selectZeroClawSession)
 provide('zeroclawSessions', zeroclawSessions)
+provide('zAgents', zAgents)
+provide('activeZAgent', activeZAgent)
+provide('selectZAgent', selectZAgent)
+provide('fetchZAgents', fetchZAgents)
+provide('createZAgent', createZAgent)
+provide('deleteZAgent', deleteZAgent)
 provide('fetchUsers', fetchUsers)
 provide('users', users)
 provide('selectUser', selectUser)
@@ -1416,7 +1578,8 @@ const startApp = () => {
     startChatsPolling()
   })
   fetchOpenclawAgents()
-  startZeroClawSessionsPolling()
+  // startZeroClawSessionsPolling() // Disabled - zeroclaw sessions hidden
+  fetchZAgents()
 }
 
 const verifyToken = async (token) => {

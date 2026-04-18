@@ -319,20 +319,18 @@ function main(listen, apiToken, noAuth) {
 
     '/api/agents/{name}': {
       'GET': function ({ name }) {
-        console.log('[API] GET /api/agents/' + name)
+        name = URL.decodeComponent(name)
         var agent = api.getAgentStatus(name)
         if (!agent) return response(404, { error: 'Agent not found' })
         return response(200, agent)
       },
 
       'DELETE': function ({ name }) {
-        console.log('[API] DELETE /api/agents/' + name)
+        name = URL.decodeComponent(name)
         try {
           var result = api.deleteAgent(name)
-          console.log('[API] Agent deleted: ' + name + ', result=OK')
           return response(200, result)
         } catch (e) {
-          console.log('[API] Agent deletion failed: ' + e.message)
           return response(400, { error: e.message })
         }
       },
@@ -340,13 +338,11 @@ function main(listen, apiToken, noAuth) {
 
     '/api/agents/{name}/start': {
       'POST': function ({ name }) {
-        console.log('[API] POST /api/agents/' + name + '/start')
+        name = URL.decodeComponent(name)
         try {
           var result = api.startAgent(name)
-          console.log('[API] Agent start initiated: ' + name + ', result=OK')
           return response(200, result)
         } catch (e) {
-          console.log('[API] Agent start failed: ' + e.message)
           return response(400, { error: e.message })
         }
       },
@@ -354,13 +350,11 @@ function main(listen, apiToken, noAuth) {
 
     '/api/agents/{name}/stop': {
       'POST': function ({ name }) {
-        console.log('[API] POST /api/agents/' + name + '/stop')
+        name = URL.decodeComponent(name)
         try {
           var result = api.stopAgent(name)
-          console.log('[API] Agent stopped: ' + name + ', result=OK')
           return response(200, result)
         } catch (e) {
-          console.log('[API] Agent stop failed: ' + e.message)
           return response(400, { error: e.message })
         }
       },
@@ -368,7 +362,7 @@ function main(listen, apiToken, noAuth) {
 
     '/api/agents/{name}/status': {
       'GET': function ({ name }) {
-        console.log('[API] GET /api/agents/' + name + '/status')
+        name = URL.decodeComponent(name)
         var agent = api.getAgentStatus(name)
         if (!agent) return response(404, { error: 'Agent not found' })
         return response(200, agent)
@@ -1568,6 +1562,8 @@ function main(listen, apiToken, noAuth) {
     k => new algo.LoadBalancer([{}])
   )
 
+  var $wsTarget
+
   pipy.listen(listen, { idleTimeout: 0 }, $=>$
     .onStart(ib => { $clientIp = ib.remoteAddress || '' })
     .demuxHTTP().to($=>$
@@ -1575,7 +1571,9 @@ function main(listen, apiToken, noAuth) {
         function (evt) {
           if (evt instanceof MessageStart) {
             var path = evt.head.path
-            if (path.startsWith('/api/')) {
+            if (path.startsWith('/ws/chat')) {
+              return 'websocket'
+            } else if (path.startsWith('/api/')) {
               if (!isAuthorized(evt.head)) {
                 return 'unauthorized'
               }
@@ -1679,6 +1677,28 @@ function main(listen, apiToken, noAuth) {
               return response(401, { status: 401, message: 'unauthorized' })
             }
           ),
+          'websocket': $=>$
+            .acceptHTTPTunnel(function(req) {
+              var path = req.head.path
+              try {
+                var url = new URL(path, 'http://localhost')
+                var agentName = url.searchParams.get('agent') || 'main'
+                var sessionId = url.searchParams.get('session_id') || 'me'
+                var agent = api.getAgentStatus(agentName)
+                if (agent && agent.status === 'running') {
+                  $wsTarget = 'localhost:' + agent.port
+                  console.log('[WS] Proxy WebSocket to ' + agentName + ' at ' + $wsTarget)
+                  return new Message({ status: 101, headers: { 'sec-websocket-protocol': 'zeroclaw.v1' } })
+                }
+                console.log('[WS] Agent not running: ' + agentName)
+              } catch (e) {
+                console.log('[WS] Failed to parse path:', e.message)
+              }
+              return new Message({ status: 503, body: 'Agent not available' })
+            }).to($=>$
+              .onStart(new Data)
+              .connect(() => $wsTarget)
+            ),
         }
       )
     )

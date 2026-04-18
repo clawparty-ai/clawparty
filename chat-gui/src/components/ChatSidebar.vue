@@ -38,35 +38,22 @@
 
       <div class="org-divider"></div>
 
-      <!-- Zeroclaw Sessions icon -->
+      <!-- zAgents icon -->
       <div
         class="org-icon"
-        :class="{ active: activeOrg === 'zeroclaw' }"
-        @click="activeOrg = 'zeroclaw'"
-        title="ZeroClaw Sessions"
-      >
-        <span class="org-emoji">🀄</span>
-        <span class="org-active-bar" v-if="activeOrg === 'zeroclaw'"></span>
-      </div>
-
-      <div class="org-divider"></div>
-
-      <!-- 3. My Agents (single lobster) -->
-      <div
-        class="org-icon"
-        :class="{ active: activeOrg === 'agents' }"
-        @click="activeOrg = 'agents'"
-        title="My Agents"
+        :class="{ active: activeOrg === 'zagents' }"
+        @click="activeOrg = 'zagents'"
+        title="zAgents"
       >
         <span class="org-emoji">
-					<svg t="1775022567064" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2473" width="18" height="18"><path d="M963.764706 963.764706v60.235294H60.235294v-60.235294c0-232.869647 202.270118-421.647059 451.764706-421.647059 249.494588 0 451.764706 188.777412 451.764706 421.647059zM752.941176 240.941176A240.941176 240.941176 0 1 1 271.058824 240.941176a240.941176 240.941176 0 0 1 481.882352 0z" fill="#ffffff" p-id="2474" data-spm-anchor-id="a313x.search_index.0.i0.4b4d3a810fYL5Y" class="selected"></path></svg>
-				</span>
-        <span class="org-active-bar" v-if="activeOrg === 'agents'"></span>
+          <svg t="1775022567064" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2473" width="18" height="18"><path d="M963.764706 963.764706v60.235294H60.235294v-60.235294c0-232.869647 202.270118-421.647059 451.764706-421.647059 249.494588 0 451.764706 188.777412 451.764706 421.647059zM752.941176 240.941176A240.941176 240.941176 0 1 1 271.058824 240.941176a240.941176 240.941176 0 0 1 481.882352 0z" fill="#ffffff" p-id="2474" data-spm-anchor-id="a313x.search_index.0.i0.4b4d3a810fYL5Y" class="selected"></path></svg>
+        </span>
+        <span class="org-active-bar" v-if="activeOrg === 'zagents'"></span>
       </div>
 
       <div class="org-divider"></div>
 
-      <!-- 4. One icon per mesh -->
+      <!-- One icon per mesh -->
       <div
         v-for="mesh in meshes"
         :key="mesh.name"
@@ -95,26 +82,21 @@
 
     <!-- Right: member list panel -->
     <aside class="sidebar-panel">
-      <div class="panel-header" :class="{ 'agents-header': activeOrg === 'agents' }">
+      <div class="panel-header" :class="{ 'agents-header': activeOrg === 'zagents' }">
         <span class="panel-title">{{
-          activeOrg === 'agents' ? '我的助手' :
           activeOrg === 'groups' ? 'Group Chats' :
-          activeOrg === 'zeroclaw' ? 'ZeroClaw Sessions' :
+          activeOrg === 'zagents' ? 'zAgents' :
           activeOrg
         }}</span>
-        <div v-if="activeOrg === 'agents'" class="panel-header-actions">
-          <button class="add-agent-btn" @click="$emit('openLocalTemplates')" title="添加本地 Agent">+A</button>
-          <button class="add-agent-btn shared-btn" @click="$emit('openSharedTemplates')" title="添加共享 Agent">#A</button>
-        </div>
-        <div v-if="activeOrg !== 'agents' && activeOrg !== 'groups' && activeOrg !== 'zeroclaw' && activeOrg" class="panel-header-actions">
+        <div v-if="activeOrg !== 'groups' && activeOrg !== 'zagents' && activeOrg" class="panel-header-actions">
           <button class="leave-mesh-btn" @click="handleLeaveMesh(activeOrg)" title="Leave mesh">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
               <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
             </svg>
           </button>
         </div>
-        <div v-if="activeOrg === 'zeroclaw'" class="panel-header-actions">
-          <button class="add-agent-btn" @click="showCreateSessionDialog = true" title="创建 Session">+A</button>
+        <div v-if="activeOrg === 'zagents'" class="panel-header-actions">
+          <button class="add-agent-btn" @click="showCreateZAgentDialog = true" title="创建 Agent">+A</button>
         </div>
       </div>
 
@@ -180,6 +162,33 @@
           <div class="modal-footer">
             <button class="modal-cancel-btn" @click="showCreateSessionDialog = false">取消</button>
             <button class="modal-create-btn" @click="handleCreateSession">创建</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Create zAgent Dialog -->
+    <Teleport to="body">
+      <div v-if="showCreateZAgentDialog" class="modal-backdrop" @click.self="showCreateZAgentDialog = false">
+        <div class="modal-dialog">
+          <div class="modal-header">
+            <span class="modal-title">创建 zAgent</span>
+            <button class="modal-close" @click="showCreateZAgentDialog = false">✕</button>
+          </div>
+
+          <div class="join-party-body">
+            <label class="join-party-label">Agent Name</label>
+            <input
+              v-model="newZAgentName"
+              class="search-input"
+              placeholder="请输入 agent 名字"
+              @keyup.enter="handleCreateZAgent"
+            />
+          </div>
+
+          <div class="modal-footer">
+            <button class="modal-cancel-btn" @click="showCreateZAgentDialog = false">取消</button>
+            <button class="modal-create-btn" @click="handleCreateZAgent" :disabled="!newZAgentName.trim()">创建</button>
           </div>
         </div>
       </div>
@@ -442,21 +451,31 @@
         </template>
 
         
-        <!-- ZeroClaw Sessions -->
-        <template v-if="activeOrg === 'zeroclaw'">
-          <template v-if="zeroclawSessions && zeroclawSessions.length > 0">
+        <!-- zAgents -->
+        <template v-if="activeOrg === 'zagents'">
+          <template v-if="zAgents && zAgents.length > 0">
             <div
-              v-for="session in zeroclawSessions"
-              :key="session.session_id"
+              v-for="agent in zAgents"
+              :key="agent.agent_name"
               class="panel-item"
-              :class="{ active: activeZeroClawSession?.session_id === session.session_id }"
-              @click="selectZeroClawSession(session)"
+              :class="{ active: activeZAgent?.agent_name === agent.agent_name }"
+              @click="selectZAgent(agent)"
             >
-              <div class="item-avatar zeroclaw-avatar">🀄</div>
-              <span class="item-name">{{ session.name || session.session_id }}</span>
+              <div class="item-avatar">🤖</div>
+              <span class="item-name">{{ agent.display_name || agent.agent_name }}</span>
+              <span v-if="agent.status !== 'created' && agent.status !== 'starting'" class="item-status" :class="agent.status">{{ agent.status }}</span>
+              <button
+                class="delete-agent-btn"
+                @click.stop="handleDeleteZAgent(agent.agent_name)"
+                title="Delete Agent"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                </svg>
+              </button>
             </div>
           </template>
-          <div v-else class="panel-empty">No ZeroClaw sessions</div>
+          <div v-else class="panel-empty">No zAgents. Click +A to create one.</div>
         </template>
 
         <!-- My Agents -->
@@ -578,6 +597,12 @@ const resolveEpDisplayName = inject('resolveEpDisplayName')
 const localOpenclawAvailable = inject('localOpenclawAvailable')
 const createSession = inject('createSession')
 const fetchZeroClawSessions = inject('fetchZeroClawSessions')
+const zAgents = inject('zAgents')
+const activeZAgent = inject('activeZAgent')
+const selectZAgent = inject('selectZAgent')
+const createZAgent = inject('createZAgent')
+const deleteZAgent = inject('deleteZAgent')
+const fetchZAgents = inject('fetchZAgents')
 
 // Group expand / rename state
 const expandedGroups = ref(new Set())
@@ -671,17 +696,24 @@ const handleUpdateMembers = async () => {
 }
 
 // Active org
-const activeOrg = ref('agents')
+const activeOrg = ref('zagents')
 
 const emit = defineEmits(['select', 'selectOpenclaw', 'changeOrg', 'openLocalTemplates', 'openSharedTemplates', 'resetActiveChat'])
 
 watch(currentMesh, (val) => {
-  if (val && activeOrg.value !== 'agents') activeOrg.value = val
+  if (val && activeOrg.value !== 'zagents' && activeOrg.value !== 'groups') activeOrg.value = val
 }, { immediate: true })
 
 watch(activeOrg, (val) => {
   emit('changeOrg', val)
   emit('resetActiveChat')
+  if (val === 'zagents') {
+    fetchZAgents()
+    // Auto-select first agent if available
+    if (zAgents.value && zAgents.value.length > 0 && !activeZAgent.value) {
+      selectZAgent(zAgents.value[0])
+    }
+  }
 })
 
 const handleSelectMesh = async (meshName) => {
@@ -808,6 +840,29 @@ const handleCreateSession = async () => {
     newSessionName.value = ''
   } catch (error) {
     console.error('Failed to create session:', error)
+  }
+}
+
+// Create zAgent state
+const showCreateZAgentDialog = ref(false)
+const newZAgentName = ref('')
+
+const handleCreateZAgent = async () => {
+  if (!newZAgentName.value.trim()) return
+  try {
+    await createZAgent(newZAgentName.value.trim())
+    showCreateZAgentDialog.value = false
+    newZAgentName.value = ''
+  } catch (error) {
+    console.error('Failed to create zAgent:', error)
+  }
+}
+
+const handleDeleteZAgent = async (agentName) => {
+  try {
+    await deleteZAgent(agentName)
+  } catch (error) {
+    console.error('Failed to delete zAgent:', error)
   }
 }
 
@@ -1621,6 +1676,7 @@ const closeEditor = () => {
 }
 
 .item-status.online { background: var(--slack-green); }
+.item-status.running { background: #4caf50; }
 
 .unread-badge {
   min-width: 18px;

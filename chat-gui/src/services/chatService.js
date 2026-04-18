@@ -130,14 +130,108 @@ export const zeroclawService = {
     return api.get('/zeroclaw/sessions')
   },
   
-  sendMessage(sessionId, message) {
-    return api.post(`/zeroclaw/sessions/${sessionId}/chat`, { 
-      message 
-    })
-  },
-  
   getMessages(sessionId) {
     return api.get(`/zeroclaw/sessions/${sessionId}/messages`)
+  }
+}
+
+export class ZeroClawWS {
+  constructor(agentName, sessionId, onMessage, onOpen, onClose, onError) {
+    this.agentName = agentName
+    this.sessionId = sessionId
+    this.onMessage = onMessage
+    this.onOpen = onOpen
+    this.onClose = onClose
+    this.onError = onError
+    this.ws = null
+    this.reconnectAttempts = 0
+    this.maxReconnectAttempts = 3
+    this.reconnectDelay = 1000
+  }
+
+  connect() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = window.location.host
+    const url = `${protocol}//${host}/ws/chat?agent=${encodeURIComponent(this.agentName)}&session_id=${encodeURIComponent(this.sessionId)}`
+    
+    console.log('[ZeroClawWS] Connecting to:', url)
+    
+    try {
+      this.ws = new WebSocket(url, 'zeroclaw.v1')
+      
+      this.ws.onopen = () => {
+        console.log('[ZeroClawWS] Connected')
+        this.reconnectAttempts = 0
+        this.onOpen?.()
+      }
+      
+      this.ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          console.log('[ZeroClawWS] Received:', data.type)
+          this.onMessage?.(data)
+        } catch (e) {
+          console.error('[ZeroClawWS] Parse error:', e)
+        }
+      }
+      
+      this.ws.onclose = (event) => {
+        console.log('[ZeroClawWS] Closed:', event.code, event.reason)
+        this.onClose?.(event)
+      }
+      
+      this.ws.onerror = (error) => {
+        console.error('[ZeroClawWS] Error:', error)
+        this.onError?.(error)
+      }
+    } catch (e) {
+      console.error('[ZeroClawWS] Connection error:', e)
+      this.onError?.(e)
+    }
+  }
+
+  sendMessage(content) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      const msg = JSON.stringify({ type: 'message', content })
+      console.log('[ZeroClawWS] Sending:', msg.substring(0, 100))
+      this.ws.send(msg)
+      return true
+    } else {
+      console.error('[ZeroClawWS] Cannot send - not connected')
+      return false
+    }
+  }
+
+  close() {
+    if (this.ws) {
+      this.ws.close()
+      this.ws = null
+    }
+  }
+
+  isConnected() {
+    return this.ws && this.ws.readyState === WebSocket.OPEN
+  }
+}
+
+export const zagentService = {
+  getAgents() {
+    return api.get('/agents')
+  },
+  createAgent(agentName, displayName) {
+    return api.post('/agents', {
+      agent_name: agentName,
+      display_name: displayName
+    })
+  },
+  deleteAgent(name) {
+    return api.del(`/agents/${encodeURIComponent(name)}`)
+  },
+  startAgent(name) {
+    return api.post(`/agents/${encodeURIComponent(name)}/start`)
+  },
+  stopAgent(name) {
+    return api.post(`/agents/${encodeURIComponent(name)}/stop`)
   }
 }
 

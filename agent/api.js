@@ -347,19 +347,33 @@ function installSharedTemplate(industry, agent, soulContent, agentName) {
 var agentProcesses = {}
 
 function allocatePort() {
-  var PORT_START = 42617
+  var PORT_START = 42618
   var PORT_END = 42700
-  
+
   // Get used ports from database
   var usedPorts = db.allAgents().map(function(a) { return a.port })
-  
+
   // Find available port
   for (var port = PORT_START; port <= PORT_END; port++) {
-    if (!usedPorts.includes(port) && !db.isPortUsed(port)) {
-      return port
+    var skip = false
+
+    if (usedPorts.includes(port)) {
+      skip = true
+    }
+
+    if (!skip && db.isPortUsed(port)) {
+      skip = true
+    }
+
+    if (!skip) {
+      try {
+        var res = http.get('http://127.0.0.1:' + port + '/health', { timeout: 100 })
+      } catch (e) {
+        return port
+      }
     }
   }
-  
+
   throw 'No available ports in range ' + PORT_START + '-' + PORT_END
 }
 

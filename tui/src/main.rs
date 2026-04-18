@@ -19,6 +19,7 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io::{self, IsTerminal};
+use std::process::Command;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{sleep, timeout, Duration};
@@ -985,14 +986,16 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
     loop {
         tokio::select! {
             Some(log_msg) = log_rx.recv() => {
-                println!("[ZEROCLAW] {}", log_msg);
+                println!("{}", log_msg);
             }
             _ = sigint.recv() => {
                 println!("\nReceived SIGINT, shutting down...");
+                let _ = Command::new("pkill").args(["-9", "-f", "zeroclaw"]).spawn();
                 break;
             }
             _ = sigterm.recv() => {
                 println!("\nReceived SIGTERM, shutting down...");
+                let _ = Command::new("pkill").args(["-9", "-f", "zeroclaw"]).spawn();
                 break;
             }
         }

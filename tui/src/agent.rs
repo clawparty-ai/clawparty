@@ -45,7 +45,7 @@ impl AgentManager {
                 let reader = BufReader::new(stdout);
                 for line in reader.lines() {
                     if let Ok(line) = line {
-                        let _ = tx.try_send(format!("[OUT] {}", line));
+                        let _ = tx.try_send(line);
                     }
                 }
             });
@@ -58,7 +58,7 @@ impl AgentManager {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines() {
                     if let Ok(line) = line {
-                        let _ = tx.try_send(format!("[ERR] {}", line));
+                        let _ = tx.try_send(line);
                     }
                 }
             });
