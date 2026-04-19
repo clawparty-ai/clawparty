@@ -14,13 +14,9 @@ impl ZeroClawDaemon {
         port: u16,
         log_tx: mpsc::Sender<String>,
     ) -> Self {
-        let expanded_data = data_dir.replace(
-            "~",
-            &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()),
-        );
-
-        // ZeroClaw config is in ~/.clawparty/.zeroclaw/
-        let config_dir = format!("{}/.zeroclaw", expanded_data);
+        // Pass the path with ~ directly to zeroclaw, let it handle tilde expansion
+        // on its own platform (avoids issues when HOME is set to wrong platform's path)
+        let config_dir = format!("{}/.zeroclaw", data_dir);
 
         let mut child = Command::new(&zeroclaw_bin)
             .args([

@@ -481,7 +481,7 @@ function startAgent(agentName) {
   }
   
   // Build command - use array format for pipeline.exec
-  var zeroclawPath = '/Users/caishu/github/clawparty/bin/zeroclaw'
+  var zeroclawPath = os.path.join(os.path.dirname(pipy.argv[0]), 'zeroclaw')
   var cmd = [zeroclawPath, 'daemon', '--config-dir', agent.directory, '-p', agent.port.toString()]
   console.log('[AGENT] Command: ' + cmd.join(' '))
   

@@ -453,14 +453,100 @@ const selectZAgent = async (agent) => {
 
 const handleZeroClawOpen = () => {
   console.log('[ZeroClaw] WebSocket connected')
+  zcReconnectAttempts = 0
 }
+
+let zcReconnectAttempts = 0
+const maxZcReconnectAttempts = 5
 
 const handleZeroClawClose = (event) => {
   console.log('[ZeroClaw] WebSocket closed:', event.code, event.reason)
+  
+  const agent = activeZAgent.value
+  const session = activeZeroClawSession.value
+  if (!agent && !session) return
+  
+  if (event.code === 1000) return
+  
+  if (zcReconnectAttempts >= maxZcReconnectAttempts) {
+    console.log('[ZeroClaw] Max reconnection attempts reached')
+    zcReconnectAttempts = 0
+    return
+  }
+  
+  zcReconnectAttempts++
+  const delay = 1000 * zcReconnectAttempts
+  console.log('[ZeroClaw] Reconnecting... attempt ' + zcReconnectAttempts + '/' + maxZcReconnectAttempts + ' in ' + delay + 'ms')
+  
+  setTimeout(() => {
+    if (zeroclawWS) zeroclawWS.close()
+    
+    if (agent) {
+      zeroclawWS = new ZeroClawWS(
+        agent.agent_name,
+        'me',
+        handleZeroClawMessage,
+        handleZeroClawOpen,
+        handleZeroClawClose,
+        handleZeroClawError,
+        agent.port
+      )
+    } else if (session) {
+      zeroclawWS = new ZeroClawWS(
+        'main',
+        session.session_id,
+        handleZeroClawMessage,
+        handleZeroClawOpen,
+        handleZeroClawClose,
+        handleZeroClawError
+      )
+    }
+    zeroclawWS.connect()
+  }, delay)
 }
 
 const handleZeroClawError = (error) => {
   console.error('[ZeroClaw] WebSocket error:', error)
+  
+  const agent = activeZAgent.value
+  const session = activeZeroClawSession.value
+  if (!agent && !session) return
+  
+  if (zcReconnectAttempts >= maxZcReconnectAttempts) {
+    console.log('[ZeroClaw] Max reconnection attempts reached')
+    zcReconnectAttempts = 0
+    return
+  }
+  
+  zcReconnectAttempts++
+  const delay = 1000 * zcReconnectAttempts
+  console.log('[ZeroClaw] Reconnecting after error... attempt ' + zcReconnectAttempts + '/' + maxZcReconnectAttempts + ' in ' + delay + 'ms')
+  
+  setTimeout(() => {
+    if (zeroclawWS) zeroclawWS.close()
+    
+    if (agent) {
+      zeroclawWS = new ZeroClawWS(
+        agent.agent_name,
+        'me',
+        handleZeroClawMessage,
+        handleZeroClawOpen,
+        handleZeroClawClose,
+        handleZeroClawError,
+        agent.port
+      )
+    } else if (session) {
+      zeroclawWS = new ZeroClawWS(
+        'main',
+        session.session_id,
+        handleZeroClawMessage,
+        handleZeroClawOpen,
+        handleZeroClawClose,
+        handleZeroClawError
+      )
+    }
+    zeroclawWS.connect()
+  }, delay)
 }
 
 const handleZeroClawMessage = (data) => {
@@ -634,14 +720,67 @@ const sendMessage = async () => {
     } else {
       const typingIdx = agent.messages.findIndex(m => m.isTyping)
       if (typingIdx >= 0) agent.messages.splice(typingIdx, 1)
-      agent.messages.push({
-        text: 'WebSocket not connected. Please select the session again.',
-        time: time,
-        sender: agent.display_name || agent.agent_name || 'ZeroClaw',
-        timestamp: new Date().getTime(),
-        isSent: false,
-        isTemp: false
-      })
+      
+      const pendingMessage = text
+      
+      if (zeroclawWS) zeroclawWS.close()
+      
+      zeroclawWS = new ZeroClawWS(
+        agent.agent_name,
+        'me',
+        handleZeroClawMessage,
+        handleZeroClawOpen,
+        handleZeroClawClose,
+        handleZeroClawError,
+        agent.port
+      )
+      
+      var reconnectAttempts = 0
+      const maxAttempts = 5
+      
+      const originalOnOpen = handleZeroClawOpen
+      zeroclawWS.onOpen = () => {
+        originalOnOpen()
+        zeroclawWS.sendMessage(pendingMessage)
+      }
+      
+      const showConnectionError = () => {
+        const now2 = new Date()
+        const time2 = now2.getHours().toString().padStart(2, '0') + ':' + now2.getMinutes().toString().padStart(2, '0')
+        agent.messages.push({
+          text: 'WebSocket not connected. Please try again.',
+          time: time2,
+          sender: agent.display_name || agent.agent_name || 'ZeroClaw',
+          timestamp: new Date().getTime(),
+          isSent: false,
+          isTemp: false
+        })
+        sending.value = false
+      }
+      
+      zeroclawWS.onClose = (event) => {
+        handleZeroClawClose(event)
+        if (reconnectAttempts < maxAttempts) {
+          reconnectAttempts++
+          console.log('[ZeroClaw] Reconnecting... attempt ' + reconnectAttempts + '/' + maxAttempts)
+          setTimeout(() => zeroclawWS.connect(), 1000 * reconnectAttempts)
+        } else {
+          showConnectionError()
+        }
+      }
+      
+      zeroclawWS.onError = (error) => {
+        handleZeroClawError(error)
+        if (reconnectAttempts < maxAttempts) {
+          reconnectAttempts++
+          console.log('[ZeroClaw] Reconnecting... attempt ' + reconnectAttempts + '/' + maxAttempts)
+          setTimeout(() => zeroclawWS.connect(), 1000 * reconnectAttempts)
+        } else {
+          showConnectionError()
+        }
+      }
+      
+      zeroclawWS.connect()
       sending.value = false
     }
     
@@ -1119,6 +1258,15 @@ const fetchUsers = async () => {
 }
 
 const selectUser = async (user) => {
+  // Clear other active states
+  activeOpenclawAgent.value = null
+  activeZeroClawSession.value = null
+  activeZAgent.value = null
+  if (zeroclawWS) {
+    zeroclawWS.close()
+    zeroclawWS = null
+  }
+
   // user is an EP object; peer identity for chat is ep.username
   const peerName = user.username || user.name
   const existingChat = chats.value.find(c => c.name === peerName)
