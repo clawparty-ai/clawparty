@@ -438,16 +438,55 @@ const selectZAgent = async (agent) => {
   }
 
   const latestAgent = zAgents.value.find(a => a.agent_name === agent.agent_name)
+  const wsPort = latestAgent?.port
+  const agentName = agent.agent_name
+  zcReconnectAttempts = 0
+
+  const doConnect = () => {
+    if (!activeZAgent.value || activeZAgent.value.agent_name !== agentName) return
+    
+    if (zeroclawWS) zeroclawWS.close()
+    
+    zeroclawWS = new ZeroClawWS(
+      agentName,
+      'me',
+      handleZeroClawMessage,
+      handleZeroClawOpen,
+      handleZeroClawClose,
+      handleZeroClawError,
+      wsPort
+    )
+    zeroclawWS.connect()
+  }
+
+  const maxConnectAttempts = 5
+
+  const handleConnectError = (error) => {
+    handleZeroClawError(error)
+    if (!activeZAgent.value || activeZAgent.value.agent_name !== agentName) return
+    if (zeroclawWS.reconnectAttempts >= maxConnectAttempts) {
+      console.log('[zAgent] Max connection attempts reached for:', agentName)
+      zeroclawWS.reconnectAttempts = 0
+      return
+    }
+    
+    zeroclawWS.reconnectAttempts++
+    const delay = 1000 * zeroclawWS.reconnectAttempts
+    console.log('[zAgent] Connection attempt ' + zeroclawWS.reconnectAttempts + '/' + maxConnectAttempts + ' failed, retrying in ' + delay + 'ms')
+    setTimeout(doConnect, delay)
+  }
 
   zeroclawWS = new ZeroClawWS(
-    agent.agent_name,
+    agentName,
     'me',
     handleZeroClawMessage,
     handleZeroClawOpen,
     handleZeroClawClose,
     handleZeroClawError,
-    latestAgent?.port
+    wsPort
   )
+  zeroclawWS.reconnectAttempts = 0
+  zeroclawWS.onError = handleConnectError
   zeroclawWS.connect()
 }
 
