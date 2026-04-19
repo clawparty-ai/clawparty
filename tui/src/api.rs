@@ -195,7 +195,7 @@ impl ApiClient {
 
     pub async fn check_zeroclaw_health(&self) -> bool {
         self.client
-            .get("http://localhost:42617/api/health")
+            .get("http://localhost:42617/health")
             .send()
             .await
             .map(|r| r.status().is_success())
