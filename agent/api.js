@@ -468,14 +468,16 @@ function startAgent(agentName) {
     throw 'Agent not found: ' + agentName
   }
   
-  if (agent.status === 'running') {
-    console.log('[AGENT] Start skipped: agent already running: ' + agentName)
+  var currentPid = findZeroclawPid(agent.port)
+  if (currentPid) {
+    console.log('[AGENT] Start skipped: agent already running with PID: ' + currentPid)
+    db.updateAgentStatus(agentName, 'running', currentPid, null)
     throw 'Agent already running: ' + agentName
   }
   
-  if (agent.status === 'starting') {
-    console.log('[AGENT] Start skipped: agent already starting: ' + agentName)
-    throw 'Agent is starting: ' + agentName
+  if (agent.status === 'starting' || agent.status === 'running') {
+    console.log('[AGENT] Agent was marked ' + agent.status + ' but process is dead, will restart')
+    db.updateAgentStatus(agentName, 'stopped', null, null)
   }
   
   // Build command - use array format for pipeline.exec

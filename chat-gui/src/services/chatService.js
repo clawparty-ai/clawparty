@@ -136,13 +136,14 @@ export const zeroclawService = {
 }
 
 export class ZeroClawWS {
-  constructor(agentName, sessionId, onMessage, onOpen, onClose, onError) {
+  constructor(agentName, sessionId, onMessage, onOpen, onClose, onError, wsPort) {
     this.agentName = agentName
     this.sessionId = sessionId
     this.onMessage = onMessage
     this.onOpen = onOpen
     this.onClose = onClose
     this.onError = onError
+    this.wsPort = wsPort
     this.ws = null
     this.reconnectAttempts = 0
     this.maxReconnectAttempts = 3
@@ -152,7 +153,9 @@ export class ZeroClawWS {
   connect() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
-    const url = `${protocol}//${host}/ws/chat?agent=${encodeURIComponent(this.agentName)}&session_id=${encodeURIComponent(this.sessionId)}`
+    const url = this.wsPort
+      ? `${protocol}//localhost:${this.wsPort}/ws/chat?agent=${encodeURIComponent(this.agentName)}&session_id=${encodeURIComponent(this.sessionId)}`
+      : `${protocol}//${host}/ws/chat?agent=${encodeURIComponent(this.agentName)}&session_id=${encodeURIComponent(this.sessionId)}`
     
     console.log('[ZeroClawWS] Connecting to:', url)
     

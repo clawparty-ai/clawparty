@@ -237,47 +237,27 @@
               </label>
             </template>
 
-            <!-- Local agents -->
-            <template v-if="filteredAgents.length > 0">
-              <div class="modal-section-label">Local Agents</div>
+            <!-- zAgents -->
+            <template v-if="filteredZAgents.length > 0">
+              <div class="modal-section-label">zAgents</div>
               <label
-                v-for="agent in filteredAgents"
-                :key="'a-' + agent.id"
+                v-for="agent in filteredZAgents"
+                :key="'z-' + agent.agent_name"
                 class="modal-item"
-                :class="{ selected: pickerSelected.includes(agent.id) }"
+                :class="{ selected: pickerSelected.includes(agent.agent_name) }"
               >
                 <input
                   type="checkbox"
-                  :checked="pickerSelected.includes(agent.id)"
-                  @change="togglePickerUser(agent.id)"
+                  :checked="pickerSelected.includes(agent.agent_name)"
+                  @change="togglePickerUser(agent.agent_name)"
                 />
-                <div class="item-avatar openclaw-avatar">{{ agent.emoji }}</div>
-                <span class="item-name">{{ agent.name }}</span>
-                <span class="item-tag">agent</span>
+                <div class="item-avatar">🤖</div>
+                <span class="item-name">{{ agent.display_name || agent.agent_name }}</span>
+                <span class="item-tag">zagent</span>
               </label>
             </template>
 
-            <!-- ZeroClaw sessions -->
-            <template v-if="filteredZeroclawSessions.length > 0">
-              <div class="modal-section-label">ZeroClaw Sessions</div>
-              <label
-                v-for="session in filteredZeroclawSessions"
-                :key="'z-' + session.session_id"
-                class="modal-item"
-                :class="{ selected: pickerSelected.includes(session.session_id) }"
-              >
-                <input
-                  type="checkbox"
-                  :checked="pickerSelected.includes(session.session_id)"
-                  @change="togglePickerUser(session.session_id)"
-                />
-                <div class="item-avatar zeroclaw-avatar">🀄</div>
-                <span class="item-name">{{ session.name || session.session_id }}</span>
-                <span class="item-tag">zeroclaw</span>
-              </label>
-            </template>
-
-            <div v-if="filteredUsers.length === 0 && filteredAgents.length === 0 && filteredZeroclawSessions.length === 0" class="modal-empty">
+            <div v-if="filteredUsers.length === 0 && filteredZAgents.length === 0" class="modal-empty">
               <span v-if="!currentMesh">Not connected to a party yet.</span>
               <span v-else-if="users.length === 0">No other members in the party yet. They may still be connecting.</span>
               <span v-else>No members match your search.</span>
@@ -463,7 +443,7 @@
             >
               <div class="item-avatar">🤖</div>
               <span class="item-name">{{ agent.display_name || agent.agent_name }}</span>
-              <span v-if="agent.status !== 'created' && agent.status !== 'starting'" class="item-status" :class="agent.status">{{ agent.status }}</span>
+              <span v-if="false" class="item-status" :class="agent.status">{{ agent.status }}</span>
               <button
                 class="delete-agent-btn"
                 @click.stop="handleDeleteZAgent(agent.agent_name)"
@@ -795,6 +775,15 @@ const filteredZeroclawSessions = computed(() => {
   return zeroclawSessions.value.filter(s => 
     (s.session_id || '').toLowerCase().includes(q) ||
     (s.name || '').toLowerCase().includes(q)
+  )
+})
+
+const filteredZAgents = computed(() => {
+  const q = pickerSearch.value.trim().toLowerCase()
+  if (!q) return zAgents.value
+  return zAgents.value.filter(a => 
+    (a.agent_name || '').toLowerCase().includes(q) ||
+    (a.display_name || '').toLowerCase().includes(q)
   )
 })
 

@@ -89,8 +89,8 @@
       </div>
     </div>
     <ChatMain
-      v-if="(activeChat !== null && activeChat < chats.length) || activeOpenclawAgent || activeZeroClawSession"
-      :chat="activeZeroClawSession || activeOpenclawAgent || chats[activeChat]"
+      v-if="(activeChat !== null && activeChat < chats.length) || activeOpenclawAgent || activeZeroClawSession || activeZAgent"
+      :chat="activeZeroClawSession || activeOpenclawAgent || activeZAgent || chats[activeChat]"
       :meshName="(activeOpenclawAgent && activeOpenclawAgent.agentId !== 'main') ? null : currentMesh"
       :currentUserName="currentMeshAgentUsername"
       :sending="sending"
@@ -104,7 +104,7 @@
       @switchSession="(sessionId) => switchOpenclawSession(activeOpenclawAgent, sessionId)"
       @deleteGroup="handleDeleteGroup"
       @leaveGroup="handleLeaveGroup"
-      @back="activeOpenclawAgent ? (activeOpenclawAgent = null) : (activeChat = null)"
+      @back="activeOpenclawAgent ? (activeOpenclawAgent = null) : activeZAgent ? (activeZAgent = null) : activeZeroClawSession ? (activeZeroClawSession = null) : (activeChat = null)"
     />
     <div v-else-if="!isMobile" class="empty-state">
       <div class="empty-icon">
@@ -421,7 +421,7 @@ const selectZAgent = async (agent) => {
     zeroclawWS = null
   }
 
-  activeZAgent.value = agent
+  activeZAgent.value = { ...agent, isZeroClaw: true }
   activeZeroClawSession.value = null
   activeChat.value = null
   activeOpenclawAgent.value = null
@@ -437,13 +437,16 @@ const selectZAgent = async (agent) => {
     }
   }
 
+  const latestAgent = zAgents.value.find(a => a.agent_name === agent.agent_name)
+
   zeroclawWS = new ZeroClawWS(
     agent.agent_name,
     'me',
     handleZeroClawMessage,
     handleZeroClawOpen,
     handleZeroClawClose,
-    handleZeroClawError
+    handleZeroClawError,
+    latestAgent?.port
   )
   zeroclawWS.connect()
 }
@@ -462,32 +465,42 @@ const handleZeroClawError = (error) => {
 
 const handleZeroClawMessage = (data) => {
   const session = activeZeroClawSession.value
-  if (!session) return
+  const agent = activeZAgent.value
+  if (!session && !agent) return
+
+  const target = session || agent
+  const senderName = session?.name || agent?.display_name || agent?.agent_name || 'ZeroClaw'
 
   const now = new Date()
   const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
 
   if (data.type === 'session_start') {
     console.log('[ZeroClaw] Session started:', data.session_id)
-    session.session_id = data.session_id || session.session_id
+    if (session) {
+      session.session_id = data.session_id || session.session_id
+    }
   } else if (data.type === 'chunk' || data.type === 'thinking') {
-    // Find typing indicator and replace with actual response
-    const typingIdx = session.messages?.findIndex(m => m.isTyping)
+    const typingIdx = target.messages?.findIndex(m => m.isTyping)
     if (typingIdx >= 0) {
-      session.messages[typingIdx] = {
-        text: data.content,
-        time: time,
-        sender: session.name || 'ZeroClaw',
-        timestamp: now.getTime(),
-        isSent: false,
-        isTemp: true,
-        isStreaming: true
+      if (agent) {
+        target.messages[typingIdx].text += data.content
+        target.messages[typingIdx].timestamp = now.getTime()
+      } else {
+        target.messages[typingIdx] = {
+          text: data.content,
+          time: time,
+          sender: senderName,
+          timestamp: now.getTime(),
+          isSent: false,
+          isTemp: true,
+          isStreaming: true
+        }
       }
-    } else if (session.messages) {
-      session.messages.push({
+    } else if (target.messages) {
+      target.messages.push({
         text: data.content,
         time: time,
-        sender: session.name || 'ZeroClaw',
+        sender: senderName,
         timestamp: now.getTime(),
         isSent: false,
         isTemp: true,
@@ -495,14 +508,19 @@ const handleZeroClawMessage = (data) => {
       })
     }
   } else if (data.type === 'done') {
-    // Final response
-    const typingIdx = session.messages?.findIndex(m => m.isTyping)
+    const typingIdx = target.messages?.findIndex(m => m.isTyping)
     if (typingIdx >= 0) {
-      session.messages.splice(typingIdx, 1)
+      if (agent) {
+        target.messages[typingIdx].text = data.full_response || target.messages[typingIdx].text
+        target.messages[typingIdx].isTyping = false
+        target.messages[typingIdx].isTemp = false
+        target.messages[typingIdx].isStreaming = false
+      } else {
+        target.messages.splice(typingIdx, 1)
+      }
     }
-    // Mark all streaming messages as not temp
-    if (session.messages) {
-      session.messages.forEach(m => {
+    if (target.messages) {
+      target.messages.forEach(m => {
         if (m.isTemp && !m.isSent) {
           m.isTemp = false
           m.isStreaming = false
@@ -512,14 +530,14 @@ const handleZeroClawMessage = (data) => {
     sending.value = false
   } else if (data.type === 'error') {
     console.error('[ZeroClaw] Error:', data.message)
-    const typingIdx = session.messages?.findIndex(m => m.isTyping)
+    const typingIdx = target.messages?.findIndex(m => m.isTyping)
     if (typingIdx >= 0) {
-      session.messages.splice(typingIdx, 1)
+      target.messages.splice(typingIdx, 1)
     }
-    session.messages?.push({
+    target.messages?.push({
       text: 'Error: ' + (data.message || 'Unknown error'),
       time: time,
-      sender: session.name || 'ZeroClaw',
+      sender: senderName,
       timestamp: now.getTime(),
       isSent: false,
       isTemp: false
@@ -578,11 +596,57 @@ const selectChat = (index) => {
 }
 
 const sendMessage = async () => {
-  if (!newMessage.value.trim() || (!activeOpenclawAgent.value && !activeZeroClawSession.value && activeChat.value === null) || sending.value) return
+  if (!newMessage.value.trim() || (!activeOpenclawAgent.value && !activeZeroClawSession.value && !activeZAgent.value && activeChat.value === null) || sending.value) return
   
   const chat = activeOpenclawAgent.value || chats.value[activeChat.value]
   const text = newMessage.value
   sending.value = true
+
+  // zAgent message sending via WebSocket
+  if (activeZAgent.value) {
+    const agent = activeZAgent.value
+    if (!agent.messages) agent.messages = []
+    const now = new Date()
+    const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+    
+    agent.messages.push({
+      text: text,
+      time: time,
+      sender: currentMeshAgentUsername.value || 'You',
+      timestamp: now.getTime(),
+      isSent: true,
+      isTemp: true
+    })
+    
+    agent.messages.push({
+      text: '',
+      time: time,
+      sender: agent.display_name || agent.agent_name || 'ZeroClaw',
+      timestamp: now.getTime() + 1,
+      isSent: false,
+      isTyping: true
+    })
+    
+    newMessage.value = ''
+    
+    if (zeroclawWS && zeroclawWS.isConnected()) {
+      zeroclawWS.sendMessage(text)
+    } else {
+      const typingIdx = agent.messages.findIndex(m => m.isTyping)
+      if (typingIdx >= 0) agent.messages.splice(typingIdx, 1)
+      agent.messages.push({
+        text: 'WebSocket not connected. Please select the session again.',
+        time: time,
+        sender: agent.display_name || agent.agent_name || 'ZeroClaw',
+        timestamp: new Date().getTime(),
+        isSent: false,
+        isTemp: false
+      })
+      sending.value = false
+    }
+    
+    return
+  }
 
   // ZeroClaw message sending via WebSocket
   if (activeZeroClawSession.value) {
