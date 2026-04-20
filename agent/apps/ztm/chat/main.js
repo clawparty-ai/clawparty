@@ -222,9 +222,14 @@ export default function ({ app, mesh, utils }) {
     },
 
     '/api/chats': {
-      'GET': responder(() => api.allChats().then(
-        ret => ret ? response(200, ret) : response(404)
-      ))
+      'GET': responder(() => {
+        if (!mesh.isConnected()) {
+          return response(200, JSON.stringify([]))
+        }
+        return api.allChats().then(
+          ret => ret ? response(200, ret) : response(404)
+        )
+      })
     },
 
     '/api/peers/{peer}/messages': {

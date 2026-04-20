@@ -416,12 +416,30 @@ const deleteZAgent = async (agentName) => {
 }
 
 const selectZAgent = async (agent) => {
-  if (zeroclawWS) {
-    zeroclawWS.close()
-    zeroclawWS = null
+  const agentName = agent.agent_name
+
+  // Check if we already have a cached connection to this agent
+  const cached = wsConnections.get(agentName)
+  if (cached && cached.zeroclawWS && cached.zeroclawWS.isConnected()) {
+    console.log('[zAgent] Reusing cached connection for:', agentName)
+    zeroclawWS = cached.zeroclawWS
+    activeZeroClawSession.value = null
+    activeChat.value = null
+    activeOpenclawAgent.value = null
+    activeZAgent.value = {
+      ...agent,
+      isZeroClaw: true,
+      messages: cached.messages || [],
+      port: cached.port
+    }
+    currentZAgentName = agentName
+    zcReconnectAttempts = 0
+    return
   }
 
-  activeZAgent.value = { ...agent, isZeroClaw: true }
+  currentZAgentName = agentName
+
+  activeZAgent.value = { ...agent, isZeroClaw: true, messages: [] }
   activeZeroClawSession.value = null
   activeChat.value = null
   activeOpenclawAgent.value = null
@@ -433,19 +451,18 @@ const selectZAgent = async (agent) => {
       await fetchZAgents()
     } catch (error) {
       console.error('[zAgent] Failed to start agent:', error)
+      currentZAgentName = null
       return
     }
   }
 
   const latestAgent = zAgents.value.find(a => a.agent_name === agent.agent_name)
   const wsPort = latestAgent?.port
-  const agentName = agent.agent_name
   zcReconnectAttempts = 0
 
   const doConnect = () => {
+    if (currentZAgentName !== agentName) return
     if (!activeZAgent.value || activeZAgent.value.agent_name !== agentName) return
-    
-    if (zeroclawWS) zeroclawWS.close()
     
     zeroclawWS = new ZeroClawWS(
       agentName,
@@ -463,10 +480,12 @@ const selectZAgent = async (agent) => {
 
   const handleConnectError = (error) => {
     handleZeroClawError(error)
+    if (currentZAgentName !== agentName) return
     if (!activeZAgent.value || activeZAgent.value.agent_name !== agentName) return
-    if (zeroclawWS.reconnectAttempts >= maxConnectAttempts) {
+    if (!zeroclawWS || zeroclawWS.reconnectAttempts >= maxConnectAttempts) {
       console.log('[zAgent] Max connection attempts reached for:', agentName)
-      zeroclawWS.reconnectAttempts = 0
+      if (zeroclawWS) zeroclawWS.reconnectAttempts = 0
+      currentZAgentName = null
       return
     }
     
@@ -488,15 +507,25 @@ const selectZAgent = async (agent) => {
   zeroclawWS.reconnectAttempts = 0
   zeroclawWS.onError = handleConnectError
   zeroclawWS.connect()
+
+  // Cache the connection with reference to activeZAgent.messages
+  wsConnections.set(agentName, {
+    zeroclawWS: zeroclawWS,
+    port: wsPort,
+    messages: activeZAgent.value.messages
+  })
 }
 
 const handleZeroClawOpen = () => {
   console.log('[ZeroClaw] WebSocket connected')
   zcReconnectAttempts = 0
+  currentZAgentName = null
 }
 
 let zcReconnectAttempts = 0
 const maxZcReconnectAttempts = 5
+let currentZAgentName = null
+const wsConnections = new Map()
 
 const handleZeroClawClose = (event) => {
   console.log('[ZeroClaw] WebSocket closed:', event.code, event.reason)
@@ -510,6 +539,12 @@ const handleZeroClawClose = (event) => {
   if (zcReconnectAttempts >= maxZcReconnectAttempts) {
     console.log('[ZeroClaw] Max reconnection attempts reached')
     zcReconnectAttempts = 0
+    currentZAgentName = null
+    return
+  }
+  
+  if (agent && currentZAgentName !== agent.agent_name) {
+    console.log('[ZeroClaw] Close handler ignored - agent changed')
     return
   }
   
@@ -517,10 +552,15 @@ const handleZeroClawClose = (event) => {
   const delay = 1000 * zcReconnectAttempts
   console.log('[ZeroClaw] Reconnecting... attempt ' + zcReconnectAttempts + '/' + maxZcReconnectAttempts + ' in ' + delay + 'ms')
   
+  const agentNameToReconnect = agent?.agent_name
   setTimeout(() => {
+    if (currentZAgentName !== agentNameToReconnect) {
+      console.log('[ZeroClaw] Reconnect ignored - agent changed')
+      return
+    }
     if (zeroclawWS) zeroclawWS.close()
     
-    if (agent) {
+    if (agent && currentZAgentName === agentNameToReconnect) {
       zeroclawWS = new ZeroClawWS(
         agent.agent_name,
         'me',
@@ -540,7 +580,7 @@ const handleZeroClawClose = (event) => {
         handleZeroClawError
       )
     }
-    zeroclawWS.connect()
+    if (zeroclawWS) zeroclawWS.connect()
   }, delay)
 }
 
@@ -554,6 +594,12 @@ const handleZeroClawError = (error) => {
   if (zcReconnectAttempts >= maxZcReconnectAttempts) {
     console.log('[ZeroClaw] Max reconnection attempts reached')
     zcReconnectAttempts = 0
+    currentZAgentName = null
+    return
+  }
+  
+  if (agent && currentZAgentName !== agent.agent_name) {
+    console.log('[ZeroClaw] Error handler ignored - agent changed')
     return
   }
   
@@ -561,10 +607,15 @@ const handleZeroClawError = (error) => {
   const delay = 1000 * zcReconnectAttempts
   console.log('[ZeroClaw] Reconnecting after error... attempt ' + zcReconnectAttempts + '/' + maxZcReconnectAttempts + ' in ' + delay + 'ms')
   
+  const agentNameToReconnect = agent?.agent_name
   setTimeout(() => {
+    if (currentZAgentName !== agentNameToReconnect) {
+      console.log('[ZeroClaw] Error reconnect ignored - agent changed')
+      return
+    }
     if (zeroclawWS) zeroclawWS.close()
     
-    if (agent) {
+    if (agent && currentZAgentName === agentNameToReconnect) {
       zeroclawWS = new ZeroClawWS(
         agent.agent_name,
         'me',
@@ -584,7 +635,7 @@ const handleZeroClawError = (error) => {
         handleZeroClawError
       )
     }
-    zeroclawWS.connect()
+    if (zeroclawWS) zeroclawWS.connect()
   }, delay)
 }
 
@@ -1828,7 +1879,7 @@ const startApp = () => {
   fetchMeshes().then(() => {
     startChatsPolling()
   })
-  fetchOpenclawAgents()
+  // fetchOpenclawAgents() // Disabled - openclaw agents not used
   // startZeroClawSessionsPolling() // Disabled - zeroclaw sessions hidden
   fetchZAgents()
 }
