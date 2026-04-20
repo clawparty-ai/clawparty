@@ -1094,6 +1094,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     }
     var params = matchPublishGroupMsgs(path)
     if (params) {
+      if (initial) return Promise.resolve()
       return mesh.read(path).then(data => {
         if (!data) return
         var pathSender = params.sender
@@ -1269,6 +1270,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
    * Sync all group chat messages for a given group.
    */
   function syncGroupMessages(creator, group) {
+    var me = app.username
     var syncPath = '/shared/' + creator + '/publish/groups/' + creator + '/' + group
     return Promise.all([
       mesh.read(syncPath + '/info.json').then(
@@ -1296,9 +1298,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         paths.sort(function(a, b) { return a < b ? -1 : a > b ? 1 : 0 })
         var msgs = []
         var readPromises = paths.map(function(path) {
-          return Promise.try(function() {
-            return mesh.read(path)
-          }).then(function(data) {
+          return mesh.read(path).then(function(data) {
             if (!data) return
             var decoded
             try {
@@ -1322,7 +1322,14 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
         return Promise.all(readPromises).then(function() {
           var chat = findGroupChat(creator, group)
           if (chat) {
-            var hasIncoming = msgs.some(function(m) { return m.sender !== me })
+            var hasIncoming = false
+            var j
+            for (j = 0; j < msgs.length; j++) {
+              if (msgs[j].sender !== me) {
+                hasIncoming = true
+                break
+              }
+            }
             if (hasIncoming) {
               // run=0: discard messages entirely
               var peerCfg = db.getChatPeer(mesh.name, '' + chat.gcid || group)
@@ -1336,11 +1343,12 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
               }
             }
             var merged = []
-            msgs.forEach(function(msg) {
-              if (msg.sender !== me || !chat.isBlocked) {
-                merged.push(msg)
+            var i
+            for (i = 0; i < msgs.length; i++) {
+              if (msgs[i].sender !== me || !chat.isBlocked) {
+                merged.push(msgs[i])
               }
-            })
+            }
             if (merged.length > 0) {
               mergeMessages(chat, merged, true)
             }
