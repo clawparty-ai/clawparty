@@ -89,8 +89,48 @@
       </div>
     </div>
     <ChatMain
-      v-if="(activeChat !== null && activeChat < chats.length) || activeOpenclawAgent || activeZeroClawSession || activeZAgent"
-      :chat="activeZeroClawSession || activeOpenclawAgent || activeZAgent || chats[activeChat]"
+      v-for="item in activeZAgentConnectionItems"
+      :key="'zagent-' + item.id"
+      v-show="currentActiveChatId === item.id && item.type === 'zagent'"
+      :chat="item.chat"
+      :meshName="null"
+      :currentUserName="currentMeshAgentUsername"
+      :sending="sending && currentActiveChatId === item.id"
+      :openclawSessions="[]"
+      :showBackButton="isMobile"
+      :autoFocus="!isMobile"
+      v-model="newMessage"
+      @send="(text) => handleZAgentSend(item.id, text)"
+      @send-images="handleSendImages"
+      @send-files="handleSendFiles"
+      @switchSession="() => {}"
+      @deleteGroup="handleDeleteGroup"
+      @leaveGroup="handleLeaveGroup"
+      @back="currentActiveChatId = null"
+    />
+    <ChatMain
+      v-for="item in activeChatConnectionItems"
+      :key="item.id"
+      v-show="currentActiveChatId === item.id"
+      :chat="item.chat"
+      :meshName="currentMesh"
+      :currentUserName="currentMeshAgentUsername"
+      :sending="sending && currentActiveChatId === item.id"
+      :openclawSessions="[]"
+      :showBackButton="isMobile"
+      :autoFocus="!isMobile"
+      v-model="newMessage"
+      @send="(text) => handleChatSend(item.id, text)"
+      @send-images="handleSendImages"
+      @send-files="handleSendFiles"
+      @switchSession="() => {}"
+      @deleteGroup="handleDeleteGroup"
+      @leaveGroup="handleLeaveGroup"
+      @back="handleChatBack(item.id)"
+    />
+    <ChatMain
+      v-if="activeOpenclawAgent || activeZeroClawSession"
+      :chat="activeZeroClawSession || activeOpenclawAgent"
       :meshName="(activeOpenclawAgent && activeOpenclawAgent.agentId !== 'main') ? null : currentMesh"
       :currentUserName="currentMeshAgentUsername"
       :sending="sending"
@@ -104,9 +144,9 @@
       @switchSession="(sessionId) => switchOpenclawSession(activeOpenclawAgent, sessionId)"
       @deleteGroup="handleDeleteGroup"
       @leaveGroup="handleLeaveGroup"
-      @back="activeOpenclawAgent ? (activeOpenclawAgent = null) : activeZAgent ? (activeZAgent = null) : activeZeroClawSession ? (activeZeroClawSession = null) : (activeChat = null)"
+      @back="activeOpenclawAgent ? (activeOpenclawAgent = null) : (activeZeroClawSession = null)"
     />
-    <div v-else-if="!isMobile" class="empty-state">
+    <div v-else-if="!isMobile && allChatConnectionItems.length === 0" class="empty-state">
       <div class="empty-icon">
         <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
           <circle cx="40" cy="40" r="40" fill="#E8E8E8"/>
@@ -155,6 +195,7 @@ const zeroclawSessions = ref([])
 const activeZeroClawSession = ref(null)
 const zAgents = ref([])
 const activeZAgent = ref(null)
+const currentActiveChatId = ref(null)
 const currentMesh = ref('')
 const currentMeshAgentUsername = ref('')
 const chats = ref([])
@@ -177,6 +218,50 @@ let chatsPollTimer = null
 let usersPollTimer = null
 let zeroclawSessionsPollTimer = null
 let zeroclawWS = null
+
+const activeZAgentConnectionItems = computed(() => {
+  if (!zAgents.value || !wsConnections) return []
+  
+  const activeAgent = zAgents.value.find(a => a.agent_name === currentActiveChatId.value)
+  
+  return zAgents.value
+    .filter(agent => {
+      return wsConnections.has(agent.agent_name) || agent === activeAgent
+    })
+    .map(agent => {
+      const cached = wsConnections.get(agent.agent_name) || {}
+      return {
+        type: 'zagent',
+        id: agent.agent_name,
+        agent: {
+          ...agent,
+          isZeroClaw: true,
+          messages: cached.messages || []
+        },
+        messages: cached.messages || [],
+        chat: {
+          ...agent,
+          isZeroClaw: true,
+          messages: cached.messages || []
+        }
+      }
+    })
+})
+
+const activeChatConnectionItems = computed(() => {
+  return chats.value
+    .filter(c => !c.isOpenclaw && !c.isZeroClaw)
+    .map(c => ({
+      type: c.isGroup ? 'group' : 'peer',
+      id: c.id,
+      chat: c,
+      messages: c.messages || []
+    }))
+})
+
+const allChatConnectionItems = computed(() => {
+  return [...activeZAgentConnectionItems.value, ...activeChatConnectionItems.value]
+})
 
 const handleResize = () => {
   isMobile.value = window.innerWidth <= 768
@@ -418,6 +503,9 @@ const deleteZAgent = async (agentName) => {
 const selectZAgent = async (agent) => {
   const agentName = agent.agent_name
 
+  currentActiveChatId.value = agentName
+  currentZAgentName = agentName
+
   // Check if we already have a cached connection to this agent
   const cached = wsConnections.get(agentName)
   if (cached && cached.zeroclawWS && cached.zeroclawWS.isConnected()) {
@@ -432,14 +520,10 @@ const selectZAgent = async (agent) => {
       messages: cached.messages || [],
       port: cached.port
     }
-    currentZAgentName = agentName
     zcReconnectAttempts = 0
     return
   }
 
-  currentZAgentName = agentName
-
-  activeZAgent.value = { ...agent, isZeroClaw: true, messages: [] }
   activeZeroClawSession.value = null
   activeChat.value = null
   activeOpenclawAgent.value = null
@@ -462,7 +546,7 @@ const selectZAgent = async (agent) => {
 
   const doConnect = () => {
     if (currentZAgentName !== agentName) return
-    if (!activeZAgent.value || activeZAgent.value.agent_name !== agentName) return
+    if (currentActiveChatId.value !== agentName) return
     
     zeroclawWS = new ZeroClawWS(
       agentName,
@@ -481,7 +565,7 @@ const selectZAgent = async (agent) => {
   const handleConnectError = (error) => {
     handleZeroClawError(error)
     if (currentZAgentName !== agentName) return
-    if (!activeZAgent.value || activeZAgent.value.agent_name !== agentName) return
+    if (currentActiveChatId.value !== agentName) return
     if (!zeroclawWS || zeroclawWS.reconnectAttempts >= maxConnectAttempts) {
       console.log('[zAgent] Max connection attempts reached for:', agentName)
       if (zeroclawWS) zeroclawWS.reconnectAttempts = 0
@@ -508,12 +592,18 @@ const selectZAgent = async (agent) => {
   zeroclawWS.onError = handleConnectError
   zeroclawWS.connect()
 
-  // Cache the connection with reference to activeZAgent.messages
+  // Cache the connection with reference to messages array
   wsConnections.set(agentName, {
     zeroclawWS: zeroclawWS,
     port: wsPort,
-    messages: activeZAgent.value.messages
+    messages: []
   })
+
+  activeZAgent.value = {
+    ...agent,
+    isZeroClaw: true,
+    messages: wsConnections.get(agentName).messages
+  }
 }
 
 const handleZeroClawOpen = () => {
@@ -771,109 +861,103 @@ const selectChat = (index) => {
   }
 }
 
+const handleZAgentSend = (agentName, text) => {
+  const cached = wsConnections.get(agentName)
+  if (!cached) {
+    console.error('[zAgent] No connection found for:', agentName)
+    return
+  }
+  
+  const zagent = zAgents.value.find(a => a.agent_name === agentName)
+  const displayName = zagent?.display_name || zagent?.agent_name || 'ZeroClaw'
+  if (!cached.messages) cached.messages = []
+  const now = new Date()
+  const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+  
+  cached.messages.push({
+    text: text,
+    time: time,
+    sender: currentMeshAgentUsername.value || 'You',
+    timestamp: now.getTime(),
+    isSent: true,
+    isTemp: true
+  })
+  
+  cached.messages.push({
+    text: '',
+    time: time,
+    sender: displayName,
+    timestamp: now.getTime() + 1,
+    isSent: false,
+    isTyping: true
+  })
+  
+  newMessage.value = ''
+  
+  if (cached.zeroclawWS && cached.zeroclawWS.isConnected()) {
+    cached.zeroclawWS.sendMessage(text)
+  } else {
+    const typingIdx = cached.messages.findIndex(m => m.isTyping)
+    if (typingIdx >= 0) cached.messages.splice(typingIdx, 1)
+    cached.messages.push({
+      text: 'WebSocket not connected. Please try again.',
+      time: time,
+      sender: displayName,
+      timestamp: new Date().getTime(),
+      isSent: false,
+      isTemp: false
+    })
+  }
+}
+
+const handleChatSend = (chatId, text) => {
+  const chat = chats.value.find(c => c.id === chatId)
+  if (!chat) {
+    console.error('[Chat] Chat not found:', chatId)
+    return
+  }
+  
+  if (!chat.messages) chat.messages = []
+  const now = new Date()
+  const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+  
+  chat.messages.push({
+    text: text,
+    time: time,
+    sender: currentMeshAgentUsername.value || 'You',
+    timestamp: now.getTime(),
+    isSent: true,
+    isTemp: true
+  })
+  
+  newMessage.value = ''
+  
+  if (chat.isGroup) {
+    chatService.sendGroupMessage(currentMesh.value, chat.creator, chat.gcid, text).catch(err => {
+      console.error('[Chat] Failed to send group message:', err)
+    })
+  } else {
+    chatService.sendMessage(currentMesh.value, chat.name, text).catch(err => {
+      console.error('[Chat] Failed to send peer message:', err)
+    })
+  }
+}
+
+const handleChatBack = (chatId) => {
+  currentActiveChatId.value = null
+}
+
 const sendMessage = async () => {
   if (!newMessage.value.trim() || (!activeOpenclawAgent.value && !activeZeroClawSession.value && !activeZAgent.value && activeChat.value === null) || sending.value) return
-  
+   
   const chat = activeOpenclawAgent.value || chats.value[activeChat.value]
   const text = newMessage.value
   sending.value = true
 
-  // zAgent message sending via WebSocket
-  if (activeZAgent.value) {
-    const agent = activeZAgent.value
-    if (!agent.messages) agent.messages = []
-    const now = new Date()
-    const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
-    
-    agent.messages.push({
-      text: text,
-      time: time,
-      sender: currentMeshAgentUsername.value || 'You',
-      timestamp: now.getTime(),
-      isSent: true,
-      isTemp: true
-    })
-    
-    agent.messages.push({
-      text: '',
-      time: time,
-      sender: agent.display_name || agent.agent_name || 'ZeroClaw',
-      timestamp: now.getTime() + 1,
-      isSent: false,
-      isTyping: true
-    })
-    
-    newMessage.value = ''
-    
-    if (zeroclawWS && zeroclawWS.isConnected()) {
-      zeroclawWS.sendMessage(text)
-    } else {
-      const typingIdx = agent.messages.findIndex(m => m.isTyping)
-      if (typingIdx >= 0) agent.messages.splice(typingIdx, 1)
-      
-      const pendingMessage = text
-      
-      if (zeroclawWS) zeroclawWS.close()
-      
-      zeroclawWS = new ZeroClawWS(
-        agent.agent_name,
-        'me',
-        handleZeroClawMessage,
-        handleZeroClawOpen,
-        handleZeroClawClose,
-        handleZeroClawError,
-        agent.port
-      )
-      
-      var reconnectAttempts = 0
-      const maxAttempts = 5
-      
-      const originalOnOpen = handleZeroClawOpen
-      zeroclawWS.onOpen = () => {
-        originalOnOpen()
-        zeroclawWS.sendMessage(pendingMessage)
-      }
-      
-      const showConnectionError = () => {
-        const now2 = new Date()
-        const time2 = now2.getHours().toString().padStart(2, '0') + ':' + now2.getMinutes().toString().padStart(2, '0')
-        agent.messages.push({
-          text: 'WebSocket not connected. Please try again.',
-          time: time2,
-          sender: agent.display_name || agent.agent_name || 'ZeroClaw',
-          timestamp: new Date().getTime(),
-          isSent: false,
-          isTemp: false
-        })
-        sending.value = false
-      }
-      
-      zeroclawWS.onClose = (event) => {
-        handleZeroClawClose(event)
-        if (reconnectAttempts < maxAttempts) {
-          reconnectAttempts++
-          console.log('[ZeroClaw] Reconnecting... attempt ' + reconnectAttempts + '/' + maxAttempts)
-          setTimeout(() => zeroclawWS.connect(), 1000 * reconnectAttempts)
-        } else {
-          showConnectionError()
-        }
-      }
-      
-      zeroclawWS.onError = (error) => {
-        handleZeroClawError(error)
-        if (reconnectAttempts < maxAttempts) {
-          reconnectAttempts++
-          console.log('[ZeroClaw] Reconnecting... attempt ' + reconnectAttempts + '/' + maxAttempts)
-          setTimeout(() => zeroclawWS.connect(), 1000 * reconnectAttempts)
-        } else {
-          showConnectionError()
-        }
-      }
-      
-      zeroclawWS.connect()
-      sending.value = false
-    }
-    
+  // zAgent message sending via WebSocket - delegate to handleZAgentSend
+  if (activeZAgent.value && currentActiveChatId.value) {
+    handleZAgentSend(currentActiveChatId.value, text)
+    sending.value = false
     return
   }
 
@@ -1361,11 +1445,8 @@ const selectUser = async (user) => {
   const peerName = user.username || user.name
   const existingChat = chats.value.find(c => c.name === peerName)
   if (existingChat) {
-    const index = chats.value.indexOf(existingChat)
-    activeChat.value = index
-    if (chats.value[index]) {
-      chats.value[index].updated = 0
-    }
+    currentActiveChatId.value = existingChat.id
+    existingChat.updated = 0
   } else {
     const newChat = {
       id: 'dm-' + Date.now(),
@@ -1378,7 +1459,7 @@ const selectUser = async (user) => {
       isTemp: true
     }
     chats.value.unshift(newChat)
-    activeChat.value = 0
+    currentActiveChatId.value = newChat.id
   }
 }
 

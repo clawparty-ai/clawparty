@@ -145,9 +145,15 @@ function allEndpoints(mesh, id, name, user, keyword, offset, limit) {
   var m = meshes[mesh]
   if (!m) return Promise.resolve([])
   var idLocal = m.config.agent.id
-  return m.discoverEndpoints(id, name, user, keyword, offset, limit).then(
-    list => list.map(ep => ({ ...ep, isLocal: (ep.id === idLocal) }))
-  )
+  try {
+    return m.discoverEndpoints(id, name, user, keyword, offset, limit).then(
+      function(list) {
+        return list.map(function(ep) { return { isLocal: ep.id === idLocal, agent: ep.agent, id: ep.id, name: ep.name, hubs: ep.hubs, username: ep.username, ip: ep.ip, port: ep.port, heartbeat: ep.heartbeat, ping: ep.ping, online: ep.online, stats: ep.stats } })
+      }
+    )
+  } catch (e) {
+    return Promise.resolve([])
+  }
 }
 
 function getEndpoint(mesh, ep) {
@@ -191,19 +197,23 @@ function getEndpointLog(mesh, ep) {
 function allUsers(mesh, name, keyword, offset, limit) {
   var m = meshes[mesh]
   if (!m) return Promise.resolve([])
-  return m.discoverUsers(name, keyword, offset, limit).then(
-    results => {
-      var idLocal = m.config.agent.id
-      results.forEach(user => {
-        user.endpoints?.instances?.forEach?.(
-          ep => {
-            if (ep.id === idLocal) ep.isLocal = true
-          }
-        )
-      })
-      return results
-    }
-  )
+  try {
+    return m.discoverUsers(name, keyword, offset, limit).then(
+      function(results) {
+        var idLocal = m.config.agent.id
+        results.forEach(function(user) {
+          user.endpoints?.instances?.forEach?.(
+            function(ep) {
+              if (ep.id === idLocal) ep.isLocal = true
+            }
+          )
+        })
+        return results
+      }
+    )
+  } catch (e) {
+    return Promise.resolve([])
+  }
 }
 
 function delUser(mesh, name) {
@@ -215,7 +225,11 @@ function delUser(mesh, name) {
 function allFiles(mesh, since) {
   var m = meshes[mesh]
   if (!m) return Promise.resolve(null)
-  return m.discoverFiles(since)
+  try {
+    return m.discoverFiles(since)
+  } catch (e) {
+    return Promise.resolve(null)
+  }
 }
 
 function getFileInfo(mesh, pathname) {

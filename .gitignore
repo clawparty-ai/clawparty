@@ -35,3 +35,9 @@ node_modules/
 session-recorder/
 tui/target/
 zeroclaw/target/
+
+# Playwright test files
+playwright.config.js
+test-results/
+tests/zagent-switch.spec.js
+tests/zagent-websocket-debug.spec.js

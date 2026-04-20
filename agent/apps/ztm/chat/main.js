@@ -210,9 +210,11 @@ export default function ({ app, mesh, utils }) {
     },
 
     '/api/endpoints': {
-      'GET': responder(() => api.allEndpoints().then(
-        ret => ret ? response(200, ret) : response(404)
-      ))
+      'GET': responder(() => {
+        return api.allEndpoints().then(
+          ret => ret ? response(200, ret) : response(404)
+        ).catch(() => response(200, []))
+      })
     },
 
     '/api/users': {
@@ -223,12 +225,9 @@ export default function ({ app, mesh, utils }) {
 
     '/api/chats': {
       'GET': responder(() => {
-        if (!mesh.isConnected()) {
-          return response(200, JSON.stringify([]))
-        }
         return api.allChats().then(
           ret => ret ? response(200, ret) : response(404)
-        )
+        ).catch(() => response(200, []))
       })
     },
 
@@ -240,9 +239,18 @@ export default function ({ app, mesh, utils }) {
         var before = url.searchParams.get('before')
         if (since) since = Number.parseFloat(since)
         if (before) before = Number.parseFloat(before)
-        return api.allPeerMessages(peer, since, before).then(
-          ret => ret ? response(200, ret) : response(404)
-        )
+        
+        // Trigger sync before returning messages
+        return api.syncPeerMessages(peer).then(function() {
+          return api.allPeerMessages(peer, since, before).then(
+            ret => ret ? response(200, ret) : response(404)
+          )
+        }).catch(function(e) {
+          console.error('[chat] syncPeerMessages error:', e)
+          return api.allPeerMessages(peer, since, before).then(
+            ret => ret ? response(200, ret) : response(404)
+          )
+        })
       }),
 
       'POST': responder((params, req) => {
@@ -300,9 +308,18 @@ export default function ({ app, mesh, utils }) {
         var before = url.searchParams.get('before')
         if (since) since = Number.parseFloat(since)
         if (before) before = Number.parseFloat(before)
-        return api.allGroupMessages(creator, group, since, before).then(
-          ret => ret ? response(200, ret) : response(404)
-        )
+        
+        // Trigger sync before returning messages
+        return api.syncGroupMessages(creator, group).then(function() {
+          return api.allGroupMessages(creator, group, since, before).then(
+            ret => ret ? response(200, ret) : response(404)
+          )
+        }).catch(function(e) {
+          console.error('[chat] syncGroupMessages error:', e)
+          return api.allGroupMessages(creator, group, since, before).then(
+            ret => ret ? response(200, ret) : response(404)
+          )
+        })
       }),
 
       'POST': responder((params, req) => {

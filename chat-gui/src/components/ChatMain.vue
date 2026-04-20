@@ -1058,18 +1058,32 @@ const fetchMessages = async () => {
   if (!props.meshName || !props.chat.name) return
   
   try {
+    const lastTimestamp = props.chat.messages?.length > 0
+      ? Math.max(...props.chat.messages.filter(m => m.timestamp).map(m => m.timestamp))
+      : Date.now() - (24 * 60 * 60 * 1000)
+    
     let response
     if (props.chat.isGroup) {
-      response = await chatService.getGroupMessages(props.meshName, props.chat.creator, props.chat.groupId)
+      response = await chatService.getGroupMessagesSince(props.meshName, props.chat.creator, props.chat.groupId, lastTimestamp)
     } else {
-      response = await chatService.getMessages(props.meshName, props.chat.name)
+      response = await chatService.getMessagesSince(props.meshName, props.chat.name, lastTimestamp)
     }
     const messages = parseMessages(response.data || [])
-    props.chat.messages = messages
+    
+    messages.forEach(newMsg => {
+      const existingIndex = props.chat.messages.findIndex(m => 
+        !m.isTemp && m.timestamp === newMsg.timestamp
+      )
+      if (existingIndex === -1) {
+        props.chat.messages.push(newMsg)
+      }
+    })
+    
+    props.chat.messages.sort((a, b) => a.timestamp - b.timestamp)
     scrollToBottom()
   } catch (error) {
     if (error.response?.status === 404) {
-      props.chat.messages = []
+      // No new messages, keep existing
     } else {
       console.error('获取消息失败:', error)
     }

@@ -946,11 +946,15 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   mesh.acl(`/shared/${app.username}/publish`, { all: 'block' })
   mesh.acl(`/shared/${app.username}/publish/files`, { all: 'readonly' })
 
-  mesh.list('/shared').then(paths => Promise.all(
-    Object.keys(paths).map(path => readMessages(path, true))
-  )).then(
-    () => watchMessages()
-  )
+  mesh.list('/shared').then(function(paths) {
+    Object.keys(paths).forEach(function(path) {
+      var groupParams = matchPublishGroupInfo(path)
+      if (groupParams) {
+        readMessages(path, true)
+      }
+    })
+    watchMessages()
+  })
 
   var isReadingMessages = false
 
@@ -1192,6 +1196,173 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       })
     }
     return Promise.resolve()
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  //  On-demand sync helpers called by API endpoints in main.js
+  // ────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Sync all peer messages for a given peer name.
+   * Called when user opens a 1:1 or group chat for the first time.
+   */
+  function syncPeerMessages(peerName) {
+    var me = app.username
+    var sender
+    var receiver
+    if (peerName.indexOf('/') !== -1) {
+      var parts = peerName.split('/')
+      sender = parts[1]
+      receiver = me
+    } else {
+      sender = peerName
+      receiver = me
+    }
+    var syncPath
+    if (sender !== me) {
+      syncPath = '/shared/' + sender + '/publish/peers/' + receiver + '/messages'
+    } else {
+      syncPath = '/shared/' + me + '/publish/peers/' + sender + '/messages'
+    }
+    return mesh.list(syncPath).then(function(files) {
+      var paths = Object.keys(files)
+      if (!paths || paths.length === 0) {
+        // Create chat object even if no messages, so peer shows up in chat list
+        var chat = findPeerChat(sender)
+        if (!chat) chat = newPeerChat(sender)
+        return []
+      }
+      paths.sort(function(a, b) { return a < b ? -1 : a > b ? 1 : 0 })
+      var allMessages = []
+      var promises = paths.map(function(path) {
+        return mesh.read(path).then(function(data) {
+          if (!data) return
+          try {
+            var msgs = JSON.decode(data)
+            if (msgs && Array.isArray(msgs)) {
+              msgs.forEach(function(m) {
+                m.sender = sender
+              })
+              allMessages = allMessages.concat(msgs)
+            }
+          } catch {}
+        })
+      })
+      return Promise.all(promises).then(function() {
+        var chat = findPeerChat(sender)
+        if (!chat) chat = newPeerChat(sender)
+        if (chat && allMessages.length > 0) {
+          mergeMessages(chat, allMessages, true)
+        }
+        return chat ? chat.messages : []
+      })
+    }).catch(function(e) {
+      console.error('[chat sync] syncPeerMessages', peerName, 'error:', e)
+      // Create chat object even on error
+      var chat = findPeerChat(sender)
+      if (!chat) chat = newPeerChat(sender)
+      return []
+    })
+  }
+
+  /**
+   * Sync all group chat messages for a given group.
+   */
+  function syncGroupMessages(creator, group) {
+    var syncPath = '/shared/' + creator + '/publish/groups/' + creator + '/' + group
+    return Promise.all([
+      mesh.read(syncPath + '/info.json').then(
+        function(infoData) {
+          if (!infoData) return Promise.resolve()
+          try {
+            var info = JSON.decode(infoData)
+            var existingChat = findGroupChat(creator, group)
+            if (!existingChat) {
+              existingChat = newGroupChat(creator, group)
+            }
+            if (existingChat) {
+              if (info.name) existingChat.name = info.name
+              if (info.members instanceof Array) existingChat.members = info.members
+              if (info.gcid) existingChat.gcid = info.gcid
+            }
+          } catch (e) {
+            console.error('[chat sync] syncGroupMessages read info.json error:', e)
+          }
+        }
+      ),
+      mesh.list(syncPath + '/messages').then(function(files) {
+        var paths = Object.keys(files || {})
+        if (!paths || paths.length === 0) return Promise.resolve()
+        paths.sort(function(a, b) { return a < b ? -1 : a > b ? 1 : 0 })
+        var msgs = []
+        var readPromises = paths.map(function(path) {
+          return Promise.try(function() {
+            return mesh.read(path)
+          }).then(function(data) {
+            if (!data) return
+            var decoded
+            try {
+              decoded = JSON.decode(data)
+            } catch (e) {
+              return
+            }
+            if (decoded && typeof decoded === 'object' && typeof decoded.length === 'number' && typeof decoded.forEach === 'function') {
+              var k
+              for (k = 0; k < decoded.length; k++) {
+                if (decoded[k] && typeof decoded[k] === 'object') {
+                  decoded[k]._pathSender = creator
+                }
+              }
+              msgs = msgs.concat(decoded)
+            }
+          }).catch(function(err) {
+            console.error('[chat sync] syncGroupMessages read msg error:', err)
+          })
+        })
+        return Promise.all(readPromises).then(function() {
+          var chat = findGroupChat(creator, group)
+          if (chat) {
+            var hasIncoming = msgs.some(function(m) { return m.sender !== me })
+            if (hasIncoming) {
+              // run=0: discard messages entirely
+              var peerCfg = db.getChatPeer(mesh.name, '' + chat.gcid || group)
+              if (peerCfg && !peerCfg.run) {
+                console.info('[chat] peer stopped, discarding messages from group', group)
+                return
+              }
+              if (peerCfg && peerCfg.isBlocked) {
+                console.info('[chat] peer blocked, replying "You are blocked" to group', group)
+                return
+              }
+            }
+            var merged = []
+            msgs.forEach(function(msg) {
+              if (msg.sender !== me || !chat.isBlocked) {
+                merged.push(msg)
+              }
+            })
+            if (merged.length > 0) {
+              mergeMessages(chat, merged, true)
+            }
+          }
+        })
+      })
+    ]).then(function() {
+      var chat = findGroupChat(creator, group)
+      if (chat) {
+        chat.checkTime = chat.updateTime
+        chat.newCount = 0
+        var peerConfig = getPeerConfig('' + chat.gcid || group)
+        if (peerConfig && peerConfig.autoReply) {
+          chat.messages = chat.messages.filter(function (m) { return !m.isGroupEpRequest })
+        }
+        return chat.messages
+      }
+      return []
+    }).catch(function(e) {
+      console.error('[chat sync] syncGroupMessages', group, 'error:', e)
+      return []
+    })
   }
 
   var publishQueue = []
@@ -1623,7 +1794,9 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     clearGroupEpRequestHint,
     clearPeerRequestHint,
     halfAutomationRewrite,
-    getDefaultAutoReplyAgent,
-    setDefaultAutoReplyAgent,
-  }
+   getDefaultAutoReplyAgent,
+   setDefaultAutoReplyAgent,
+   syncPeerMessages,
+   syncGroupMessages,
+ }
 }

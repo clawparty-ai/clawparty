@@ -564,7 +564,7 @@ function main(listen, apiToken, noAuth) {
           offset, limit
         ).then(
           ret => response(200, ret)
-        )
+        ).catch(() => response(200, JSON.encode([])))
       },
     },
 
@@ -1651,7 +1651,13 @@ function main(listen, apiToken, noAuth) {
                 )
               ),
               'deny': $=>$.replaceData().replaceMessage(
-                new Message({ status: 503 }, 'Cannot start the app')
+                (req) => {
+                  var hasPath = req.head.path.indexOf('/api/chats') !== -1 || req.head.path.indexOf('/api/endpoints') !== -1
+                  if (hasPath) {
+                    return new Message({ status: 200, headers: { 'content-type': 'application/json' } }, '[]')
+                  }
+                  return new Message({ status: 503 }, 'Cannot start the app')
+                }
               ),
             })
             .onEnd(() => $appSession?.free?.())

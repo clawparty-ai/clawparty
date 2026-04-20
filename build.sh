@@ -6,10 +6,14 @@ ZTM_DIR=$(cd "$(dirname "$0")" && pwd)
 GUI_DIR="$ZTM_DIR/chat-gui"
 
 CLEAN=false
+ZTM_ONLY=false
 for arg in "$@"; do
   case $arg in
     --clean|-c)
       CLEAN=true
+      ;;
+    --ztm-only|-z)
+      ZTM_ONLY=true
       ;;
   esac
 done
@@ -42,6 +46,14 @@ build/deps.sh
 cd "$ZTM_DIR"
 build/gui.sh
 
+cd "$ZTM_DIR"
+build/pipy.sh
+
+if [ "$ZTM_ONLY" = true ]; then
+  echo "=== ZTM only build complete (skipped tui and zeroclaw) ==="
+  exit 0
+fi
+
 # Build ZeroClaw (Rust)
 echo "Building ZeroClaw..."
 cd "$ZTM_DIR/zeroclaw"
@@ -68,6 +80,3 @@ if [ "$(uname)" = "Darwin" ]; then
   codesign -s - --force --deep "$ZTM_DIR/bin/clawparty" 2>/dev/null || true
 fi
 echo "TUI built: $ZTM_DIR/bin/clawparty"
-
-cd "$ZTM_DIR"
-build/pipy.sh
