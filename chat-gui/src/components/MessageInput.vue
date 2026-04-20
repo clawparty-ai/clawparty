@@ -509,7 +509,7 @@ function handleSendBtnClick() {
 }
 
 function handleSend() {
-  let val = textareaRef.value?.value || ''
+  let val = textareaRef.value?.value || props.modelValue || ''
   // Clear quote but pass it to send event
   const quoteToSend = props.quote
   if (quoteToSend) {
@@ -523,7 +523,7 @@ function handleSend() {
     emit('hash-command', val)
     emit('update:modelValue', '')
   } else {
-    emit('send')
+    emit('send', val)
   }
 }
 </script>

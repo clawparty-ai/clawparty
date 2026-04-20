@@ -716,7 +716,7 @@ async fn main() -> anyhow::Result<()> {
                                         } else {
                                             Err(anyhow::anyhow!("Chat not found"))
                                         }
-                                    } else if let Some(ref zc_session_id) = cur_zeroclaw {
+                                    } else if let Some(ref _zc_session_id) = cur_zeroclaw {
                                         // ZeroClaw 在独立任务中处理
                                         Ok(())
                                     } else if let Some(ref aid) = cur_agent {
@@ -944,7 +944,7 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
         println!("✅ ZTM Agent is already running at {}", args.api_host);
     } else {
         println!("\n🔄 Starting ZTM agent ({})...", pipy_bin);
-        let mut mgr = AgentManager::new(
+        let mgr = AgentManager::new(
             pipy_bin,
             args.data.clone(),
             args.listen.clone(),
@@ -979,6 +979,23 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
     println!("ZTM Agent API: {}", args.api_host);
     println!("\nPress Ctrl+C to stop...");
     
+    // Open browser if requested
+    if args.open {
+        println!("🌐 Opening browser to http://{}", args.listen);
+        #[cfg(target_os = "macos")]
+        {
+            let _ = Command::new("open").arg(&args.api_host).spawn();
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = Command::new("xdg-open").arg(&args.api_host).spawn();
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let _ = Command::new("start").arg(&args.api_host).spawn();
+        }
+    }
+    
     use tokio::signal::unix::{signal, SignalKind};
     let mut sigint = signal(SignalKind::interrupt())?;
     let mut sigterm = signal(SignalKind::terminate())?;
@@ -1000,6 +1017,6 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
             }
         }
     }
-    
+
     Ok((agent_mgr, zeroclaw_mgr))
 }

@@ -698,9 +698,7 @@ watch(activeOrg, (val) => {
 
 const handleSelectMesh = async (meshName) => {
   activeOrg.value = meshName
-  if (meshName !== currentMesh.value) {
-    await switchMesh(meshName)
-  }
+  await switchMesh(meshName)
 }
 
 const handleLeaveMesh = async (meshName) => {

@@ -24,4 +24,7 @@ pub struct Args {
 
     #[arg(short, long, default_value = "false")]
     pub service: bool,
+
+    #[arg(short, long, default_value = "false")]
+    pub open: bool,
 }

@@ -201,9 +201,9 @@ const quoteMessage = (msg) => {
 }
 
 // Handle send - always emit send event
-const handleSendWithQuote = () => {
+const handleSendWithQuote = (text) => {
   quotedMessage.value = null
-  emit('send')
+  emit('send', text)
 }
 
 // Handle clear quote
@@ -902,18 +902,17 @@ const handleDownloadPdf = () => {
 
 const filteredMessages = computed(() => {
   const msgs = props.chat.messages || []
-  return msgs.filter(m => {
-    // Filter out half automation drafts - they are shown in the HalfAutomationInput component
-    if (m.isHalfDraft) return false
-    // Process other messages
+  const result = []
+  let i
+  for (i = 0; i < msgs.length; i++) {
+    const m = msgs[i]
+    if (m.isHalfDraft) continue
     if (!!m.text && m.text.indexOf(' GMT') >= 0) {
       m.text = m.text.split(/[^[]*] /).slice(1)[0]
     }
-    if (!m.text) {
-      m.text = '[Empty]'
-    }
-    return true
-  })
+    result.push(m)
+  }
+  return result
 })
 
 const formatTime = (timestamp) => {

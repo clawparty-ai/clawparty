@@ -178,7 +178,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, provide, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, provide, computed, watch, reactive } from 'vue'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
 import TemplatePicker from './components/TemplatePicker.vue'
@@ -207,6 +207,7 @@ const showTokenDialog = ref(false)
 const tokenInput = ref('')
 const tokenChecking = ref(false)
 const tokenError = ref('')
+const switchingTo = ref(null)
 const isMobile = ref(window.innerWidth <= 768)
 const mobileActiveOrg = ref('agents')
 const users = ref([])
@@ -218,30 +219,34 @@ let chatsPollTimer = null
 let usersPollTimer = null
 let zeroclawSessionsPollTimer = null
 let zeroclawWS = null
+const wsConnections = reactive({})
 
 const activeZAgentConnectionItems = computed(() => {
-  if (!zAgents.value || !wsConnections) return []
+  if (!zAgents.value) return []
   
   const activeAgent = zAgents.value.find(a => a.agent_name === currentActiveChatId.value)
   
   return zAgents.value
     .filter(agent => {
-      return wsConnections.has(agent.agent_name) || agent === activeAgent
+      return wsConnections[agent.agent_name] || agent === activeAgent
     })
     .map(agent => {
-      const cached = wsConnections.get(agent.agent_name) || {}
+      const cached = wsConnections[agent.agent_name] || {}
+      const msgCount = cached._msgCount || 0
       return {
         type: 'zagent',
         id: agent.agent_name,
         agent: {
           ...agent,
           isZeroClaw: true,
+          _msgCount: msgCount,
           messages: cached.messages || []
         },
         messages: cached.messages || [],
         chat: {
           ...agent,
           isZeroClaw: true,
+          _msgCount: msgCount,
           messages: cached.messages || []
         }
       }
@@ -500,6 +505,129 @@ const deleteZAgent = async (agentName) => {
   }
 }
 
+const createZeroClawMessageHandler = (connectionAgentName) => {
+  return (data) => {
+    const cached = wsConnections[connectionAgentName]
+    if (!cached) return
+
+    const messages = cached.messages
+    if (!messages) return
+
+    const session = activeZeroClawSession.value
+    const agent = activeZAgent.value
+    if (session) {
+      return handleZeroClawMessage(data)
+    }
+
+    const senderName = agent?.display_name || agent?.agent_name || connectionAgentName
+
+    const now = new Date()
+    const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+
+    if (data.type === 'session_start') {
+      console.log('[ZeroClaw] Session started:', data.session_id)
+    } else if (data.type === 'chunk' || data.type === 'thinking') {
+      let idx = messages.findIndex(m => !!m.isTyping)
+      if (idx < 0) {
+        idx = messages.findIndex(function(m) {
+          return !!m.isStreaming && m.sender === senderName && !m.isSent
+        })
+      }
+      if (idx >= 0) {
+        const newTimestamp = data.timestamp || now.getTime()
+        if (data.type === 'thinking') {
+          if (!messages[idx].thinking) messages[idx].thinking = ''
+          messages[idx].thinking += data.content
+        } else {
+          messages[idx].text += data.content
+        }
+        messages[idx].timestamp = newTimestamp
+        messages[idx].time = time
+      } else {
+        const typingIdx = messages.findIndex(m => !!m.isTyping)
+        if (typingIdx >= 0) {
+          if (data.type === 'thinking') {
+            if (!messages[typingIdx].thinking) messages[typingIdx].thinking = ''
+            messages[typingIdx].thinking += data.content
+            messages[typingIdx].timestamp = now.getTime()
+            messages[typingIdx].time = time
+          } else {
+            messages[typingIdx].text += data.content
+            messages[typingIdx].isTyping = true
+            messages[typingIdx].timestamp = now.getTime()
+            messages[typingIdx].time = time
+          }
+        } else {
+          messages.push({
+            text: data.content,
+            time: time,
+            sender: senderName,
+            timestamp: now.getTime(),
+            isSent: false,
+            isTemp: true,
+            isStreaming: true
+          })
+        }
+      }
+    } else if (data.type === 'done') {
+      let idx = messages.findIndex(m => !!m.isTyping)
+      if (idx >= 0) {
+        messages[idx].text = data.full_response || messages[idx].text
+        const hasThinking = !!messages[idx].thinking
+        messages[idx].isTyping = false
+        messages[idx].isTemp = false
+        messages[idx].isStreaming = false
+        if (hasThinking && !messages[idx].thinking) {
+          messages.splice(idx, 1)
+          return
+        }
+      } else {
+        const lastIdx = messages.length - 1
+        if (lastIdx >= 0) {
+          const last = messages[lastIdx]
+          if (last.isStreaming && last.sender === senderName && !last.isSent) {
+            const hasThinking = !!last.thinking
+            messages[lastIdx].text = data.full_response || messages[lastIdx].text
+            messages[lastIdx].isStreaming = false
+            messages[lastIdx].isTemp = false
+            if (hasThinking && !messages[lastIdx].thinking) {
+              messages.splice(lastIdx, 1)
+              return
+            }
+          }
+        }
+      }
+      var i
+      for (i = 0; i < messages.length; i++) {
+        if (messages[i].isTemp && !messages[i].isSent) {
+          messages[i].isTemp = false
+          messages[i].isStreaming = false
+        }
+      }
+      sending.value = false
+    } else if (data.type === 'error') {
+      console.error('[ZeroClaw] Error:', data.message)
+      const typingIdx = messages.findIndex(m => !!m.isTyping)
+      if (typingIdx >= 0) {
+        messages.splice(typingIdx, 1)
+      }
+      messages.push({
+        text: 'Error: ' + (data.message || 'Unknown error'),
+        time: time,
+        sender: senderName,
+        timestamp: now.getTime(),
+        isSent: false,
+        isTemp: false
+      })
+      sending.value = false
+    } else if (data.type === 'tool_call') {
+      console.log('[ZeroClaw] Tool call:', data.name, data.args)
+    } else if (data.type === 'tool_result') {
+      console.log('[ZeroClaw] Tool result:', data.name, data.output)
+    }
+  }
+}
+
 const selectZAgent = async (agent) => {
   const agentName = agent.agent_name
 
@@ -507,7 +635,7 @@ const selectZAgent = async (agent) => {
   currentZAgentName = agentName
 
   // Check if we already have a cached connection to this agent
-  const cached = wsConnections.get(agentName)
+  const cached = wsConnections[agentName]
   if (cached && cached.zeroclawWS && cached.zeroclawWS.isConnected()) {
     console.log('[zAgent] Reusing cached connection for:', agentName)
     zeroclawWS = cached.zeroclawWS
@@ -544,6 +672,9 @@ const selectZAgent = async (agent) => {
   const wsPort = latestAgent?.port
   zcReconnectAttempts = 0
 
+  // Create agent-specific message handler
+  const msgHandler = createZeroClawMessageHandler(agentName)
+
   const doConnect = () => {
     if (currentZAgentName !== agentName) return
     if (currentActiveChatId.value !== agentName) return
@@ -551,7 +682,7 @@ const selectZAgent = async (agent) => {
     zeroclawWS = new ZeroClawWS(
       agentName,
       'me',
-      handleZeroClawMessage,
+      msgHandler,
       handleZeroClawOpen,
       handleZeroClawClose,
       handleZeroClawError,
@@ -582,7 +713,7 @@ const selectZAgent = async (agent) => {
   zeroclawWS = new ZeroClawWS(
     agentName,
     'me',
-    handleZeroClawMessage,
+    msgHandler,
     handleZeroClawOpen,
     handleZeroClawClose,
     handleZeroClawError,
@@ -590,19 +721,21 @@ const selectZAgent = async (agent) => {
   )
   zeroclawWS.reconnectAttempts = 0
   zeroclawWS.onError = handleConnectError
+  zeroclawWS._agentName = agentName
   zeroclawWS.connect()
 
   // Cache the connection with reference to messages array
-  wsConnections.set(agentName, {
+  wsConnections[agentName] = reactive({
     zeroclawWS: zeroclawWS,
     port: wsPort,
-    messages: []
+    messages: [],
+    _msgCount: 0
   })
 
   activeZAgent.value = {
     ...agent,
     isZeroClaw: true,
-    messages: wsConnections.get(agentName).messages
+    messages: wsConnections[agentName].messages
   }
 }
 
@@ -615,7 +748,6 @@ const handleZeroClawOpen = () => {
 let zcReconnectAttempts = 0
 const maxZcReconnectAttempts = 5
 let currentZAgentName = null
-const wsConnections = new Map()
 
 const handleZeroClawClose = (event) => {
   console.log('[ZeroClaw] WebSocket closed:', event.code, event.reason)
@@ -625,10 +757,9 @@ const handleZeroClawClose = (event) => {
   if (!agent && !session) return
   
   if (event.code === 1000) return
-  
-  if (zcReconnectAttempts >= maxZcReconnectAttempts) {
+  if (zeroclawWS && zeroclawWS.reconnectAttempts >= maxZcReconnectAttempts) {
     console.log('[ZeroClaw] Max reconnection attempts reached')
-    zcReconnectAttempts = 0
+    if (zeroclawWS) zeroclawWS.reconnectAttempts = 0
     currentZAgentName = null
     return
   }
@@ -638,11 +769,16 @@ const handleZeroClawClose = (event) => {
     return
   }
   
+  const agentNameToReconnect = agent?.agent_name || ''
+  if (zeroclawWS && zeroclawWS._agentName && zeroclawWS._agentName !== agentNameToReconnect) {
+    console.log('[ZeroClaw] Close handler ignored - agent changed')
+    return
+  }
+  
   zcReconnectAttempts++
   const delay = 1000 * zcReconnectAttempts
   console.log('[ZeroClaw] Reconnecting... attempt ' + zcReconnectAttempts + '/' + maxZcReconnectAttempts + ' in ' + delay + 'ms')
   
-  const agentNameToReconnect = agent?.agent_name
   setTimeout(() => {
     if (currentZAgentName !== agentNameToReconnect) {
       console.log('[ZeroClaw] Reconnect ignored - agent changed')
@@ -650,16 +786,24 @@ const handleZeroClawClose = (event) => {
     }
     if (zeroclawWS) zeroclawWS.close()
     
-    if (agent && currentZAgentName === agentNameToReconnect) {
+    const cached = wsConnections[agentNameToReconnect]
+    if (cached && cached.zeroclawWS) {
+      cached.zeroclawWS.close()
+    }
+    
+    if (agent && currentZAgentName === agentNameToReconnect && wsConnections[agentNameToReconnect]) {
+      const msgHandler = createZeroClawMessageHandler(agentNameToReconnect)
       zeroclawWS = new ZeroClawWS(
-        agent.agent_name,
+        agentNameToReconnect,
         'me',
-        handleZeroClawMessage,
+        msgHandler,
         handleZeroClawOpen,
         handleZeroClawClose,
         handleZeroClawError,
-        agent.port
+        agent.port || wsConnections[agentNameToReconnect].port
       )
+      zeroclawWS.reconnectAttempts = zcReconnectAttempts - 1
+      zeroclawWS._agentName = agentNameToReconnect
     } else if (session) {
       zeroclawWS = new ZeroClawWS(
         'main',
@@ -681,9 +825,15 @@ const handleZeroClawError = (error) => {
   const session = activeZeroClawSession.value
   if (!agent && !session) return
   
-  if (zcReconnectAttempts >= maxZcReconnectAttempts) {
+  const agentNameToReconnect = agent?.agent_name || ''
+  if (zeroclawWS && zeroclawWS._agentName && zeroclawWS._agentName !== agentNameToReconnect) {
+    console.log('[ZeroClaw] Error handler ignored - agent changed')
+    return
+  }
+  
+  if (zeroclawWS && zeroclawWS.reconnectAttempts >= maxZcReconnectAttempts) {
     console.log('[ZeroClaw] Max reconnection attempts reached')
-    zcReconnectAttempts = 0
+    if (zeroclawWS) zeroclawWS.reconnectAttempts = 0
     currentZAgentName = null
     return
   }
@@ -697,7 +847,6 @@ const handleZeroClawError = (error) => {
   const delay = 1000 * zcReconnectAttempts
   console.log('[ZeroClaw] Reconnecting after error... attempt ' + zcReconnectAttempts + '/' + maxZcReconnectAttempts + ' in ' + delay + 'ms')
   
-  const agentNameToReconnect = agent?.agent_name
   setTimeout(() => {
     if (currentZAgentName !== agentNameToReconnect) {
       console.log('[ZeroClaw] Error reconnect ignored - agent changed')
@@ -705,16 +854,24 @@ const handleZeroClawError = (error) => {
     }
     if (zeroclawWS) zeroclawWS.close()
     
-    if (agent && currentZAgentName === agentNameToReconnect) {
+    const cached = wsConnections[agentNameToReconnect]
+    if (cached && cached.zeroclawWS) {
+      cached.zeroclawWS.close()
+    }
+    
+    if (agent && currentZAgentName === agentNameToReconnect && wsConnections[agentNameToReconnect]) {
+      const msgHandler = createZeroClawMessageHandler(agentNameToReconnect)
       zeroclawWS = new ZeroClawWS(
-        agent.agent_name,
+        agentNameToReconnect,
         'me',
-        handleZeroClawMessage,
+        msgHandler,
         handleZeroClawOpen,
         handleZeroClawClose,
         handleZeroClawError,
-        agent.port
+        agent.port || wsConnections[agentNameToReconnect].port
       )
+      zeroclawWS.reconnectAttempts = zcReconnectAttempts - 1
+      zeroclawWS._agentName = agentNameToReconnect
     } else if (session) {
       zeroclawWS = new ZeroClawWS(
         'main',
@@ -862,7 +1019,8 @@ const selectChat = (index) => {
 }
 
 const handleZAgentSend = (agentName, text) => {
-  const cached = wsConnections.get(agentName)
+  console.log('[zAgent] handleZAgentSend called:', agentName, 'text:', JSON.stringify(text))
+  const cached = wsConnections[agentName]
   if (!cached) {
     console.error('[zAgent] No connection found for:', agentName)
     return
@@ -870,35 +1028,45 @@ const handleZAgentSend = (agentName, text) => {
   
   const zagent = zAgents.value.find(a => a.agent_name === agentName)
   const displayName = zagent?.display_name || zagent?.agent_name || 'ZeroClaw'
-  if (!cached.messages) cached.messages = []
+  
   const now = new Date()
   const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
   
-  cached.messages.push({
+  const newMsg = {
     text: text,
     time: time,
     sender: currentMeshAgentUsername.value || 'You',
     timestamp: now.getTime(),
     isSent: true,
     isTemp: true
-  })
-  
-  cached.messages.push({
+  }
+  const typingMsg = {
     text: '',
     time: time,
     sender: displayName,
     timestamp: now.getTime() + 1,
     isSent: false,
     isTyping: true
-  })
+  }
+  
+  if (!cached.messages) cached.messages = []
+  cached.messages.push(newMsg, typingMsg)
+  cached._msgCount = cached.messages.length
+  
+  // Update activeZAgent to reference the same messages array
+  activeZAgent.value = {
+    ...zagent,
+    display_name: displayName,
+    isZeroClaw: true,
+    messages: cached.messages,
+    port: cached.port
+  }
   
   newMessage.value = ''
   
   if (cached.zeroclawWS && cached.zeroclawWS.isConnected()) {
     cached.zeroclawWS.sendMessage(text)
   } else {
-    const typingIdx = cached.messages.findIndex(m => m.isTyping)
-    if (typingIdx >= 0) cached.messages.splice(typingIdx, 1)
     cached.messages.push({
       text: 'WebSocket not connected. Please try again.',
       time: time,
@@ -907,6 +1075,7 @@ const handleZAgentSend = (agentName, text) => {
       isSent: false,
       isTemp: false
     })
+    cached._msgCount = cached.messages.length
   }
 }
 
@@ -918,6 +1087,7 @@ const handleChatSend = (chatId, text) => {
   }
   
   if (!chat.messages) chat.messages = []
+
   const now = new Date()
   const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
   
@@ -1411,12 +1581,15 @@ const handleSendFiles = async (files) => {
 }
 
 const switchMesh = async (meshName) => {
+  if (switchingTo.value === meshName) return
+  switchingTo.value = meshName
   currentMesh.value = meshName
   const mesh = meshes.value.find(m => m.name === meshName)
   currentMeshAgentUsername.value = mesh?.agent?.username || ''
   chats.value = chats.value.filter(c => !c.isTemp)
   await fetchChats()
   await fetchUsers()
+  switchingTo.value = null
 }
 
 const fetchUsers = async () => {

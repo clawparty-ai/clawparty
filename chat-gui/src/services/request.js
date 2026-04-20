@@ -8,7 +8,7 @@ let apiToken = (typeof localStorage !== 'undefined' && localStorage.getItem(API_
 
 const axiosapi = axios.create({
   baseURL: '/api',
-  timeout: 120000
+  timeout: 15000
 })
 
 

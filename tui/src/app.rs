@@ -37,6 +37,7 @@ pub struct SidebarItem {
 pub struct ZeroClawSession {
     pub session_id: String,
     pub name: String,
+    #[allow(dead_code)]
     pub last_activity: String,
 }
 

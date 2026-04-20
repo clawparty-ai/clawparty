@@ -5,6 +5,7 @@ use crate::models::*;
 pub struct ApiClient {
     client: Client,
     base_url: String,
+    #[allow(dead_code)]
     token: String,
 }
 
@@ -25,10 +26,12 @@ impl ApiClient {
         Self { client, base_url, token }
     }
 
+    #[allow(dead_code)]
     pub fn base_url(&self) -> &str {
         &self.base_url
     }
 
+    #[allow(dead_code)]
     pub fn token(&self) -> &str {
         &self.token
     }
@@ -290,6 +293,7 @@ impl ApiClient {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn get_identity(&self) -> Result<String> {
         let resp = self.client
             .get(format!("{}/api/identity", self.base_url))
@@ -303,6 +307,7 @@ impl ApiClient {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn join_mesh(&self, mesh: &str, ep: &str, permit: &str) -> Result<()> {
         let body = serde_json::json!({
             "name": ep,
@@ -359,6 +364,7 @@ impl ApiClient {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn get_default_auto_reply(&self) -> Result<String> {
         let resp = self.client
             .get(format!("{}/api/default-auto-reply", self.base_url))
