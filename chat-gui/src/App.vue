@@ -1749,7 +1749,6 @@ const switchOpenclawSession = async (chat, sessionId) => {
     const response = await openclawService.getChatLog(chat.agentId)
     const messages = Array.isArray(response.data) ? response.data : []
     
-    // Fallback to session file if chat_log returns less than 10 messages
     if (messages.length < 10) {
       console.log('[switchOpenclawSession] chat_log has only', messages.length, 'messages, falling back to session file')
       await loadFromSessionFile(chat, chat.agentId, sessionId)
@@ -1766,7 +1765,6 @@ const switchOpenclawSession = async (chat, sessionId) => {
     chat.sessionId = sessionId
   } catch (error) {
     console.error('Failed to fetch chat log:', error)
-    // Fallback to session history
     await loadFromSessionFile(chat, chat.agentId, sessionId)
   }
 }

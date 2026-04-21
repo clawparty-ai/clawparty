@@ -846,6 +846,7 @@ const handleCreateZAgent = async () => {
 }
 
 const handleDeleteZAgent = async (agentName) => {
+  if (!confirm(`Are you sure you want to delete zAgent "${agentName}"? This action cannot be undone.`)) return
   try {
     await deleteZAgent(agentName)
   } catch (error) {
