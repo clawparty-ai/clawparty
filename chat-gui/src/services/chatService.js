@@ -130,8 +130,9 @@ export const zeroclawService = {
     return api.get('/zeroclaw/sessions')
   },
   
-  getMessages(sessionId) {
-    return api.get(`/zeroclaw/sessions/${sessionId}/messages`)
+  getMessages(agentName, sessionId) {
+    if (!sessionId) sessionId = 'me'
+    return api.get(`/zeroclaw/messages?agent=${encodeURIComponent(agentName)}&session=${encodeURIComponent(sessionId)}`)
   }
 }
 

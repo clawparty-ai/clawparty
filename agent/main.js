@@ -281,6 +281,28 @@ function main(listen, apiToken, noAuth) {
       },
     },
 
+    // Zeroclaw messages proxy with agent-port resolution
+    '/api/zeroclaw/messages': {
+      'GET': function (params, req) {
+        var url = new URL(req.head.path, 'http://localhost')
+        var agentName = url.searchParams.get('agent') || 'main'
+        var sessionId = url.searchParams.get('session') || 'me'
+        var agentStatus
+        try {
+          agentStatus = api.getAgentStatus(agentName)
+        } catch (e) {
+          return response(404, JSON.stringify({ error: 'Agent not found: ' + agentName }))
+        }
+        if (!agentStatus || agentStatus.status !== 'running') {
+          return response(503, JSON.stringify({ error: 'Agent not running' }))
+        }
+        var zeroclawAgent = new http.Agent('localhost:' + agentStatus.port)
+        return zeroclawAgent.request('GET', '/api/sessions/' + sessionId + '/messages').then(
+          res => response(res.head.status, res.body.toString())
+        )
+      },
+    },
+
     // Zeroclaw send message proxy
     '/api/zeroclaw/sessions/{sessionId}/chat': {
       'POST': function (params, req) {

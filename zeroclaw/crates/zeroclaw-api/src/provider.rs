@@ -10,6 +10,8 @@ use std::sync::Arc;
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+    #[serde(default)]
+    pub created_at: Option<String>,
 }
 
 impl ChatMessage {
@@ -17,6 +19,7 @@ impl ChatMessage {
         Self {
             role: "system".into(),
             content: content.into(),
+            created_at: None,
         }
     }
 
@@ -24,6 +27,7 @@ impl ChatMessage {
         Self {
             role: "user".into(),
             content: content.into(),
+            created_at: None,
         }
     }
 
@@ -31,6 +35,7 @@ impl ChatMessage {
         Self {
             role: "assistant".into(),
             content: content.into(),
+            created_at: None,
         }
     }
 
@@ -38,6 +43,7 @@ impl ChatMessage {
         Self {
             role: "tool".into(),
             content: content.into(),
+            created_at: None,
         }
     }
 }

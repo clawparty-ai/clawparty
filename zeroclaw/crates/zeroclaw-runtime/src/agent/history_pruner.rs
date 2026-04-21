@@ -83,6 +83,7 @@ pub fn prune_history(messages: &mut Vec<ChatMessage>, config: &HistoryPrunerConf
                 messages[i] = ChatMessage {
                     role: "assistant".to_string(),
                     content: summary,
+                    created_at: None,
                 };
                 messages.remove(i + 1);
                 collapsed_pairs += 1;

@@ -1337,7 +1337,11 @@ pub async fn handle_api_session_messages(
     let msgs = backend.load(&session_key);
     let messages: Vec<serde_json::Value> = msgs
         .into_iter()
-        .map(|m| serde_json::json!({ "role": m.role, "content": m.content }))
+        .map(|m| serde_json::json!({
+            "role": m.role,
+            "content": m.content,
+            "created_at": m.created_at,
+        }))
         .collect();
 
     Json(serde_json::json!({

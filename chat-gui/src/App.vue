@@ -472,6 +472,38 @@ const loadZeroClawChatHistory = async (session) => {
   }
 }
 
+const formatChatTime = (rfc3339) => {
+  if (!rfc3339) return ''
+  try {
+    const d = new Date(rfc3339)
+    return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0')
+  } catch {
+    return ''
+  }
+}
+
+const loadZAgentHistory = async (agentName, messages) => {
+  if (messages.length > 0) return
+  try {
+    const response = await zeroclawService.getMessages(agentName, 'me')
+    const history = (response.data?.messages || []).slice(-20)
+    for (let i = 0; i < history.length; i++) {
+      const msg = history[i]
+      const sender = msg.role === 'user' ? (currentMeshAgentUsername.value || 'You') : agentName
+      messages.push({
+        text: msg.content,
+        sender: sender,
+        time: formatChatTime(msg.created_at),
+        isSent: msg.role === 'user',
+        isTemp: false,
+        timestamp: msg.created_at ? new Date(msg.created_at).getTime() : 0
+      })
+    }
+  } catch (e) {
+    console.warn('[zAgent] Failed to load history:', e)
+  }
+}
+
 const fetchZAgents = async () => {
   try {
     const response = await zagentService.getAgents()
@@ -737,6 +769,9 @@ const selectZAgent = async (agent) => {
     isZeroClaw: true,
     messages: wsConnections[agentName].messages
   }
+
+  // Load historical messages (oldest first) for display
+  loadZAgentHistory(agentName, wsConnections[agentName].messages)
 }
 
 const handleZeroClawOpen = () => {
