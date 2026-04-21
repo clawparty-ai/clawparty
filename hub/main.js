@@ -1162,15 +1162,15 @@ var sseClients = []
 // Last file change timestamp (for polling)
 var lastFileChangeTime = Date.now()
 
-// Get file changes since a given time
-function getFileChangesSince(since) {
+// Get file changes since a given time, filtered by the caller's ACL
+function getFileChangesSince(since, isAccessible) {
   var changes = {}
   var allFiles = getAllFiles()
   for (var i = 0; i < allFiles.length; i++) {
     var pair = allFiles[i]
     var path = pair[0]
     var info = pair[1]
-    if (info['+'] && info['+'] > since) {
+    if (info['+'] && info['+'] > since && (!isAccessible || isAccessible(path))) {
       changes[path] = {
         '#': info['#'],
         '$': info['$'],
@@ -1186,7 +1186,7 @@ function getFileChangesSince(since) {
 var sseFilesystemPipeline = pipeline($=>$
   .replaceMessage(function(req) {
     logInfo('[Hub SSE] New SSE polling request, path=' + req.head.path)
-    
+
     // Parse since parameter from query string
     var path = req.head.path
     var since = 0
@@ -1197,15 +1197,15 @@ var sseFilesystemPipeline = pipeline($=>$
       if (endIdx >= 0) sinceStr = sinceStr.substring(0, endIdx)
       since = Number.parseFloat(sinceStr) || 0
     }
-    
+
     logInfo('[Hub SSE] Polling since=' + since)
-    
-    // Get file changes
-    var changes = getFileChangesSince(since)
+
+    var isAccessible = makeAccessChecker($ctx.username)
+    var changes = getFileChangesSince(since, isAccessible)
     var data = JSON.stringify(changes)
     var keys = Object.keys(changes)
     logInfo('[Hub SSE] Returning changes, count=' + keys.length)
-    
+
     return new Message({
       status: 200,
       headers: {
@@ -2180,7 +2180,25 @@ function makeAccessChecker(username) {
     acl[owner]?.forEach?.(access => {
       if (!access.all && !access.users) return
       if (path === access.pathname || path.startsWith(access.prefix)) {
-        switch (access.users?.[username] || access.all) {
+        var userAccess = access.users?.[username]
+        if (userAccess) {
+          switch (userAccess) {
+            case 'block': accessible = false; break
+            case 'readonly': accessible = true; break
+          }
+          return
+        }
+        // User not in the explicit users list.
+        // If a non-empty users map is present without `all`, treat it as a
+        // whitelist — deny anyone not listed. This closes a leak where a more
+        // specific ACL with only `{users: {...}}` would fail to override a
+        // broader `all: 'block'` decision from an outer ACL, while a legacy
+        // `{all: 'readonly'}` at the same level WOULD override it.
+        if (access.users && Object.keys(access.users).length > 0 && !access.all) {
+          accessible = false
+          return
+        }
+        switch (access.all) {
           case 'block': accessible = false; break
           case 'readonly': accessible = true; break
         }

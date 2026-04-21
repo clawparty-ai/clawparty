@@ -946,15 +946,55 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   mesh.acl(`/shared/${app.username}/publish`, { all: 'block' })
   mesh.acl(`/shared/${app.username}/publish/files`, { all: 'readonly' })
 
+  var initialPathSnapshot = null
+
   mesh.list('/shared').then(function(paths) {
+    initialPathSnapshot = new Set(Object.keys(paths))
+    var ownedGroupInfoReads = []
     Object.keys(paths).forEach(function(path) {
       var groupParams = matchPublishGroupInfo(path)
       if (groupParams) {
+        if (groupParams.sender === app.username && groupParams.creator === app.username) {
+          ownedGroupInfoReads.push(path)
+        }
         readMessages(path, true)
+        return
+      }
+      var peerParams = matchPublishPeerMsgs(path)
+      if (peerParams) {
+        ensurePeerChatFromPath(peerParams)
       }
     })
+    // Rewrite ACLs for groups I created — heals legacy `{all: 'readonly'}` leaks
+    // from pre-c798a9e versions and ensures every owned group has the safe
+    // `{all: 'block', users: {...}}` pattern in hub state.
+    rewriteOwnedGroupAcls(ownedGroupInfoReads)
     watchMessages()
   })
+
+  function rewriteOwnedGroupAcls(infoPaths) {
+    infoPaths.forEach(function (path) {
+      var params = matchPublishGroupInfo(path)
+      if (!params) return
+      mesh.read(path).then(function (data) {
+        if (!data) return
+        var info
+        try { info = JSON.decode(data) } catch { return }
+        var members = info.members instanceof Array ? info.members : []
+        var dirname = `/shared/${params.creator}/publish/groups/${params.creator}/${params.group}`
+        mesh.acl(dirname, makeGroupAcl(members))
+      })
+    })
+  }
+
+  function ensurePeerChatFromPath(params) {
+    var me = app.username
+    var peer
+    if (params.receiver === me) peer = params.sender
+    else if (params.sender === me) peer = params.receiver
+    else return
+    if (!findPeerChat(peer)) newPeerChat(peer)
+  }
 
   var isReadingMessages = false
 
@@ -962,8 +1002,15 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     mesh.watch('/shared').then(paths => {
       if (isReadingMessages) return Promise.resolve()
       isReadingMessages = true
+      var toProcess
+      if (initialPathSnapshot) {
+        toProcess = paths.filter(function (p) { return !initialPathSnapshot.has(p) })
+        initialPathSnapshot = null
+      } else {
+        toProcess = paths
+      }
       return Promise.all(
-        paths.map(path => readMessages(path, false))
+        toProcess.map(path => readMessages(path, false))
       ).then(() => { isReadingMessages = false })
     }).then(() => watchMessages())
   }
@@ -1201,13 +1248,28 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
 
   // ────────────────────────────────────────────────────────────────────────
   //  On-demand sync helpers called by API endpoints in main.js
+  //
+  //  Each sync reads every historical message file from the hub. The frontend
+  //  polls /messages once per second, so without throttling every group/peer
+  //  gets a full re-download every second — a bandwidth flood and the source
+  //  of "Too many open files" errors. Skip a sync if the same key was synced
+  //  within the last SYNC_MIN_INTERVAL_MS; live updates arrive via mesh.watch
+  //  in watchMessages regardless.
   // ────────────────────────────────────────────────────────────────────────
+
+  var SYNC_MIN_INTERVAL_MS = 2000
+  var syncPeerCache = new Map()
+  var syncGroupCache = new Map()
 
   /**
    * Sync all peer messages for a given peer name.
    * Called when user opens a 1:1 or group chat for the first time.
    */
   function syncPeerMessages(peerName) {
+    var now = Date.now()
+    var last = syncPeerCache.get(peerName) || 0
+    if (now - last < SYNC_MIN_INTERVAL_MS) return Promise.resolve([])
+    syncPeerCache.set(peerName, now)
     var me = app.username
     var sender
     var receiver
@@ -1270,6 +1332,11 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
    * Sync all group chat messages for a given group.
    */
   function syncGroupMessages(creator, group) {
+    var cacheKey = creator + '|' + group
+    var now = Date.now()
+    var last = syncGroupCache.get(cacheKey) || 0
+    if (now - last < SYNC_MIN_INTERVAL_MS) return Promise.resolve([])
+    syncGroupCache.set(cacheKey, now)
     var me = app.username
     var syncPath = '/shared/' + creator + '/publish/groups/' + creator + '/' + group
     return Promise.all([
@@ -1596,7 +1663,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       })
     }
     var dirname = `/shared/${creator}/publish/groups/${creator}/${group}`
-    return mesh.acl(dirname, { users: Object.fromEntries(chat.members.map(name => [name, 'readonly'])) }).then(
+    return mesh.acl(dirname, makeGroupAcl(chat.members)).then(
       () => mesh.write(os.path.join(dirname, 'info.json'), JSON.encode(chat))
     ).then(() => {
       try {
@@ -1605,6 +1672,14 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
       } catch {}
       return true
     })
+  }
+
+  function makeGroupAcl(members) {
+    var users = {}
+    if (members instanceof Array) {
+      members.forEach(function (name) { users[name] = 'readonly' })
+    }
+    return { all: 'block', users: users }
   }
 
   var dismissedGroupsCache = {}
@@ -1702,10 +1777,7 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     var msgText = typeof message === 'string' ? message : (message?.text || JSON.stringify(message))
     console.info('[chat send]', taggedSender, '-> group', group, ':', firstLine(msgText))
     var dirname = `/shared/${realCreator}/publish/groups/${realCreator}/${group}`
-    var membersAcl = (chat.members instanceof Array && chat.members.length > 0)
-      ? { users: Object.fromEntries(chat.members.map(name => [name, 'readonly'])) }
-      : { all: 'readonly' }
-    return mesh.acl(dirname, membersAcl).then(
+    return mesh.acl(dirname, makeGroupAcl(chat.members)).then(
       () => publishMessage(os.path.join(dirname, 'messages'), taggedMessage)
     ).then(() => {
       try {

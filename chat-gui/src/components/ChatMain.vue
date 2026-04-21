@@ -163,6 +163,10 @@ const props = defineProps({
   },
   	
   modelValue: String,
+  isActive: {
+    type: Boolean,
+    default: true
+  },
   showBackButton: {
     type: Boolean,
     default: false
@@ -1304,16 +1308,27 @@ watch(() => props.chat.name, (name) => {
 
 // ── end peer mode ────────────────────────────────────────────────────────────────
 
-watch(() => props.chat.name, async () => {
-  if (props.chat.name) {
-    await loadPeerMode()  // 先加载 peerConfig，确保 autoReplyAgentName 可用
+// Fetch history + start polling only when this chat is both named AND active.
+// Previously every mounted ChatMain (one per chat in the list) fired fetchMessages
+// on mount via `immediate: true`, which on startup triggered a flood of
+// syncGroupMessages/syncPeerMessages calls — each one reads every historical
+// message file for that chat from the hub.
+watch(
+  () => [props.chat.name, props.isActive],
+  async ([name, isActive], prev) => {
+    if (!name || !isActive) {
+      if (prev && prev[1]) stopPolling()
+      return
+    }
+    await loadPeerMode()
     if (!props.chat.isOpenclaw) {
       fetchMessages().then(() => {
         startPolling()
       })
     }
-  }
-}, { immediate: true })
+  },
+  { immediate: true }
+)
 
 watch(() => props.chat.messages?.length, () => {
   scrollToBottom()

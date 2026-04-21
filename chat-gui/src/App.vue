@@ -117,6 +117,7 @@
       :currentUserName="currentMeshAgentUsername"
       :sending="sending && currentActiveChatId === item.id"
       :openclawSessions="[]"
+      :isActive="currentActiveChatId === item.id"
       :showBackButton="isMobile"
       :autoFocus="!isMobile"
       v-model="newMessage"
