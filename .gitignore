@@ -25,6 +25,13 @@ tests/reports/
 tests/test-result-*.log
 tests/tmp/
 
+# Local test configs with real credentials (use *.example files as templates)
+tests/acl-local/tmp/
+tests/**/*.local.sh
+tests/**/*.local.toml
+tests/**/.env.local
+tests/.env.local
+
 # Session notes
 session-add-sse-support.md
 

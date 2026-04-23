@@ -1,0 +1,35 @@
+# Example ZeroClaw Configuration for ACL Tests
+#
+# This is a template file. To use it:
+# 1. Copy this file to config.local.toml (gitignored)
+# 2. Replace placeholder values with your actual credentials
+# 3. The setup.sh script will use config.local.toml if it exists
+#
+# SECURITY WARNING: Never commit config.local.toml or any file containing real API keys!
+
+default_provider = "openai"
+default_model = "gpt-4o-mini"
+default_temperature = 0.7
+provider_timeout_secs = 120
+
+# Replace with your actual API key
+api_key = "your-api-key-here"
+
+model_routes = []
+embedding_routes = []
+
+[model_providers]
+
+# Example: Custom OpenAI-compatible provider
+# [model_providers.custom]
+# name = "openai"
+# base_url = "https://your-api-endpoint.com/v1"
+
+# Example: Aliyun PAI-EAS endpoint
+# [model_providers.aliyun]
+# name = "openai"
+# base_url = "http://your-instance-id.cn-hangzhou.pai-eas.aliyuncs.com/api/predict/your-deployment/v1"
+
+[memory]
+backend = "none"
+auto_save = false
