@@ -445,6 +445,7 @@
               <span class="item-name">{{ agent.display_name || agent.agent_name }}</span>
               <span v-if="false" class="item-status" :class="agent.status">{{ agent.status }}</span>
               <button
+                v-if="agent.agent_name !== '0#Agent'"
                 class="delete-agent-btn"
                 @click.stop="handleDeleteZAgent(agent.agent_name)"
                 title="Delete Agent"

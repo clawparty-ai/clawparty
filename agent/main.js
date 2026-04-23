@@ -349,6 +349,9 @@ function main(listen, apiToken, noAuth) {
 
       'DELETE': function ({ name }) {
         name = URL.decodeComponent(name)
+        if (name === '0#Agent') {
+          return response(403, JSON.stringify({ error: 'Cannot delete system agent: 0#Agent' }))
+        }
         try {
           var result = api.deleteAgent(name)
           return response(200, result)

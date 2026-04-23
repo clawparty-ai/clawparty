@@ -166,7 +166,7 @@ impl SessionBackend for SqliteSessionBackend {
     fn load(&self, session_key: &str) -> Vec<ChatMessage> {
         let conn = self.conn.lock();
         let mut stmt = match conn
-            .prepare("SELECT role, content, created_at FROM sessions WHERE session_key = ?1 ORDER BY id ASC LIMIT 50")
+            .prepare("SELECT role, content, created_at FROM (SELECT role, content, created_at, id FROM sessions WHERE session_key = ?1 ORDER BY id DESC LIMIT 50) sub ORDER BY id ASC")
         {
             Ok(s) => s,
             Err(_) => return Vec::new(),

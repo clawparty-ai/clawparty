@@ -487,7 +487,7 @@ const loadZAgentHistory = async (agentName, messages) => {
   if (messages.length > 0) return
   try {
     const response = await zeroclawService.getMessages(agentName, 'me')
-    const history = (response.data?.messages || []).slice(-20)
+    const history = response.data?.messages || []
     for (let i = 0; i < history.length; i++) {
       const msg = history[i]
       const sender = msg.role === 'user' ? (currentMeshAgentUsername.value || 'You') : agentName
@@ -508,7 +508,20 @@ const loadZAgentHistory = async (agentName, messages) => {
 const fetchZAgents = async () => {
   try {
     const response = await zagentService.getAgents()
-    zAgents.value = response.data || []
+    const agents = response.data || []
+    // Move 0#Agent to the top of the list
+    var zeroAgentIndex = -1
+    for (var i = 0; i < agents.length; i++) {
+      if (agents[i].agent_name === '0#Agent') {
+        zeroAgentIndex = i
+        break
+      }
+    }
+    if (zeroAgentIndex > 0) {
+      var zeroAgent = agents.splice(zeroAgentIndex, 1)[0]
+      agents.unshift(zeroAgent)
+    }
+    zAgents.value = agents
   } catch (error) {
     console.error('Failed to fetch zAgents:', error)
   }

@@ -444,6 +444,11 @@ function createAgent(agentName, displayName) {
 }
 
 function deleteAgent(agentName) {
+  if (agentName === '0#Agent') {
+    console.log('[AGENT] Delete rejected: 0#Agent is a system agent and cannot be deleted')
+    throw 'Cannot delete system agent: 0#Agent'
+  }
+
   console.log('[AGENT] Deleting agent: ' + agentName)
   
   var agent = db.getAgent(agentName)
