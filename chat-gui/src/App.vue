@@ -1064,6 +1064,7 @@ const selectChat = (index) => {
   activeChat.value = index
   if (chats.value[index]) {
     chats.value[index].updated = 0
+    currentActiveChatId.value = chats.value[index].id
   }
 }
 

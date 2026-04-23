@@ -54,6 +54,30 @@ cleanup() {
   mkdir -p "$TMP"
 }
 
+init_zeroclaw_config() {
+  local data_dir=$1
+  local config_dir="$data_dir/.zeroclaw"
+
+  mkdir -p "$config_dir"
+  if [ -f "$HOME/.zeroclaw/config.toml" ]; then
+    cp "$HOME/.zeroclaw/config.toml" "$config_dir/config.toml"
+    log "copied ZeroClaw config from ~/.zeroclaw/config.toml to $config_dir"
+  else
+    cat > "$config_dir/config.toml" <<'EOF'
+default_provider = "openai"
+default_model = "gpt-4o-mini"
+api_key = "your-api-key-here"
+
+[model_providers]
+
+[memory]
+backend = "none"
+auto_save = false
+EOF
+    log "initialized ZeroClaw config at $config_dir/config.toml"
+  fi
+}
+
 start_hub() {
   log "starting hub on :$HUB_PORT (registration :$REG_PORT)"
   nohup "$ZTM" run hub \
@@ -70,6 +94,7 @@ start_hub() {
 start_agent() {
   local name=$1 port=$2
   log "starting agent '$name' on :$port"
+  init_zeroclaw_config "$TMP/$name"
   nohup "$ZTM" run agent \
     --listen "127.0.0.1:$port" \
     --data "$TMP/$name" \
