@@ -862,6 +862,23 @@ impl Agent {
         for _ in 0..self.config.max_tool_iterations {
             let messages = self.tool_dispatcher.to_provider_messages(&self.history);
 
+            // ── Debug: log context composition ───────────────────────
+            let system_chars = messages.iter().find(|m| m.role == "system").map(|m| m.content.len()).unwrap_or(0);
+            let history_msgs = messages.iter().filter(|m| m.role != "system").collect::<Vec<_>>();
+            let history_count = history_msgs.len();
+            let history_chars = history_msgs.iter().map(|m| m.content.len()).sum::<usize>();
+            let tool_schema_chars = if self.tool_dispatcher.should_send_tool_specs() {
+                serde_json::to_string(&self.tool_specs).unwrap_or_default().len()
+            } else {
+                0
+            };
+            let total_chars = system_chars + history_chars + tool_schema_chars;
+            tracing::debug!(
+                system_chars, history_count, history_chars, tool_schema_chars, total_chars,
+                estimated_tokens = total_chars / 4,
+                "LLM request context composition"
+            );
+
             // Response cache: check before LLM call (only for deterministic, text-only prompts)
             let cache_key = if self.temperature == 0.0 {
                 self.response_cache.as_ref().map(|_| {
@@ -1036,6 +1053,23 @@ impl Agent {
         // ── Turn loop ──────────────────────────────────────────────────
         for _ in 0..self.config.max_tool_iterations {
             let messages = self.tool_dispatcher.to_provider_messages(&self.history);
+
+            // ── Debug: log context composition ───────────────────────
+            let system_chars = messages.iter().find(|m| m.role == "system").map(|m| m.content.len()).unwrap_or(0);
+            let history_msgs = messages.iter().filter(|m| m.role != "system").collect::<Vec<_>>();
+            let history_count = history_msgs.len();
+            let history_chars = history_msgs.iter().map(|m| m.content.len()).sum::<usize>();
+            let tool_schema_chars = if self.tool_dispatcher.should_send_tool_specs() {
+                serde_json::to_string(&self.tool_specs).unwrap_or_default().len()
+            } else {
+                0
+            };
+            let total_chars = system_chars + history_chars + tool_schema_chars;
+            tracing::debug!(
+                system_chars, history_count, history_chars, tool_schema_chars, total_chars,
+                estimated_tokens = total_chars / 4,
+                "LLM request context composition"
+            );
 
             // Response cache check (same as turn)
             let cache_key = if self.temperature == 0.0 {
