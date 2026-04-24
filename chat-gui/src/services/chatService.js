@@ -241,6 +241,9 @@ export const zagentService = {
   },
   stopAgent(name) {
     return api.post(`/agents/${encodeURIComponent(name)}/stop`)
+  },
+  getGlobalConfig() {
+    return api.get('/global-config')
   }
 }
 

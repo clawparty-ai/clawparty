@@ -124,6 +124,7 @@
               placeholder="Leave empty for random name"
               :disabled="joinPartyLoading"
             />
+            <div v-if="joinPartyStep" class="join-party-step">{{ joinPartyStep }}</div>
             <div v-if="joinPartyError" class="join-party-error">{{ joinPartyError }}</div>
             <div v-if="joinPartySuccess" class="join-party-success">{{ joinPartySuccess }}</div>
           </div>
@@ -204,6 +205,12 @@
                 <span class="toggle-icon">{{ showModelConfig ? '▾' : '▸' }}</span>
                 模型配置（可选，留空使用全局配置）
               </button>
+
+              <!-- Global config hint -->
+              <div v-if="globalConfig && !newZAgentProvider" class="global-config-hint">
+                <span class="hint-icon">ℹ️</span>
+                <span class="hint-text">将使用全局配置: {{ globalConfig.llm?.model || '未知模型' }}</span>
+              </div>
 
               <div v-if="showModelConfig" class="model-config-fields">
                 <!-- Provider -->
@@ -965,6 +972,7 @@ const joinPartyUserName = ref('')
 const joinPartyLoading = ref(false)
 const joinPartyError = ref('')
 const joinPartySuccess = ref('')
+const joinPartyStep = ref('')
 
 const toggleJoinParty = () => {
   showJoinParty.value = !showJoinParty.value
@@ -979,6 +987,7 @@ const closeJoinParty = () => {
   showJoinParty.value = false
   joinPartyError.value = ''
   joinPartySuccess.value = ''
+  joinPartyStep.value = ''
   joinPartyUserName.value = ''
 }
 
@@ -1007,6 +1016,18 @@ const newZAgentApiEndpoint = ref('')
 const newZAgentApiKey = ref('')
 const newZAgentModel = ref('')
 const modelConfigError = ref('')
+const globalConfig = ref(null)
+
+// Load global config when component mounts
+onMounted(async () => {
+  try {
+    const { zagentService } = await import('../services/chatService')
+    const response = await zagentService.getGlobalConfig()
+    globalConfig.value = response.data
+  } catch (error) {
+    console.log('No global config found:', error)
+  }
+})
 
 const modelPlaceholder = computed(() => {
   const placeholders = {
@@ -1107,15 +1128,23 @@ const handleJoinParty = async () => {
   joinPartyLoading.value = true
   joinPartyError.value = ''
   joinPartySuccess.value = ''
+  joinPartyStep.value = '正在连接 Hub...'
   try {
     await joinParty(joinPartyUrl.value, joinPartyUserName.value.trim() || undefined)
+    joinPartyStep.value = '正在获取配置...'
+    // Wait a bit to show the step
+    await new Promise(resolve => setTimeout(resolve, 300))
+    joinPartyStep.value = '正在创建 0#Agent...'
+    await new Promise(resolve => setTimeout(resolve, 300))
     joinPartySuccess.value = '成功加入组织！'
+    joinPartyStep.value = ''
     setTimeout(() => {
       closeJoinParty()
     }, 1500)
   } catch (err) {
     const msg = err?.response?.data?.message || err?.message || 'Failed to join party'
     joinPartyError.value = msg
+    joinPartyStep.value = ''
   } finally {
     joinPartyLoading.value = false
   }
@@ -2025,6 +2054,27 @@ const getStatusText = (agent) => {
   color: var(--slack-green);
   font-size: 13px;
   padding: 4px 0;
+}
+
+.join-party-step {
+  color: #667eea;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.global-config-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: rgba(102, 126, 234, 0.08);
+  border-radius: 6px;
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.hint-text {
+  color: #667eea;
 }
 
 @media (max-width: 768px) {

@@ -1,6 +1,7 @@
 import db from './db.js'
 import Mesh from './mesh.js'
 import templates from './templates.js'
+import config from './config.js'
 
 var rootDir = ''
 var agentListen = ''
@@ -22,6 +23,7 @@ function init(dirname, listen, proxy, pqc, p2pCfg) {
   pqcSettings = pqc
   p2pConfig = p2pCfg || {}
   templates.init(rootDir, db)
+  config.init(rootDir)  // Initialize config module
   var allMeshesData = db.allMeshes()
   for (var i = 0; i < allMeshesData.length; i++) {
     var mesh = allMeshesData[i]
@@ -477,6 +479,16 @@ function createAgent(agentName, displayName, modelConfig, description) {
     throw 'Agent already exists: ' + agentName
   }
 
+  // If no model config provided, try to load from global config
+  if (!modelConfig || !modelConfig.api_key) {
+    console.log('[AGENT] No model config provided, loading from global config')
+    var globalConfig = config.loadGlobalConfig()
+    if (globalConfig && globalConfig.llm && globalConfig.llm.api_key) {
+      modelConfig = config.mergeConfig(globalConfig, modelConfig)
+      console.log('[AGENT] Loaded model config from global config')
+    }
+  }
+
   console.log('[AGENT] Step 1: Allocate port')
   // Allocate port
   var port = allocatePort()
@@ -533,6 +545,35 @@ function createAgent(agentName, displayName, modelConfig, description) {
     directory: agentDir,
     port: port,
     status: 'created'
+  }
+}
+
+// Create the 0#Agent using hub-provided LLM config
+// Returns true on success, false on failure (non-blocking)
+function createZeroAgent(llmConfig) {
+  var agentName = '0#Agent'
+
+  // Skip if already exists
+  if (db.getAgent(agentName)) {
+    console.log('[AGENT] 0#Agent already exists, skipping creation')
+    return false
+  }
+
+  try {
+    createAgent(agentName, '0#Agent', llmConfig, 'System agent created from hub config')
+    console.info('[AGENT] 0#Agent created successfully')
+
+    try {
+      startAgent(agentName)
+      console.info('[AGENT] 0#Agent started')
+    } catch (e) {
+      console.error('[AGENT] 0#Agent created but failed to start:', e)
+    }
+
+    return true
+  } catch (e) {
+    console.error('[AGENT] Failed to create 0#Agent:', e)
+    return false
   }
 }
 
@@ -835,6 +876,7 @@ export default {
   getEndpointStats,
   // AI-Agent management
   createAgent,
+  createZeroAgent,
   deleteAgent,
   startAgent,
   stopAgent,
@@ -845,4 +887,8 @@ export default {
   getSharedTemplates,
   installLocalTemplate,
   installSharedTemplate,
+  // Global config management
+  saveGlobalConfig: config.saveGlobalConfig,
+  loadGlobalConfig: config.loadGlobalConfig,
+  mergeConfig: config.mergeConfig,
 }

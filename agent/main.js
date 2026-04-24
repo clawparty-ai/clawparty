@@ -406,6 +406,35 @@ function main(listen, apiToken, noAuth) {
       },
     },
 
+    '/api/global-config': {
+      'GET': function () {
+        var cfg = api.loadGlobalConfig()
+        if (!cfg) return response(404, { error: 'No global config found' })
+        // Don't expose api_key in response
+        var safe = JSON.parse(JSON.stringify(cfg))
+        if (safe.llm) delete safe.llm.api_key
+        return response(200, safe)
+      },
+
+      'PUT': function (_, req) {
+        var body
+        try {
+          body = JSON.decode(req.body)
+        } catch {
+          return response(400, { error: 'invalid request body' })
+        }
+        if (!body || !body.llm) return response(400, { error: 'missing llm config' })
+        try {
+          var saved = api.saveGlobalConfig(body.llm, body.metadata?.hub_url || '')
+          var safe = JSON.parse(JSON.stringify(saved))
+          if (safe.llm) delete safe.llm.api_key
+          return response(200, { message: 'Global config updated', config: safe })
+        } catch (e) {
+          return response(500, { error: e.message || e })
+        }
+      },
+    },
+
     //
     // Mesh
     //   name: string
@@ -1366,6 +1395,20 @@ function main(listen, apiToken, noAuth) {
             console.info('[join-party] agent.privateKey:', parsedPermit.agent?.privateKey ? 'present' : 'missing')
             console.info('[join-party] bootstraps:', parsedPermit.bootstraps ? JSON.stringify(parsedPermit.bootstraps) : 'missing')
 
+            // Extract and save global LLM config from hub
+            var defaultLLMConfig = parsedPermit.default_llm_config
+            if (defaultLLMConfig) {
+              console.info('[join-party] Received default LLM config from hub')
+              try {
+                api.saveGlobalConfig(defaultLLMConfig, resolvedUrl)
+                console.info('[join-party] Global config saved')
+              } catch (e) {
+                console.error('[join-party] Failed to save global config:', e)
+              }
+            } else {
+              console.info('[join-party] Hub did not provide default LLM config')
+            }
+
             var bootstraps = parsedPermit.bootstraps || []
             if (bootstraps.length === 0 && parsedPermit.hubs) {
               bootstraps = parsedPermit.hubs.map(h => {
@@ -1383,6 +1426,17 @@ function main(listen, apiToken, noAuth) {
               },
               bootstraps: bootstraps,
             })
+
+            // Auto-create 0#Agent if hub provided config
+            if (defaultLLMConfig) {
+              console.info('[join-party] Creating 0#Agent with hub config')
+              try {
+                api.createZeroAgent(defaultLLMConfig)
+              } catch (e) {
+                console.error('[join-party] Failed to create 0#Agent:', e)
+                // Don't block join party flow
+              }
+            }
 
             return response(200, {
               meshName: meshName,
