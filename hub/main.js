@@ -15,6 +15,9 @@ var hubVersion = {
   pipy: { ...pipy.version },
 }
 
+// Default LLM config for agents (loaded from config file or CLI args)
+var defaultLlmConfig = null
+
 try {
   var cluster = pipy.import('./cluster.js')
 } catch {
@@ -281,6 +284,7 @@ function main() {
             --pqc-key-exchange    <algorithm>       Specify the PQC key exchange algorithm such as 'ML-KEM-512'
             --pqc-signature       <algorithm>       Specify the PQC signature algorithm such as 'ML-DSA-44'
             --enable-registration [ip:port]         Enable the open registration API (default listen: 0.0.0.0:5678)
+            --llm-config          <file>            Specify a JSON file with default LLM config for agents
       ` + (cluster ? `
             --bootstrap           <host:port ...>   Specify the bootstrap addresses of the hub cluster
             --zone                <zone>            Specify the zone that the hub is deployed in
@@ -296,6 +300,25 @@ function main() {
         maxForwardings = Number.parseInt(args['--max-sessions'] || 1000)
         if (Number.isNaN(maxForwardings) || maxForwardings < 10) {
           throw 'invalid value for option --max-sessions'
+        }
+
+        // Load LLM config if provided
+        var llmConfigFile = args['--llm-config']
+        if (llmConfigFile) {
+          try {
+            var configContent = os.read(llmConfigFile).toString()
+            var config = JSON.decode(configContent)
+            if (config && config.default_llm_config) {
+              defaultLlmConfig = config.default_llm_config
+              logInfo(`Loaded default LLM config from: ${llmConfigFile}`)
+              logInfo(`  Provider: ${defaultLlmConfig.provider || 'N/A'}`)
+              logInfo(`  Model: ${defaultLlmConfig.model || 'N/A'}`)
+            } else {
+              logWarn(`LLM config file missing 'default_llm_config' field: ${llmConfigFile}`)
+            }
+          } catch (e) {
+            logWarn(`Failed to load LLM config from ${llmConfigFile}: ${e}`)
+          }
         }
 
         var dbPath = args['--data'] || '~/.ztm'
@@ -745,6 +768,11 @@ var postInvite = pipeline($=>$
             certificate: userCert.toPEM().toString(),
           },
           bootstraps: hubAddresses,
+        }
+
+        // Attach default LLM config if available
+        if (defaultLlmConfig) {
+          permit.default_llm_config = defaultLlmConfig
         }
 
         db.setUserStatus(userName, 'permit-issued')

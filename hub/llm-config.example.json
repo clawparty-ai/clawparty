@@ -1,0 +1,10 @@
+{
+  "default_llm_config": {
+    "provider": "custom",
+    "api_endpoint": "http://1873330231187220.cn-hangzhou.pai-eas.aliyuncs.com/api/predict/quickstart_deploy_20260422_wqkx/v1",
+    "api_key": "NTA5OWQ1ZjVjZjUzYTg3OTk5ZDAwMTk2OWY0NDU0NzliNDliN2JhYQ==",
+    "model": "Kimi-K2.6",
+    "temperature": 0.7,
+    "timeout_secs": 120
+  }
+}
