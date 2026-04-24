@@ -170,20 +170,102 @@
     <!-- Create zAgent Dialog -->
     <Teleport to="body">
       <div v-if="showCreateZAgentDialog" class="modal-backdrop" @click.self="showCreateZAgentDialog = false">
-        <div class="modal-dialog">
+        <div class="modal-dialog zagent-create-dialog">
           <div class="modal-header">
             <span class="modal-title">创建 zAgent</span>
             <button class="modal-close" @click="showCreateZAgentDialog = false">✕</button>
           </div>
 
-          <div class="join-party-body">
-            <label class="join-party-label">Agent Name</label>
-            <input
-              v-model="newZAgentName"
-              class="search-input"
-              placeholder="请输入 agent 名字"
-              @keyup.enter="handleCreateZAgent"
-            />
+          <div class="zagent-form-body">
+            <!-- Agent Name -->
+            <div class="form-field">
+              <label class="form-label">Agent Name <span class="required">*</span></label>
+              <input
+                v-model="newZAgentName"
+                class="search-input"
+                placeholder="请输入 agent 名字"
+                @keyup.enter="handleCreateZAgent"
+              />
+            </div>
+
+            <!-- Description -->
+            <div class="form-field">
+              <label class="form-label">描述（可选）</label>
+              <input
+                v-model="newZAgentDescription"
+                class="search-input"
+                placeholder="Agent 描述，例如：负责客服回复的助手"
+              />
+            </div>
+
+            <!-- Model Config Section -->
+            <div class="model-config-section">
+              <button class="model-config-toggle" @click="showModelConfig = !showModelConfig">
+                <span class="toggle-icon">{{ showModelConfig ? '▾' : '▸' }}</span>
+                模型配置（可选，留空使用全局配置）
+              </button>
+
+              <div v-if="showModelConfig" class="model-config-fields">
+                <!-- Provider -->
+                <div class="form-field">
+                  <label class="form-label">Provider</label>
+                  <select v-model="newZAgentProvider" class="search-input form-select">
+                    <option value="">-- 使用全局配置 --</option>
+                    <option value="custom">OpenAI 兼容（自定义端点）</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="qwen">阿里云通义</option>
+                    <option value="moonshot">月之暗面 Kimi</option>
+                    <option value="doubao">字节豆包</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="ollama">本地 Ollama</option>
+                  </select>
+                </div>
+
+                <!-- API Endpoint (only for custom / ollama) -->
+                <div v-if="newZAgentProvider === 'custom' || newZAgentProvider === 'ollama'" class="form-field">
+                  <label class="form-label">
+                    API 端点
+                    <span v-if="newZAgentProvider === 'custom'" class="required">*</span>
+                  </label>
+                  <input
+                    v-model="newZAgentApiEndpoint"
+                    class="search-input"
+                    :placeholder="newZAgentProvider === 'ollama' ? 'http://localhost:11434' : 'https://your-endpoint/v1'"
+                  />
+                </div>
+
+                <!-- API Key -->
+                <div class="form-field">
+                  <label class="form-label">
+                    API Key
+                    <span v-if="newZAgentProvider && newZAgentProvider !== 'ollama'" class="required">*</span>
+                  </label>
+                  <input
+                    v-model="newZAgentApiKey"
+                    type="password"
+                    class="search-input"
+                    placeholder="sk-..."
+                    autocomplete="new-password"
+                  />
+                </div>
+
+                <!-- Model -->
+                <div class="form-field">
+                  <label class="form-label">
+                    模型名称
+                    <span v-if="newZAgentProvider" class="required">*</span>
+                  </label>
+                  <input
+                    v-model="newZAgentModel"
+                    class="search-input"
+                    :placeholder="modelPlaceholder"
+                  />
+                </div>
+
+                <p v-if="modelConfigError" class="form-error">{{ modelConfigError }}</p>
+              </div>
+            </div>
           </div>
 
           <div class="modal-footer">
@@ -437,23 +519,59 @@
             <div
               v-for="agent in zAgents"
               :key="agent.agent_name"
-              class="panel-item"
-              :class="{ active: activeZAgent?.agent_name === agent.agent_name }"
-              @click="selectZAgent(agent)"
+              class="zagent-item-wrapper"
             >
-              <div class="item-avatar">🤖</div>
-              <span class="item-name">{{ agent.display_name || agent.agent_name }}</span>
-              <span v-if="false" class="item-status" :class="agent.status">{{ agent.status }}</span>
-              <button
-                v-if="agent.agent_name !== '0#Agent'"
-                class="delete-agent-btn"
-                @click.stop="handleDeleteZAgent(agent.agent_name)"
-                title="Delete Agent"
+              <div
+                class="panel-item zagent-item"
+                :class="{ active: activeZAgent?.agent_name === agent.agent_name }"
+                @click="selectZAgent(agent)"
               >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                  <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                </svg>
-              </button>
+                <div class="item-avatar">🤖</div>
+                <div class="zagent-info">
+                  <div class="zagent-name-row">
+                    <span class="item-name">{{ agent.display_name || agent.agent_name }}</span>
+                    <span class="zagent-status-dot" :class="'status-' + (agent.status || 'created')"></span>
+                  </div>
+                  <div class="zagent-status-text" :class="'status-' + (agent.status || 'created')">
+                    {{ getStatusText(agent) }}
+                  </div>
+                </div>
+                <div class="zagent-actions">
+                  <!-- Start button: show for created/stopped/error -->
+                  <button
+                    v-if="['created', 'stopped', 'error'].includes(agent.status || 'created')"
+                    class="agent-action-btn start-btn"
+                    @click.stop="handleStartAgent(agent.agent_name)"
+                    title="Start Agent"
+                  >
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                      <path d="M8 5v14l11-7z"/>
+                    </svg>
+                  </button>
+                  <!-- Stop button: show for running -->
+                  <button
+                    v-if="agent.status === 'running'"
+                    class="agent-action-btn stop-btn"
+                    @click.stop="handleStopAgent(agent.agent_name)"
+                    title="Stop Agent"
+                  >
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                      <rect x="6" y="6" width="12" height="12"/>
+                    </svg>
+                  </button>
+                  <!-- Delete button -->
+                  <button
+                    v-if="agent.agent_name !== '0#Agent'"
+                    class="agent-action-btn delete-btn"
+                    @click.stop="handleDeleteZAgent(agent.agent_name)"
+                    title="Delete Agent"
+                  >
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                      <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
             </div>
           </template>
           <div v-else class="panel-empty">No zAgents. Click +A to create one.</div>
@@ -550,7 +668,7 @@
 </template>
 
 <script setup>
-import { ref, computed, inject, watch } from 'vue'
+import { ref, computed, inject, watch, onMounted, onUnmounted } from 'vue'
 import { getAvatarColor } from '../utils/avatar'
 
 const props = defineProps({
@@ -584,6 +702,54 @@ const selectZAgent = inject('selectZAgent')
 const createZAgent = inject('createZAgent')
 const deleteZAgent = inject('deleteZAgent')
 const fetchZAgents = inject('fetchZAgents')
+
+// Agent status polling
+const pollingTimers = ref(new Map())
+
+const startPolling = (agentName, interval) => {
+  stopPolling(agentName)
+  const timerId = setInterval(() => {
+    fetchZAgents()
+  }, interval)
+  pollingTimers.value.set(agentName, timerId)
+}
+
+const stopPolling = (agentName) => {
+  const timerId = pollingTimers.value.get(agentName)
+  if (timerId) {
+    clearInterval(timerId)
+    pollingTimers.value.delete(agentName)
+  }
+}
+
+const stopAllPolling = () => {
+  pollingTimers.value.forEach((timerId) => clearInterval(timerId))
+  pollingTimers.value.clear()
+}
+
+// Watch zAgents for status changes
+watch(zAgents, (newAgents, oldAgents) => {
+  if (!newAgents) return
+
+  newAgents.forEach(agent => {
+    const oldAgent = oldAgents?.find(a => a.agent_name === agent.agent_name)
+    const status = agent.status || 'created'
+
+    // Start polling for 'starting' agents
+    if (status === 'starting' && !pollingTimers.value.has(agent.agent_name)) {
+      startPolling(agent.agent_name, 2000)
+    }
+
+    // Stop polling when status changes from 'starting' to 'running' or 'error'
+    if (oldAgent?.status === 'starting' && (status === 'running' || status === 'error')) {
+      stopPolling(agent.agent_name)
+    }
+  })
+}, { deep: true })
+
+onUnmounted(() => {
+  stopAllPolling()
+})
 
 // Group expand / rename state
 const expandedGroups = ref(new Set())
@@ -834,13 +1000,69 @@ const handleCreateSession = async () => {
 // Create zAgent state
 const showCreateZAgentDialog = ref(false)
 const newZAgentName = ref('')
+const newZAgentDescription = ref('')
+const showModelConfig = ref(true)
+const newZAgentProvider = ref('')
+const newZAgentApiEndpoint = ref('')
+const newZAgentApiKey = ref('')
+const newZAgentModel = ref('')
+const modelConfigError = ref('')
+
+const modelPlaceholder = computed(() => {
+  const placeholders = {
+    openai: 'gpt-4o-mini',
+    anthropic: 'claude-3-5-haiku-20241022',
+    qwen: 'qwen-plus',
+    moonshot: 'moonshot-v1-8k',
+    doubao: 'doubao-pro-32k',
+    deepseek: 'deepseek-chat',
+    ollama: 'llama3.2',
+    custom: 'your-model-name',
+  }
+  return placeholders[newZAgentProvider.value] || '模型名称'
+})
 
 const handleCreateZAgent = async () => {
   if (!newZAgentName.value.trim()) return
+
+  modelConfigError.value = ''
+
+  // Validate model config: if any field is filled, api_key and model are required
+  const hasAnyModelField = newZAgentProvider.value || newZAgentApiKey.value || newZAgentModel.value || newZAgentApiEndpoint.value
+  if (hasAnyModelField) {
+    if (!newZAgentApiKey.value && newZAgentProvider.value !== 'ollama') {
+      modelConfigError.value = '填写了模型配置时，API Key 为必填项'
+      return
+    }
+    if (!newZAgentModel.value) {
+      modelConfigError.value = '填写了模型配置时，模型名称为必填项'
+      return
+    }
+    if (newZAgentProvider.value === 'custom' && !newZAgentApiEndpoint.value) {
+      modelConfigError.value = '使用自定义端点时，API 端点为必填项'
+      return
+    }
+  }
+
   try {
-    await createZAgent(newZAgentName.value.trim())
+    const agentConfig = {
+      agent_name: newZAgentName.value.trim(),
+      description: newZAgentDescription.value.trim() || null,
+      provider: newZAgentProvider.value || null,
+      api_endpoint: newZAgentApiEndpoint.value.trim() || null,
+      api_key: newZAgentApiKey.value.trim() || null,
+      model: newZAgentModel.value.trim() || null,
+    }
+    await createZAgent(agentConfig)
     showCreateZAgentDialog.value = false
+    // Reset form
     newZAgentName.value = ''
+    newZAgentDescription.value = ''
+    newZAgentProvider.value = ''
+    newZAgentApiEndpoint.value = ''
+    newZAgentApiKey.value = ''
+    newZAgentModel.value = ''
+    modelConfigError.value = ''
   } catch (error) {
     console.error('Failed to create zAgent:', error)
   }
@@ -852,6 +1074,31 @@ const handleDeleteZAgent = async (agentName) => {
     await deleteZAgent(agentName)
   } catch (error) {
     console.error('Failed to delete zAgent:', error)
+  }
+}
+
+const handleStartAgent = async (agentName) => {
+  try {
+    const { zagentService } = await import('../services/chatService')
+    await zagentService.startAgent(agentName)
+    // Start polling immediately after starting the agent
+    startPolling(agentName, 2000)
+    await fetchZAgents()
+  } catch (error) {
+    console.error('Failed to start zAgent:', error)
+    alert(`启动 Agent "${agentName}" 失败: ${error?.response?.data?.message || error?.message || '未知错误'}`)
+  }
+}
+
+const handleStopAgent = async (agentName) => {
+  if (!confirm(`确认停止 Agent "${agentName}"？`)) return
+  try {
+    const { zagentService } = await import('../services/chatService')
+    await zagentService.stopAgent(agentName)
+    await fetchZAgents()
+  } catch (error) {
+    console.error('Failed to stop zAgent:', error)
+    alert(`停止 Agent "${agentName}" 失败: ${error?.response?.data?.message || error?.message || '未知错误'}`)
   }
 }
 
@@ -995,6 +1242,26 @@ const closeEditor = () => {
   fileError.value = ''
   loadingFile.value = false
   savingFile.value = false
+}
+
+// Get status text for zAgent
+const getStatusText = (agent) => {
+  const status = agent.status || 'created'
+  switch (status) {
+    case 'created':
+      return '未启动'
+    case 'starting':
+      return '正在启动...'
+    case 'running':
+      return '运行中'
+    case 'stopped':
+      return '已停止'
+    case 'error':
+      const msg = agent.error_msg || 'Unknown error'
+      return msg.length > 30 ? msg.substring(0, 30) + '...' : msg
+    default:
+      return status
+  }
 }
 </script>
 
@@ -1634,7 +1901,14 @@ const closeEditor = () => {
   background: #8b5cf6;
 }
 
-.delete-agent-btn {
+.zagent-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.agent-action-btn {
   width: 24px;
   height: 24px;
   padding: 0;
@@ -1647,11 +1921,25 @@ const closeEditor = () => {
   align-items: center;
   justify-content: center;
   opacity: 0.7;
-  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  transition: all 0.2s;
+  flex-shrink: 0;
 }
 
-.delete-agent-btn:hover {
+.agent-action-btn:hover {
   opacity: 1;
+}
+
+.start-btn:hover {
+  color: #2eb67d;
+  background: rgba(46, 182, 125, 0.1);
+}
+
+.stop-btn:hover {
+  color: #e01e5a;
+  background: rgba(224, 30, 90, 0.1);
+}
+
+.delete-btn:hover {
   color: #e01e5a;
   background: rgba(224, 30, 90, 0.1);
 }
@@ -2022,4 +2310,154 @@ const closeEditor = () => {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+
+/* zAgent create dialog */
+.zagent-create-dialog {
+  width: 500px;
+}
+
+.zagent-form-body {
+  padding: 16px 20px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  max-height: calc(80vh - 120px);
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.form-label {
+  color: #555;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.required {
+  color: #e01e5a;
+  margin-left: 2px;
+}
+
+.form-select {
+  appearance: none;
+  cursor: pointer;
+}
+
+.model-config-section {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.model-config-toggle {
+  width: 100%;
+  background: rgba(102, 126, 234, 0.06);
+  border: none;
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: #444;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s;
+}
+
+.model-config-toggle:hover {
+  background: rgba(102, 126, 234, 0.12);
+}
+
+.toggle-icon {
+  font-size: 11px;
+  color: #667eea;
+}
+
+.model-config-fields {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #fafafa;
+}
+
+.form-error {
+  color: #e01e5a;
+  font-size: 12px;
+  margin: 0;
+  padding: 4px 0;
+}
+
+/* zAgent status indicator */
+.zagent-item-wrapper {
+  margin: 0 6px 2px;
+}
+
+.zagent-item {
+  height: auto;
+  min-height: 40px;
+  padding: 6px 12px;
+  margin: 0;
+  align-items: flex-start;
+}
+
+.zagent-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.zagent-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zagent-name-row .item-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.zagent-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #9CA3AF;
+}
+
+.zagent-status-dot.status-created  { background: #9CA3AF; }
+.zagent-status-dot.status-stopped  { background: #6B7280; }
+.zagent-status-dot.status-running  { background: #10B981; }
+.zagent-status-dot.status-error    { background: #EF4444; }
+.zagent-status-dot.status-starting {
+  background: #F59E0B;
+  animation: spin-dot 1s linear infinite;
+}
+
+@keyframes spin-dot {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.3; }
+  100% { opacity: 1; }
+}
+
+.zagent-status-text {
+  font-size: 11px;
+  color: #9CA3AF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.zagent-status-text.status-running  { color: #10B981; }
+.zagent-status-text.status-starting { color: #F59E0B; }
+.zagent-status-text.status-error    { color: #EF4444; }
 </style>

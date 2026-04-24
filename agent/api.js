@@ -22,25 +22,25 @@ function init(dirname, listen, proxy, pqc, p2pCfg) {
   pqcSettings = pqc
   p2pConfig = p2pCfg || {}
   templates.init(rootDir, db)
-  db.allMeshes().forEach(
-    function (mesh) {
-      var name = mesh.name
-      meshes[name] = Mesh(
-        os.path.join(rootDir, 'meshes', name),
-        agentListen,
-        proxyAddress,
-        pqcSettings,
-        p2pConfig,
-        mesh,
-        function (newMesh) {
-          db.setMesh(name, newMesh)
-        }
-      )
-      if (!mesh.agent?.offline) {
-        meshes[name].start()
+  var allMeshesData = db.allMeshes()
+  for (var i = 0; i < allMeshesData.length; i++) {
+    var mesh = allMeshesData[i]
+    var name = mesh.name
+    meshes[name] = Mesh(
+      os.path.join(rootDir, 'meshes', name),
+      agentListen,
+      proxyAddress,
+      pqcSettings,
+      p2pConfig,
+      mesh,
+      function (newMesh) {
+        db.setMesh(name, newMesh)
       }
+    )
+    if (!mesh.agent?.offline) {
+      meshes[name].start()
     }
-  )
+  }
 }
 
 function setIdentity(pem) {
@@ -56,9 +56,12 @@ function getIdentity() {
 }
 
 function allMeshes() {
-  return Object.values(meshes).map(
-    (mesh) => mesh.getStatus()
-  )
+  var meshValues = Object.values(meshes)
+  var result = []
+  for (var i = 0; i < meshValues.length; i++) {
+    result.push(meshValues[i].getStatus())
+  }
+  return result
 }
 
 function getMesh(name) {
@@ -148,7 +151,12 @@ function allEndpoints(mesh, id, name, user, keyword, offset, limit) {
   try {
     return m.discoverEndpoints(id, name, user, keyword, offset, limit).then(
       function(list) {
-        return list.map(function(ep) { return { isLocal: ep.id === idLocal, agent: ep.agent, id: ep.id, name: ep.name, hubs: ep.hubs, username: ep.username, ip: ep.ip, port: ep.port, heartbeat: ep.heartbeat, ping: ep.ping, online: ep.online, stats: ep.stats } })
+        var mapped = []
+        for (var i = 0; i < list.length; i++) {
+          var ep = list[i]
+          mapped.push({ isLocal: ep.id === idLocal, agent: ep.agent, id: ep.id, name: ep.name, hubs: ep.hubs, username: ep.username, ip: ep.ip, port: ep.port, heartbeat: ep.heartbeat, ping: ep.ping, online: ep.online, stats: ep.stats })
+        }
+        return mapped
       }
     )
   } catch (e) {
@@ -160,7 +168,10 @@ function getEndpoint(mesh, ep) {
   var m = meshes[mesh]
   if (!m) return Promise.resolve(null)
   return m.findEndpoint(ep).then(
-    ep => ({ ...ep, isLocal: (ep.id === m.config.agent.id) })
+    function(epResult) {
+      epResult.isLocal = (epResult.id === m.config.agent.id)
+      return epResult
+    }
   )
 }
 
@@ -201,13 +212,16 @@ function allUsers(mesh, name, keyword, offset, limit) {
     return m.discoverUsers(name, keyword, offset, limit).then(
       function(results) {
         var idLocal = m.config.agent.id
-        results.forEach(function(user) {
-          user.endpoints?.instances?.forEach?.(
-            function(ep) {
+        for (var i = 0; i < results.length; i++) {
+          var user = results[i]
+          if (user.endpoints && user.endpoints.instances) {
+            var instances = user.endpoints.instances
+            for (var j = 0; j < instances.length; j++) {
+              var ep = instances[j]
               if (ep.id === idLocal) ep.isLocal = true
             }
-          )
-        })
+          }
+        }
         return results
       }
     )
@@ -283,31 +297,33 @@ function getApp(mesh, ep, provider, app) {
 function setApp(mesh, ep, provider, app, state) {
   var m = findMesh(mesh)
   if (!m) return Promise.resolve(null)
-  return m.findApp(ep, provider, app).then(ret => {
+  return m.findApp(ep, provider, app).then(function(ret) {
     if (ret) return
     return m.installApp(ep, provider, app)
-  }).then(() => {
+  }).then(function() {
     if (!('isDisabled' in state)) return
     if (state.isDisabled) {
       return m.disableApp(ep, provider, app)
     } else {
       return m.enableApp(ep, provider, app)
     }
-  }).then(() => {
+  }).then(function() {
     if (!('isRunning' in state)) return
     if (state.isRunning) {
       return m.startApp(ep, provider, app)
     } else {
       return m.stopApp(ep, provider, app)
     }
-  }).then(() => {
+  }).then(function() {
     if (!('isPublished' in state)) return
     if (state.isPublished) {
       return m.publishApp(ep, provider, app)
     } else {
       return m.unpublishApp(ep, provider, app)
     }
-  }).then(() => m.findApp(ep, provider, app))
+  }).then(function() {
+    return m.findApp(ep, provider, app)
+  })
 }
 
 function delApp(mesh, ep, provider, app) {
@@ -360,12 +376,72 @@ function installSharedTemplate(industry, agent, soulContent, agentName) {
 
 var agentProcesses = {}
 
+function applyModelConfig(templateContent, modelConfig) {
+  var provider = modelConfig.provider || 'openai'
+  var model = modelConfig.model || 'gpt-4o-mini'
+  var apiKey = modelConfig.api_key
+  var apiEndpoint = modelConfig.api_endpoint
+
+  var lines = templateContent.split('\n')
+  var result = []
+  var skipUntilNextSection = false
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i]
+    var shouldSkip = false
+
+    if (line.startsWith('default_provider = ')) {
+      if (provider === 'custom' && apiEndpoint) {
+        result.push('default_provider = "custom:' + apiEndpoint + '"')
+      } else {
+        result.push('default_provider = "' + provider + '"')
+      }
+      shouldSkip = true
+    } else if (line.startsWith('default_model = ')) {
+      result.push('default_model = "' + model + '"')
+      shouldSkip = true
+    } else if (line.startsWith('api_key = ')) {
+      result.push('api_key = "' + apiKey + '"')
+      shouldSkip = true
+    } else if (line === '[model_providers]') {
+      result.push(line)
+      result.push('')
+      if (provider !== 'custom' && apiEndpoint) {
+        result.push('[model_providers.' + provider + ']')
+        result.push('name = "openai"')
+        result.push('base_url = "' + apiEndpoint + '"')
+        result.push('')
+      }
+      skipUntilNextSection = true
+      shouldSkip = true
+    } else if (skipUntilNextSection) {
+      if (line.startsWith('[') && line !== '[model_providers]') {
+        skipUntilNextSection = false
+        result.push(line)
+        shouldSkip = true
+      } else {
+        shouldSkip = true
+      }
+    }
+
+    if (!shouldSkip) {
+      result.push(line)
+    }
+  }
+
+  return result.join('\n')
+}
+
 function allocatePort() {
   var PORT_START = 42618
   var PORT_END = 42700
 
   // Get used ports from database
-  var usedPorts = db.allAgents().map(function(a) { return a.port })
+  var allAgents = db.allAgents()
+  var usedPorts = []
+  for (var i = 0; i < allAgents.length; i++) {
+    usedPorts.push(allAgents[i].port)
+  }
 
   // Find available port
   for (var port = PORT_START; port <= PORT_END; port++) {
@@ -391,52 +467,69 @@ function allocatePort() {
   throw 'No available ports in range ' + PORT_START + '-' + PORT_END
 }
 
-function createAgent(agentName, displayName) {
+function createAgent(agentName, displayName, modelConfig, description) {
   console.log('[AGENT] Creating agent: ' + agentName)
-  
+  console.log('[AGENT] modelConfig:', JSON.stringify(modelConfig))
+
   // Check if agent already exists
   if (db.getAgent(agentName)) {
     console.log('[AGENT] Create failed: agent already exists: ' + agentName)
     throw 'Agent already exists: ' + agentName
   }
-  
+
+  console.log('[AGENT] Step 1: Allocate port')
   // Allocate port
   var port = allocatePort()
   console.log('[AGENT] Allocated port: ' + port)
-  
+
   // Create directory structure
   var agentsDir = os.path.join(rootDir, 'agents')
   var agentDir = os.path.join(agentsDir, agentName)
   var workspaceDir = os.path.join(agentDir, 'workspace')
-  
+
   os.mkdir(agentDir, { recursive: true })
   console.log('[AGENT] Created directory: ' + agentDir)
   os.mkdir(workspaceDir, { recursive: true })
   console.log('[AGENT] Created workspace: ' + workspaceDir)
-  
-  // Copy config template
-  var templatePath = os.path.join(rootDir, '.zeroclaw', 'config.toml')
+
+  // Generate or copy config
   var configPath = os.path.join(agentDir, 'config.toml')
-  
-  var templateContent = os.read(templatePath)
-  os.write(configPath, templateContent)
-  console.log('[AGENT] Copied config: ' + configPath)
-  
-  // Record to database
+  console.log('[AGENT] Step 3: Read template')
+
+  var templatePath = os.path.join(rootDir, '.zeroclaw', 'config.toml')
+  var templateContent = os.read(templatePath).toString()
+  console.log('[AGENT] Template read, length:', templateContent.length)
+
+  if (modelConfig && modelConfig.api_key) {
+    console.log('[AGENT] Step 4: Apply model config')
+    console.log('[AGENT] Calling applyModelConfig...')
+    var configContent = applyModelConfig(templateContent, modelConfig)
+    console.log('[AGENT] applyModelConfig returned, length:', configContent.length)
+    os.write(configPath, configContent)
+    console.log('[AGENT] Applied model config over template: ' + configPath)
+  } else {
+    console.log('[AGENT] Step 4: Copy template directly')
+    os.write(configPath, templateContent)
+    console.log('[AGENT] Copied config from template: ' + configPath)
+  }
+
+  console.log('[AGENT] Step 5: Record to database')
   db.createAgent({
     agent_name: agentName,
     display_name: displayName || null,
+    description: description || null,
     directory: agentDir,
     config_path: configPath,
     workspace_dir: workspaceDir,
     port: port
   })
-  
+
   console.log('[AGENT] Agent created successfully: ' + agentName + ', port=' + port)
-  
+
   return {
     agent_name: agentName,
     display_name: displayName,
+    description: description || null,
     directory: agentDir,
     port: port,
     status: 'created'
@@ -511,11 +604,11 @@ function startAgent(agentName) {
   var $zcStartTime = Date.now()
   
   var zeroclawPipeline = pipeline($=>$
-    .onStart(() => { $zcStartTime = Date.now(); return new Data })
-    .exec(() => cmd, {
+    .onStart(function() { $zcStartTime = Date.now(); return new Data })
+    .exec(function() { return cmd }, {
       stdout: true,
       stderr: true,
-      onExit: (code, err) => {
+      onExit: function(code, err) {
         $zcExitCode = code
         if (err) {
           $zcErrorMessage = err.toString()
@@ -527,7 +620,7 @@ function startAgent(agentName) {
         return new StreamEnd
       }
     })
-    .replaceStreamStart(evt => {
+    .replaceStreamStart(function(evt) {
       // Try to get PID when process starts
       $zcPid = findZeroclawPid(agent.port)
       console.log('[AGENT] ZeroClaw started, PID: ' + $zcPid)
@@ -536,8 +629,8 @@ function startAgent(agentName) {
       }
       return [new MessageStart, evt]
     })
-    .replaceStreamEnd(() => new MessageEnd)
-    .onEnd(() => {
+    .replaceStreamEnd(function() { return new MessageEnd })
+    .onEnd(function() {
       var durationMs = Date.now() - $zcStartTime
       console.log('[AGENT] ZeroClaw ran for ' + durationMs + 'ms')
       $zcErrorMessage = ''
@@ -679,9 +772,10 @@ function checkGatewayHealth(port, timeoutMs) {
 
 function allAgentStatuses() {
   var agents = db.allAgents()
-  
+
   // Update status for starting/running agents
-  agents.forEach(function(agent) {
+  for (var i = 0; i < agents.length; i++) {
+    var agent = agents[i]
     if (agent.status === 'starting' || agent.status === 'running') {
       var currentPid = findZeroclawPid(agent.port)
       if (currentPid) {
@@ -699,8 +793,8 @@ function allAgentStatuses() {
         db.updateAgentStatus(agent.agent_name, 'stopped', null, null)
       }
     }
-  })
-  
+  }
+
   return agents
 }
 

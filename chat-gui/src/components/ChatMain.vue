@@ -101,11 +101,11 @@
       @draft-updated="handleDraftUpdated"
       @update:peerMode="handlePeerModeChange"
     />
-    <MessageInput 
+    <MessageInput
       v-else
-      :chatName="chat.name" 
-      :loading="sending" 
-      :modelValue="modelValue" 
+      :chatName="chat.name"
+      :loading="sending"
+      :modelValue="modelValue"
       :isOpenclaw="chat.isOpenclaw"
       :agentId="chat.agentId"
       :autoFocus="autoFocus"
@@ -114,13 +114,17 @@
       :peerMode="peerMode"
       :showPeerMode="!chat.isOpenclaw && !!chat.name"
       :quote="quotedMessage"
-      @update:modelValue="$emit('update:modelValue', $event)" 
+      :agentStatus="agentStatus || (chat.isZeroClaw ? (chat.status || 'created') : null)"
+      :agentErrorMsg="agentErrorMsg || chat.error_msg"
+      :agentName="agentName || (chat.isZeroClaw ? (chat.display_name || chat.agent_name) : null)"
+      @update:modelValue="$emit('update:modelValue', $event)"
       @send="handleSendWithQuote"
       @send-images="$emit('send-images', $event)"
       @send-files="$emit('send-files', $event)"
       @hash-command="handleHashCommand"
       @update:peerMode="handlePeerModeChange"
       @clear-quote="handleClearQuote"
+      @start-agent="$emit('start-agent', $event)"
     />
   </main>
 </template>
@@ -161,7 +165,19 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
-  	
+  agentStatus: {
+    type: String,
+    default: null
+  },
+  agentErrorMsg: {
+    type: String,
+    default: null
+  },
+  agentName: {
+    type: String,
+    default: null
+  },
+
   modelValue: String,
   isActive: {
     type: Boolean,

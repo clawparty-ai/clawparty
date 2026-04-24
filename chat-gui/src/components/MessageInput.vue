@@ -134,6 +134,29 @@
           </svg>
         </button>
       </div>
+      <div v-if="agentStatusBanner" class="agent-status-banner" :class="'banner-' + agentStatusBanner.type">
+        <div class="banner-content">
+          <svg v-if="agentStatusBanner.type === 'starting'" class="banner-icon loading-icon" width="16" height="16" viewBox="0 0 20 20">
+            <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="40" stroke-dashoffset="10"/>
+          </svg>
+          <svg v-else-if="agentStatusBanner.type === 'error'" class="banner-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+            <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 4.995z"/>
+          </svg>
+          <svg v-else class="banner-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+            <path d="M10.97 4.97a.235.235 0 0 0-.02.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05z"/>
+          </svg>
+          <span class="banner-text">{{ agentStatusBanner.text }}</span>
+        </div>
+        <button
+          v-if="agentStatusBanner.type === 'offline' || agentStatusBanner.type === 'error'"
+          class="banner-action-btn"
+          @click="$emit('start-agent')"
+        >
+          {{ agentStatusBanner.type === 'error' ? '重试' : '启动' }}
+        </button>
+      </div>
       <div class="editor-content">
         <textarea
           ref="textareaRef"
@@ -143,6 +166,7 @@
           @paste="handlePaste"
           @blur="closeMentionList"
           :placeholder="`发送消息到 #${chatName || 'channel'}`"
+          :disabled="isAgentLocked"
           rows="3"
         ></textarea>
       </div>
@@ -164,6 +188,7 @@
 
 <script setup>
 import { ref, computed, inject } from 'vue'
+
 
 const props = defineProps({
   modelValue: {
@@ -205,12 +230,43 @@ const props = defineProps({
   quote: {
     type: Object,
     default: null
+  },
+  agentStatus: {
+    type: String,
+    default: ''
+  },
+  agentErrorMsg: {
+    type: String,
+    default: ''
+  },
+  agentName: {
+    type: String,
+    default: ''
   }
 })
 
-const emit = defineEmits(['send', 'update:modelValue', 'hash-command', 'update:peerMode', 'send-images', 'send-files', 'clear-quote'])
+const emit = defineEmits(['send', 'update:modelValue', 'hash-command', 'update:peerMode', 'send-images', 'send-files', 'clear-quote', 'start-agent'])
 
 const resolveEpDisplayName = inject('resolveEpDisplayName', (u) => u)
+
+// Agent status computed helpers
+const isAgentLocked = computed(() => {
+  if (!props.agentStatus) return false
+  return props.agentStatus !== 'running'
+})
+
+const agentStatusBanner = computed(() => {
+  if (!props.agentStatus || props.agentStatus === 'running') return null
+  if (props.agentStatus === 'starting') {
+    return { type: 'starting', text: 'Agent 正在启动中...' }
+  }
+  if (props.agentStatus === 'error') {
+    const msg = props.agentErrorMsg ? props.agentErrorMsg.slice(0, 60) : '未知错误'
+    return { type: 'error', text: '启动失败: ' + msg }
+  }
+  // created / stopped
+  return { type: 'offline', text: 'Agent 未运行，请先启动' }
+})
 
 const textareaRef = ref(null)
 
@@ -747,6 +803,56 @@ function handleSend() {
   color: #fff;
 }
 
+.agent-status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.banner-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.banner-icon {
+  flex-shrink: 0;
+}
+
+.banner-starting {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.banner-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.banner-offline {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.banner-action-btn {
+  border: none;
+  border-radius: 5px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--slack-purple);
+  color: #fff;
+  white-space: nowrap;
+}
+
+.banner-action-btn:hover {
+  opacity: 0.85;
+}
+
 .editor-content {
   background: #fff;
   flex: 1;
@@ -764,6 +870,12 @@ function handleSend() {
   line-height: 1.5;
   resize: none;
   outline: none;
+}
+
+.editor-content textarea:disabled {
+  background: #f9fafb;
+  color: #9ca3af;
+  cursor: not-allowed;
 }
 
 .editor-content textarea::placeholder {

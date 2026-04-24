@@ -325,11 +325,23 @@ function main(listen, apiToken, noAuth) {
         var body = JSON.decode(req.body)
         var agentName = body.agent_name
         var displayName = body.display_name
+        var description = body.description || null
+        var modelConfig = null
+
+        // Extract model config if any key field is provided
+        if (body.api_key || body.provider || body.model) {
+          modelConfig = {
+            provider: body.provider || 'openai',
+            api_key: body.api_key || null,
+            model: body.model || null,
+            api_endpoint: body.api_endpoint || null,
+          }
+        }
 
         console.log('[API] POST /api/agents - Creating agent: ' + agentName)
 
         try {
-          var result = api.createAgent(agentName, displayName)
+          var result = api.createAgent(agentName, displayName, modelConfig, description)
           console.log('[API] Agent created: ' + agentName + ', result=OK')
           return response(201, result)
         } catch (e) {

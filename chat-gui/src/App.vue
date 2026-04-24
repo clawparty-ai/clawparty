@@ -99,6 +99,9 @@
       :openclawSessions="[]"
       :showBackButton="isMobile"
       :autoFocus="!isMobile"
+      :agentStatus="item.agent?.status"
+      :agentErrorMsg="item.agent?.error_msg"
+      :agentName="item.id"
       v-model="newMessage"
       @send="(text) => handleZAgentSend(item.id, text)"
       @send-images="handleSendImages"
@@ -107,6 +110,7 @@
       @deleteGroup="handleDeleteGroup"
       @leaveGroup="handleLeaveGroup"
       @back="currentActiveChatId = null"
+      @start-agent="handleStartZAgent"
     />
     <ChatMain
       v-for="item in activeChatConnectionItems"
@@ -527,10 +531,13 @@ const fetchZAgents = async () => {
   }
 }
 
-const createZAgent = async (agentName) => {
+const createZAgent = async (agentConfig) => {
   try {
-    await zagentService.createAgent(agentName, agentName)
-    await zagentService.startAgent(agentName)
+    const config = typeof agentConfig === 'string'
+      ? { agent_name: agentConfig, display_name: agentConfig }
+      : { display_name: agentConfig.agent_name, ...agentConfig }
+    await zagentService.createAgent(config)
+    await zagentService.startAgent(config.agent_name)
     await fetchZAgents()
   } catch (error) {
     console.error('Failed to create zAgent:', error)
@@ -548,6 +555,26 @@ const deleteZAgent = async (agentName) => {
   } catch (error) {
     console.error('Failed to delete zAgent:', error)
     throw error
+  }
+}
+
+const handleStartZAgent = async () => {
+  const agentName = currentActiveChatId.value
+  if (!agentName) return
+
+  const agent = zAgents.value.find(a => a.agent_name === agentName)
+  if (!agent) return
+
+  try {
+    await zagentService.startAgent(agentName)
+    await fetchZAgents()
+    // Re-select to reconnect WebSocket
+    const updatedAgent = zAgents.value.find(a => a.agent_name === agentName)
+    if (updatedAgent) {
+      await selectZAgent(updatedAgent)
+    }
+  } catch (error) {
+    console.error('Failed to start zAgent:', error)
   }
 }
 

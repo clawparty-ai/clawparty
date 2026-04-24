@@ -230,6 +230,7 @@ function open(pathname) {
     CREATE TABLE IF NOT EXISTS agents (
       agent_name      TEXT PRIMARY KEY,
       display_name    TEXT,
+      description     TEXT,
       directory       TEXT NOT NULL,
       config_path     TEXT NOT NULL,
       workspace_dir   TEXT NOT NULL,
@@ -245,6 +246,11 @@ function open(pathname) {
 
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status)`)
+  } catch {}
+
+  // Migration: add description column if not exists
+  try {
+    db.exec(`ALTER TABLE agents ADD COLUMN description TEXT`)
   } catch {}
 }
 
@@ -921,19 +927,20 @@ function getChatLog(mesh, chatType, chatId, limit, msgTypes) {
 function createAgent(agent) {
   var t = Date.now() / 1000
   db.sql(`
-    INSERT INTO agents(agent_name, display_name, directory, config_path, workspace_dir, port, status, created_at, updated_at, config_json)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO agents(agent_name, display_name, description, directory, config_path, workspace_dir, port, status, created_at, updated_at, config_json)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
     .bind(1, agent.agent_name)
     .bind(2, agent.display_name || null)
-    .bind(3, agent.directory)
-    .bind(4, agent.config_path)
-    .bind(5, agent.workspace_dir)
-    .bind(6, agent.port)
-    .bind(7, 'created')
-    .bind(8, t)
+    .bind(3, agent.description || null)
+    .bind(4, agent.directory)
+    .bind(5, agent.config_path)
+    .bind(6, agent.workspace_dir)
+    .bind(7, agent.port)
+    .bind(8, 'created')
     .bind(9, t)
-    .bind(10, agent.config_json ? JSON.stringify(agent.config_json) : null)
+    .bind(10, t)
+    .bind(11, agent.config_json ? JSON.stringify(agent.config_json) : null)
     .exec()
 }
 
@@ -942,6 +949,7 @@ function allAgents() {
     .map(r => ({
       agent_name: r.agent_name,
       display_name: r.display_name || null,
+      description: r.description || null,
       directory: r.directory,
       config_path: r.config_path,
       workspace_dir: r.workspace_dir,
@@ -961,6 +969,7 @@ function getAgent(name) {
   return {
     agent_name: row.agent_name,
     display_name: row.display_name || null,
+    description: row.description || null,
     directory: row.directory,
     config_path: row.config_path,
     workspace_dir: row.workspace_dir,

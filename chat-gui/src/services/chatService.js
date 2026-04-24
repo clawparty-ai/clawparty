@@ -222,10 +222,15 @@ export const zagentService = {
   getAgents() {
     return api.get('/agents')
   },
-  createAgent(agentName, displayName) {
+  createAgent(config) {
     return api.post('/agents', {
-      agent_name: agentName,
-      display_name: displayName
+      agent_name: config.agent_name,
+      display_name: config.display_name,
+      description: config.description || null,
+      provider: config.provider || null,
+      api_endpoint: config.api_endpoint || null,
+      api_key: config.api_key || null,
+      model: config.model || null
     })
   },
   deleteAgent(name) {

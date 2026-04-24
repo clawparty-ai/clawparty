@@ -182,6 +182,17 @@ cd chat-gui && npm run build && echo "Build successful"
 - **No locale methods**: PipyJS does not support `toLocaleTimeString()`, `toLocaleDateString()`, or similar locale-dependent Date methods. Format dates manually using `getHours()`, `getMinutes()`, etc. Example: `d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0')`
 - **No continue/break**: PipyJS does not support `continue` or `break` statements in loops. Use `if` blocks to wrap logic instead of `if (!condition) continue`.
 - **No arrow functions**: PipyJS does not fully support arrow functions (`=>`). Use traditional `function` declarations instead. Also avoid methods that rely on arrow functions for callbacks (e.g., `.map(x => x)`, `.filter(x => x)`, `.forEach(x => {})`). Use traditional loops or named function expressions instead.
+- **No .map() / .filter() / .reduce()**: PipyJS does not support these array methods. Use `for` loops instead. Example:
+  ```javascript
+  // ❌ Not supported - throws "not a function"
+  var ports = agents.map(function(a) { return a.port })
+  
+  // ✅ Use for loop instead
+  var ports = []
+  for (var i = 0; i < agents.length; i++) {
+    ports.push(agents[i].port)
+  }
+  ```
 - **No forEach**: PipyJS does not support `Array.prototype.forEach()`. PJS `.forEach()` callback throws `TypeError: not a function`. Use `for` loops instead. Example:
   ```javascript
   // ❌ Not supported - throws "not a function"
@@ -200,6 +211,17 @@ cd chat-gui && npm run build && echo "Build successful"
   
   // ✅ Use for loop instead
   for (var i = 0; i < max && condition; i++) { ... }
+  ```
+- **No function hoisting**: PipyJS does not support function hoisting. Functions must be defined before they are called. Always define helper functions at the top of the file or before their first use.
+- **os.read() returns Data object**: `os.read(path)` returns a `Data` object, not a string. Always call `.toString()` to convert:
+  ```javascript
+  // ❌ Wrong - templateContent is Data object
+  var templateContent = os.read(templatePath)
+  var lines = templateContent.split('\n')  // Error: not a function
+  
+  // ✅ Correct - convert to string first
+  var templateContent = os.read(templatePath).toString()
+  var lines = templateContent.split('\n')
   ```
 
 ### Comments
