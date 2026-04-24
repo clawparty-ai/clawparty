@@ -15,8 +15,8 @@ var hubVersion = {
   pipy: { ...pipy.version },
 }
 
-// Default LLM config for agents (loaded from config file or CLI args)
-var defaultLlmConfig = null
+// Default ZeroClaw config.toml content (string) to pass to agents
+var defaultZeroclawConfig = null
 
 try {
   var cluster = pipy.import('./cluster.js')
@@ -284,7 +284,7 @@ function main() {
             --pqc-key-exchange    <algorithm>       Specify the PQC key exchange algorithm such as 'ML-KEM-512'
             --pqc-signature       <algorithm>       Specify the PQC signature algorithm such as 'ML-DSA-44'
             --enable-registration [ip:port]         Enable the open registration API (default listen: 0.0.0.0:5678)
-            --llm-config          <file>            Specify a JSON file with default LLM config for agents
+            --zeroclaw-config     <file>            Specify a config.toml file to distribute to agents as their ZeroClaw config
       ` + (cluster ? `
             --bootstrap           <host:port ...>   Specify the bootstrap addresses of the hub cluster
             --zone                <zone>            Specify the zone that the hub is deployed in
@@ -302,22 +302,14 @@ function main() {
           throw 'invalid value for option --max-sessions'
         }
 
-        // Load LLM config if provided
-        var llmConfigFile = args['--llm-config']
-        if (llmConfigFile) {
+        // Load ZeroClaw config.toml if provided
+        var zeroclawConfigFile = args['--zeroclaw-config']
+        if (zeroclawConfigFile) {
           try {
-            var configContent = os.read(llmConfigFile).toString()
-            var config = JSON.decode(configContent)
-            if (config && config.default_llm_config) {
-              defaultLlmConfig = config.default_llm_config
-              logInfo(`Loaded default LLM config from: ${llmConfigFile}`)
-              logInfo(`  Provider: ${defaultLlmConfig.provider || 'N/A'}`)
-              logInfo(`  Model: ${defaultLlmConfig.model || 'N/A'}`)
-            } else {
-              logWarn(`LLM config file missing 'default_llm_config' field: ${llmConfigFile}`)
-            }
+            defaultZeroclawConfig = os.read(zeroclawConfigFile).toString()
+            println(`[Hub] Loaded ZeroClaw config from: ${zeroclawConfigFile} (${defaultZeroclawConfig.length} bytes)`)
           } catch (e) {
-            logWarn(`Failed to load LLM config from ${llmConfigFile}: ${e}`)
+            println(`[Hub] Warning: Failed to load ZeroClaw config from ${zeroclawConfigFile}: ${e}`)
           }
         }
 
@@ -770,9 +762,9 @@ var postInvite = pipeline($=>$
           bootstraps: hubAddresses,
         }
 
-        // Attach default LLM config if available
-        if (defaultLlmConfig) {
-          permit.default_llm_config = defaultLlmConfig
+        // Attach ZeroClaw config.toml content if available
+        if (defaultZeroclawConfig) {
+          permit.zeroclaw_config = defaultZeroclawConfig
         }
 
         db.setUserStatus(userName, 'permit-issued')

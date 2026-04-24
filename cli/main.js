@@ -199,6 +199,8 @@ function doCommand(meshName, epName, argv, program) {
                                                   Only applicable to hubs
               --enable-registration [ip:port]       Enable the open registration API (default: 0.0.0.0:5678)
                                                   Only applicable to hubs
+              --zeroclaw-config     <file>          Specify a config.toml file to distribute to agents as their ZeroClaw config
+                                                  Only applicable to hubs
           -p, --permit            <pathname>      Specify an optional output filename for the root user's permit
                                                   Only applicable to hubs
               --proxy             <url>           Specify the forward proxy in form of [http|socks]://<host>:<port>
@@ -266,6 +268,8 @@ function doCommand(meshName, epName, argv, program) {
               --max-sessions        <number>          Specify the maximum number of forwarding sessions the hub can handle
                                                     Only applicable to hubs
               --enable-registration [ip:port]         Enable the open registration API (default: 0.0.0.0:5678)
+                                                    Only applicable to hubs
+              --zeroclaw-config     <file>           Specify a config.toml file to distribute to agents as their ZeroClaw config
                                                     Only applicable to hubs
           -p, --permit        <pathname>        An optional output filename for generating the root user's permit when starting a hub
                                                 Or an input filename to load the user permit when joining a mesh while starting an agent
@@ -1000,6 +1004,7 @@ function startHub(args) {
     '--pqc-key-exchange',
     '--pqc-signature',
     '--enable-registration',
+    '--zeroclaw-config',
   ]
   var SAVE = ['--data', '--listen', ...COPY]
   COPY.forEach(opt => {
@@ -1344,6 +1349,7 @@ function runHub(args, program) {
         cmd.push('--enable-registration')
         if (args['--enable-registration']) cmd.push(args['--enable-registration'])
       }
+      if ('--zeroclaw-config' in args) cmd.push('--zeroclaw-config', args['--zeroclaw-config'])
       return exec(cmd)
     }
   )
@@ -2173,6 +2179,9 @@ function validatePermit(pathname) {
   }
   if (permit.agent.privateKey) {
     info.agent.privateKey = permit.agent.privateKey
+  }
+  if (permit.zeroclaw_config) {
+    info.zeroclaw_config = permit.zeroclaw_config
   }
   return info
 }

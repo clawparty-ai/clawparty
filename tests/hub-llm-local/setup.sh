@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Integration test: 1 hub (with LLM config) + 2 agents.
+# Integration test: 1 hub (with zeroclaw config) + 2 agents.
 # Tests the full join-party → auto-global-config → 0#Agent creation flow.
 #
 # Layout (all under tests/hub-llm-local/tmp/):
@@ -48,61 +48,44 @@ cleanup() {
   mkdir -p "$TMP"
 }
 
-# Write the LLM config file for the hub
-write_llm_config() {
-  local llm_config="$TMP/llm-config.json"
-  # Use ~/.clawparty/.zeroclaw/config.toml values if available, else fallback
-  local api_key model provider api_endpoint
-  local zc_config="$HOME/.clawparty/.zeroclaw/config.toml"
-  if [ -f "$zc_config" ]; then
-    api_key=$(grep '^api_key' "$zc_config" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-    model=$(grep '^default_model' "$zc_config" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-    api_endpoint=$(grep '^default_provider' "$zc_config" | head -1 | sed 's/.*= *"custom:\(.*\)"/\1/')
-    provider="custom"
-  fi
-  api_key="${api_key:-your-api-key-here}"
-  model="${model:-gpt-4o-mini}"
-  provider="${provider:-openai}"
+# Prepare zeroclaw config for the hub
+prepare_zeroclaw_config() {
+  local zeroclaw_config="$TMP/zeroclaw-config.toml"
+  local source_config="$HOME/.zeroclaw/config.toml"
 
-  if [ -n "$api_endpoint" ]; then
-    cat > "$llm_config" <<EOF
-{
-  "default_llm_config": {
-    "provider": "$provider",
-    "api_endpoint": "$api_endpoint",
-    "api_key": "$api_key",
-    "model": "$model",
-    "temperature": 0.7,
-    "timeout_secs": 120
-  }
-}
-EOF
+  if [ -f "$source_config" ]; then
+    log "copying zeroclaw config from $source_config"
+    cp "$source_config" "$zeroclaw_config"
   else
-    cat > "$llm_config" <<EOF
-{
-  "default_llm_config": {
-    "provider": "$provider",
-    "api_key": "$api_key",
-    "model": "$model",
-    "temperature": 0.7,
-    "timeout_secs": 120
-  }
-}
+    log "creating minimal zeroclaw config (no ~/.zeroclaw/config.toml found)"
+    cat > "$zeroclaw_config" <<'EOF'
+# Minimal zeroclaw config for testing
+[llm]
+provider = "openai"
+api_key = "your-api-key-here"
+default_model = "gpt-4o-mini"
+temperature = 0.7
+timeout_secs = 120
+
+[memory]
+backend = "none"
+auto_save = false
 EOF
   fi
-  log "wrote LLM config to $llm_config (model=$model)"
-  echo "$llm_config"
+
+  log "zeroclaw config ready at $zeroclaw_config"
+  ZEROCLAW_CONFIG="$zeroclaw_config"
 }
 
 start_hub() {
-  local llm_config=$1
+  local zeroclaw_config=$1
   log "starting hub on :$HUB_PORT (registration :$REG_PORT)"
   nohup "$ZTM" run hub \
     --listen "127.0.0.1:$HUB_PORT" \
     --data "$TMP/hub" \
     --names "127.0.0.1:$HUB_PORT" \
     --enable-registration "127.0.0.1:$REG_PORT" \
-    --llm-config "$llm_config" \
+    --zeroclaw-config "$zeroclaw_config" \
     > "$TMP/hub.log" 2>&1 &
   echo $! > "$TMP/hub.pid"
   wait_port $HUB_PORT hub
@@ -112,13 +95,7 @@ start_hub() {
 start_agent() {
   local name=$1 port=$2
   log "starting agent '$name' on :$port"
-  mkdir -p "$TMP/$name/.zeroclaw"
-  # Minimal zeroclaw config (LLM will come from hub)
-  cat > "$TMP/$name/.zeroclaw/config.toml" <<'EOF'
-[memory]
-backend = "none"
-auto_save = false
-EOF
+  mkdir -p "$TMP/$name"
   nohup "$ZTM" run agent \
     --listen "127.0.0.1:$port" \
     --data "$TMP/$name" \
@@ -180,8 +157,8 @@ verify_global_config() {
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 cleanup
-LLM_CONFIG=$(write_llm_config)
-start_hub "$LLM_CONFIG"
+prepare_zeroclaw_config
+start_hub "$ZEROCLAW_CONFIG"
 start_agent alice $ALICE_PORT
 start_agent bob   $BOB_PORT
 

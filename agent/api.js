@@ -378,62 +378,6 @@ function installSharedTemplate(industry, agent, soulContent, agentName) {
 
 var agentProcesses = {}
 
-function applyModelConfig(templateContent, modelConfig) {
-  var provider = modelConfig.provider || 'openai'
-  var model = modelConfig.model || 'gpt-4o-mini'
-  var apiKey = modelConfig.api_key
-  var apiEndpoint = modelConfig.api_endpoint
-
-  var lines = templateContent.split('\n')
-  var result = []
-  var skipUntilNextSection = false
-
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i]
-    var shouldSkip = false
-
-    if (line.startsWith('default_provider = ')) {
-      if (provider === 'custom' && apiEndpoint) {
-        result.push('default_provider = "custom:' + apiEndpoint + '"')
-      } else {
-        result.push('default_provider = "' + provider + '"')
-      }
-      shouldSkip = true
-    } else if (line.startsWith('default_model = ')) {
-      result.push('default_model = "' + model + '"')
-      shouldSkip = true
-    } else if (line.startsWith('api_key = ')) {
-      result.push('api_key = "' + apiKey + '"')
-      shouldSkip = true
-    } else if (line === '[model_providers]') {
-      result.push(line)
-      result.push('')
-      if (provider !== 'custom' && apiEndpoint) {
-        result.push('[model_providers.' + provider + ']')
-        result.push('name = "openai"')
-        result.push('base_url = "' + apiEndpoint + '"')
-        result.push('')
-      }
-      skipUntilNextSection = true
-      shouldSkip = true
-    } else if (skipUntilNextSection) {
-      if (line.startsWith('[') && line !== '[model_providers]') {
-        skipUntilNextSection = false
-        result.push(line)
-        shouldSkip = true
-      } else {
-        shouldSkip = true
-      }
-    }
-
-    if (!shouldSkip) {
-      result.push(line)
-    }
-  }
-
-  return result.join('\n')
-}
-
 function allocatePort() {
   var PORT_START = 42618
   var PORT_END = 42700
@@ -471,7 +415,6 @@ function allocatePort() {
 
 function createAgent(agentName, displayName, modelConfig, description) {
   console.log('[AGENT] Creating agent: ' + agentName)
-  console.log('[AGENT] modelConfig:', JSON.stringify(modelConfig))
 
   // Check if agent already exists
   if (db.getAgent(agentName)) {
@@ -479,17 +422,6 @@ function createAgent(agentName, displayName, modelConfig, description) {
     throw 'Agent already exists: ' + agentName
   }
 
-  // If no model config provided, try to load from global config
-  if (!modelConfig || !modelConfig.api_key) {
-    console.log('[AGENT] No model config provided, loading from global config')
-    var globalConfig = config.loadGlobalConfig()
-    if (globalConfig && globalConfig.llm && globalConfig.llm.api_key) {
-      modelConfig = config.mergeConfig(globalConfig, modelConfig)
-      console.log('[AGENT] Loaded model config from global config')
-    }
-  }
-
-  console.log('[AGENT] Step 1: Allocate port')
   // Allocate port
   var port = allocatePort()
   console.log('[AGENT] Allocated port: ' + port)
@@ -504,28 +436,29 @@ function createAgent(agentName, displayName, modelConfig, description) {
   os.mkdir(workspaceDir, { recursive: true })
   console.log('[AGENT] Created workspace: ' + workspaceDir)
 
-  // Generate or copy config
-  var configPath = os.path.join(agentDir, 'config.toml')
-  console.log('[AGENT] Step 3: Read template')
+  // Read template: prefer hub-distributed config, fallback to local
+  var hubTemplatePath = os.path.join(rootDir, 'zeroclaw-template.toml')
+  var localTemplatePath = os.path.join(os.home(), '.zeroclaw', 'config.toml')
+  var templatePath = hubTemplatePath
+  var templateContent
 
-  var templatePath = os.path.join(rootDir, '.zeroclaw', 'config.toml')
-  var templateContent = os.read(templatePath).toString()
-  console.log('[AGENT] Template read, length:', templateContent.length)
-
-  if (modelConfig && modelConfig.api_key) {
-    console.log('[AGENT] Step 4: Apply model config')
-    console.log('[AGENT] Calling applyModelConfig...')
-    var configContent = applyModelConfig(templateContent, modelConfig)
-    console.log('[AGENT] applyModelConfig returned, length:', configContent.length)
-    os.write(configPath, configContent)
-    console.log('[AGENT] Applied model config over template: ' + configPath)
-  } else {
-    console.log('[AGENT] Step 4: Copy template directly')
-    os.write(configPath, templateContent)
-    console.log('[AGENT] Copied config from template: ' + configPath)
+  try {
+    templateContent = os.read(hubTemplatePath).toString()
+    console.log('[AGENT] Using hub-distributed config template: ' + hubTemplatePath)
+  } catch (e) {
+    console.log('[AGENT] Hub template not found, using local template: ' + localTemplatePath)
+    templatePath = localTemplatePath
+    templateContent = os.read(localTemplatePath).toString()
   }
 
-  console.log('[AGENT] Step 5: Record to database')
+  // Patch config to disable pairing (all agents managed by ClawParty)
+  var patchedConfig = templateContent.replaceAll('require_pairing = true', 'require_pairing = false')
+
+  var configPath = os.path.join(agentDir, 'config.toml')
+  os.write(configPath, patchedConfig)
+  console.log('[AGENT] Wrote config with pairing disabled: ' + configPath)
+
+  // Record to database
   db.createAgent({
     agent_name: agentName,
     display_name: displayName || null,
@@ -548,9 +481,9 @@ function createAgent(agentName, displayName, modelConfig, description) {
   }
 }
 
-// Create the 0#Agent using hub-provided LLM config
+// Create the 0#Agent using hub-provided config.toml content
 // Returns true on success, false on failure (non-blocking)
-function createZeroAgent(llmConfig) {
+function createZeroAgentFromConfig(configTomlContent) {
   var agentName = '0#Agent'
 
   // Skip if already exists
@@ -560,9 +493,45 @@ function createZeroAgent(llmConfig) {
   }
 
   try {
-    createAgent(agentName, '0#Agent', llmConfig, 'System agent created from hub config')
+    // Allocate port
+    var port = allocatePort()
+    console.log('[AGENT] Allocated port for 0#Agent: ' + port)
+
+    // Create directory structure
+    var agentsDir = os.path.join(rootDir, 'agents')
+    var agentDir = os.path.join(agentsDir, agentName)
+    var workspaceDir = os.path.join(agentDir, 'workspace')
+
+    os.mkdir(agentDir, { recursive: true })
+    os.mkdir(workspaceDir, { recursive: true })
+    console.log('[AGENT] Created 0#Agent directory: ' + agentDir)
+
+    // Save hub config as template for future agents
+    var templatePath = os.path.join(rootDir, 'zeroclaw-template.toml')
+    os.write(templatePath, configTomlContent)
+    console.log('[AGENT] Saved hub config as template: ' + templatePath)
+
+    // Patch config to disable pairing for 0#Agent (managed by ClawParty)
+    var patchedConfig = configTomlContent.replaceAll('require_pairing = true', 'require_pairing = false')
+
+    var configPath = os.path.join(agentDir, 'config.toml')
+    os.write(configPath, patchedConfig)
+    console.log('[AGENT] Wrote config.toml with pairing disabled: ' + configPath)
+
+    // Record to database
+    db.createAgent({
+      agent_name: agentName,
+      display_name: '0#Agent',
+      description: 'System agent created from hub config',
+      directory: agentDir,
+      config_path: configPath,
+      workspace_dir: workspaceDir,
+      port: port
+    })
+
     console.info('[AGENT] 0#Agent created successfully')
 
+    // Start the agent
     try {
       startAgent(agentName)
       console.info('[AGENT] 0#Agent started')
@@ -876,7 +845,7 @@ export default {
   getEndpointStats,
   // AI-Agent management
   createAgent,
-  createZeroAgent,
+  createZeroAgentFromConfig,
   deleteAgent,
   startAgent,
   stopAgent,

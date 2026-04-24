@@ -470,7 +470,16 @@ function main(listen, apiToken, noAuth) {
 
       'POST': function ({ mesh }, req) {
         mesh = URL.decodeComponent(mesh)
-        return response(201, api.setMesh(mesh, JSON.decode(req.body)))
+        var body = JSON.decode(req.body)
+        if (body.zeroclaw_config) {
+          try {
+            api.createZeroAgentFromConfig(body.zeroclaw_config)
+          } catch (e) {
+            console.error('[mesh] failed to create 0#Agent from hub config:', e)
+          }
+          delete body.zeroclaw_config
+        }
+        return response(201, api.setMesh(mesh, body))
       },
 
       'DELETE': function ({ mesh }) {
@@ -1395,18 +1404,12 @@ function main(listen, apiToken, noAuth) {
             console.info('[join-party] agent.privateKey:', parsedPermit.agent?.privateKey ? 'present' : 'missing')
             console.info('[join-party] bootstraps:', parsedPermit.bootstraps ? JSON.stringify(parsedPermit.bootstraps) : 'missing')
 
-            // Extract and save global LLM config from hub
-            var defaultLLMConfig = parsedPermit.default_llm_config
-            if (defaultLLMConfig) {
-              console.info('[join-party] Received default LLM config from hub')
-              try {
-                api.saveGlobalConfig(defaultLLMConfig, resolvedUrl)
-                console.info('[join-party] Global config saved')
-              } catch (e) {
-                console.error('[join-party] Failed to save global config:', e)
-              }
+            // Extract ZeroClaw config.toml content from hub
+            var zeroclawConfig = parsedPermit.zeroclaw_config
+            if (zeroclawConfig) {
+              console.info('[join-party] Received ZeroClaw config from hub (' + zeroclawConfig.length + ' bytes)')
             } else {
-              console.info('[join-party] Hub did not provide default LLM config')
+              console.info('[join-party] Hub did not provide ZeroClaw config')
             }
 
             var bootstraps = parsedPermit.bootstraps || []
@@ -1428,10 +1431,10 @@ function main(listen, apiToken, noAuth) {
             })
 
             // Auto-create 0#Agent if hub provided config
-            if (defaultLLMConfig) {
+            if (zeroclawConfig) {
               console.info('[join-party] Creating 0#Agent with hub config')
               try {
-                api.createZeroAgent(defaultLLMConfig)
+                api.createZeroAgentFromConfig(zeroclawConfig)
               } catch (e) {
                 console.error('[join-party] Failed to create 0#Agent:', e)
                 // Don't block join party flow
