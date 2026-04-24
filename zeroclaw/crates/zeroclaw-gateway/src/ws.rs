@@ -191,7 +191,11 @@ async fn handle_socket(
     let mut message_count: usize = 0;
     let mut effective_name: Option<String> = None;
     if let Some(ref backend) = state.session_backend {
-        let messages = backend.load(&session_key);
+        let mut messages = backend.load(&session_key);
+        // Keep only the most recent 20 messages to avoid context overflow
+        if messages.len() > 20 {
+            messages = messages.split_off(messages.len() - 20);
+        }
         if !messages.is_empty() {
             message_count = messages.len();
             agent.seed_history(&messages);
