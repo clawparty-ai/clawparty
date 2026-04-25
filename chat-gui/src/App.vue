@@ -746,6 +746,9 @@ const createZeroClawMessageHandler = (connectionAgentName) => {
 const selectZAgent = async (agent) => {
   const agentName = agent.agent_name
 
+  // Bug fix: clear group chat so only one ChatMain is visible
+  activeGroupId.value = null
+
   currentActiveChatId.value = agentName
   currentZAgentName = agentName
 

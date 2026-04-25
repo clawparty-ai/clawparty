@@ -1426,6 +1426,15 @@ watch(() => props.chat.messages?.length, () => {
   scrollToBottom()
 }, { immediate: true })
 
+// Bug fix: when Task button toggles showTaskPanel back on, immediately load
+watch(showTaskPanel, async (visible) => {
+  if (visible && props.chat.isZeroClaw) {
+    calcTaskPanelHeight()
+    await loadTasks()
+    startTaskPolling()
+  }
+})
+
 onUnmounted(() => {
   stopPolling()
   stopTaskPolling()
