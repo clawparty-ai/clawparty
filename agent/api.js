@@ -551,6 +551,10 @@ function deleteAgent(agentName) {
     console.log('[AGENT] Delete rejected: 0#Agent is a system agent and cannot be deleted')
     throw 'Cannot delete system agent: 0#Agent'
   }
+  if (db.isGroupOwnerAgent(agentName)) {
+    console.log('[AGENT] Delete rejected: ' + agentName + ' is a group owner agent and cannot be deleted')
+    throw 'Cannot delete group owner agent: ' + agentName
+  }
 
   console.log('[AGENT] Deleting agent: ' + agentName)
   
@@ -738,6 +742,96 @@ function stopAgent(agentName) {
   }
 }
 
+// Sanitize group name to valid agent name
+function sanitizeAgentName(name) {
+  if (typeof name !== 'string') return 'agent'
+  var sanitized = name.toLowerCase()
+    .replace(/[^a-z0-9\-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+  if (!sanitized) sanitized = 'group'
+  return sanitized
+}
+
+function createGroupOwnerAgent(groupId, groupName, memberAgents) {
+  console.log('[GROUP] Creating group owner agent for group: ' + groupName)
+
+  var ownerAgentName = sanitizeAgentName(groupName)
+
+  // De-duplicate: if name exists, append -1, -2, etc.
+  var uniqueName = ownerAgentName
+  var suffix = 1
+  while (db.getAgent(uniqueName) || db.getGroupChat(uniqueName)) {
+    uniqueName = ownerAgentName + '-' + suffix
+    suffix++
+    if (suffix > 1000) throw 'Could not find unique agent name for group'
+  }
+  ownerAgentName = uniqueName
+
+  // Create the agent using existing template logic
+  var port = allocatePort()
+  var agentsDir = os.path.join(rootDir, 'agents')
+  var agentDir = os.path.join(agentsDir, ownerAgentName)
+  var workspaceDir = os.path.join(agentDir, 'workspace')
+
+  os.mkdir(agentDir, { recursive: true })
+  os.mkdir(workspaceDir, { recursive: true })
+
+  // Read template: prefer hub-distributed config, fallback to local
+  var hubTemplatePath = os.path.join(rootDir, 'zeroclaw-template.toml')
+  var localTemplatePath = os.path.join(os.home(), '.zeroclaw', 'config.toml')
+  var templateContent
+
+  try {
+    templateContent = os.read(hubTemplatePath).toString()
+  } catch (e) {
+    templateContent = os.read(localTemplatePath).toString()
+  }
+
+  // Patch config to disable pairing
+  var patchedConfig = templateContent.replaceAll('require_pairing = true', 'require_pairing = false')
+
+  var configPath = os.path.join(agentDir, 'config.toml')
+  os.write(configPath, patchedConfig)
+
+  // Record to database
+  db.createAgent({
+    agent_name: ownerAgentName,
+    display_name: groupName,
+    description: 'Group owner agent for "' + groupName + '"',
+    directory: agentDir,
+    config_path: configPath,
+    workspace_dir: workspaceDir,
+    port: port
+  })
+
+  // Record group chat
+  db.createGroupChat({
+    group_id: groupId,
+    group_name: groupName,
+    owner_agent: ownerAgentName,
+    members: memberAgents || [],
+    session_id: groupId
+  })
+
+  console.log('[GROUP] Group owner agent created: ' + ownerAgentName + ', port=' + port)
+
+  // Start the agent immediately
+  try {
+    startAgent(ownerAgentName)
+    console.log('[GROUP] Group owner agent started: ' + ownerAgentName)
+  } catch (e) {
+    console.error('[GROUP] Group owner agent created but failed to start:', e)
+  }
+
+  return {
+    agent_name: ownerAgentName,
+    group_id: groupId,
+    port: port,
+    status: 'created'
+  }
+}
+
 function getAgentStatus(agentName) {
   var agent = db.getAgent(agentName)
   if (!agent) {
@@ -851,6 +945,9 @@ export default {
   stopAgent,
   getAgentStatus,
   allAgentStatuses,
+  // Group chat
+  createGroupOwnerAgent,
+  sanitizeAgentName,
   pingEndpoint,
   getLocalTemplates,
   getSharedTemplates,

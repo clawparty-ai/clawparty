@@ -42,7 +42,7 @@
         </div>
         <div v-if="!openclawAgents || openclawAgents.length === 0" class="mobile-empty">
           <div>No local agents</div>
-          <div class="mobile-empty-hint">openclaw is not installed locally. You can still interact with remote openclaw agents via group chat.</div>
+          <div class="mobile-empty-hint">openclaw is not installed locally.</div>
         </div>
       </div>
     </div>
@@ -51,16 +51,16 @@
       <div class="mobile-agents-header">Group Chats</div>
       <div class="mobile-agents-list">
         <div
-          v-for="chat in groupChats"
-          :key="chat.id"
+          v-for="chat in localGroupChats"
+          :key="chat.groupId"
           class="mobile-agent-item"
-          @click="selectChat(getChatIndex(chat.id))"
+          @click="enterGroupChat(chat.groupId)"
         >
-          <div class="item-avatar" >#</div>
-          <span class="item-name">{{ chat.name }}</span>
+          <div class="item-avatar">#</div>
+          <span class="item-name">{{ chat.groupName }}</span>
         </div>
-        <div v-if="!groupChats || groupChats.length === 0" class="mobile-empty">
-          No group chats yet
+        <div v-if="!localGroupChats || localGroupChats.length === 0" class="mobile-empty">
+          还没有群聊
         </div>
       </div>
     </div>
@@ -134,6 +134,23 @@
       @back="handleChatBack(item.id)"
     />
     <ChatMain
+      v-if="activeGroupId"
+      :chat="localGroupChats.find(g => g.groupId === activeGroupId)"
+      :meshName="null"
+      :currentUserName="currentMeshAgentUsername"
+      :sending="sending && activeGroupId"
+      :isGroupChat="true"
+      :showBackButton="isMobile"
+      :autoFocus="!isMobile"
+      v-model="newMessage"
+      @send="sendMessage"
+      @send-images="handleSendImages"
+      @send-files="handleSendFiles"
+      @deleteGroup="handleDeleteLocalGroup(localGroupChats.find(g => g.groupId === activeGroupId))"
+      @leaveGroup="leaveGroupChat(activeGroupId)"
+      @back="activeGroupId = null"
+    />
+    <ChatMain
       v-if="activeOpenclawAgent || activeZeroClawSession"
       :chat="activeZeroClawSession || activeOpenclawAgent"
       :meshName="(activeOpenclawAgent && activeOpenclawAgent.agentId !== 'main') ? null : currentMesh"
@@ -187,7 +204,7 @@ import { ref, onMounted, onUnmounted, provide, computed, watch, reactive } from 
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
 import TemplatePicker from './components/TemplatePicker.vue'
-import { meshService, chatService, openclawService, zeroclawService, zagentService, ZeroClawWS, setApiToken, getApiToken } from './services/chatService'
+import { meshService, chatService, openclawService, zeroclawService, zagentService, groupChatService, ZeroClawWS, setApiToken, getApiToken } from './services/chatService'
 import ShellService from './services/ShellService'
 import { platform } from '@tauri-apps/plugin-os';
 import { getAvatarColor } from './utils/avatar'
@@ -225,6 +242,11 @@ let usersPollTimer = null
 let zeroclawSessionsPollTimer = null
 let zeroclawWS = null
 const wsConnections = reactive({})
+
+// Local group chat state (ZeroClaw agent groups)
+const localGroupChats = ref([])
+const activeGroupId = ref(null)
+const activeGroupWsMap = reactive(new Map())  // groupId -> [{ agentName, ws }]
 
 const activeZAgentConnectionItems = computed(() => {
   if (!zAgents.value) return []
@@ -528,6 +550,24 @@ const fetchZAgents = async () => {
     zAgents.value = agents
   } catch (error) {
     console.error('Failed to fetch zAgents:', error)
+  }
+}
+
+const fetchLocalGroupChats = async () => {
+  try {
+    const response = await groupChatService.getGroupChats()
+    const chats = response.data || []
+    localGroupChats.value = chats.map(c => ({
+      groupId: c.group_id,
+      groupName: c.group_name,
+      ownerAgent: c.owner_agent,
+      members: c.members,
+      sessionId: c.session_id,
+      messages: [],
+      created_at: c.created_at
+    }))
+  } catch (error) {
+    console.error('Failed to fetch local group chats:', error)
   }
 }
 
@@ -1194,12 +1234,207 @@ const handleChatBack = (chatId) => {
   currentActiveChatId.value = null
 }
 
+// ── Local Group Chat Functions ───────────────────────────────────────
+
+const enterGroupChat = async (groupId) => {
+  const group = localGroupChats.value.find(g => g.groupId === groupId)
+  if (!group) return
+
+  // Clear other active chat states
+  activeOpenclawAgent.value = null
+  activeZeroClawSession.value = null
+  activeZAgent.value = null
+  activeChat.value = null
+  currentZAgentName = null
+  currentActiveChatId.value = null
+  if (zeroclawWS) {
+    zeroclawWS.close()
+    zeroclawWS = null
+  }
+
+  activeGroupId.value = groupId
+  const allMembers = [group.ownerAgent, ...group.members]
+
+  // Close old WS connections for this group if any
+  const oldConnections = activeGroupWsMap.get(groupId)
+  if (oldConnections) {
+    for (const conn of oldConnections) {
+      if (conn.ws) conn.ws.close()
+    }
+  }
+
+  const connections = []
+  for (const agentName of allMembers) {
+    const agent = zAgents.value.find(a => a.agent_name === agentName)
+    const wsPort = agent?.port
+
+    const msgHandler = createGroupChatMessageHandler(groupId, agentName)
+
+    const ws = new ZeroClawWS(
+      agentName,
+      groupId,  // use groupId as session_id for shared session context
+      msgHandler,
+      () => { console.log('[GroupChat] WS open:', agentName, groupId) },
+      () => { console.log('[GroupChat] WS close:', agentName, groupId) },
+      (err) => { console.error('[GroupChat] WS error:', agentName, groupId, err) },
+      wsPort
+    )
+    ws.connect()
+    connections.push({ agentName, ws })
+  }
+
+  activeGroupWsMap.set(groupId, connections)
+
+  // Load historical messages from owner agent
+  try {
+    const res = await groupChatService.getGroupMessages(groupId)
+    if (res.data && res.data.messages) {
+      group.messages = res.data.messages.map(msg => ({
+        text: msg.content || '',
+        sender: msg.role === 'user' ? (currentMeshAgentUsername.value || 'You') : (msg.role === 'assistant' ? group.ownerAgent : msg.role),
+        time: formatTime(msg.created_at),
+        timestamp: new Date(msg.created_at).getTime(),
+        isSent: msg.role === 'user',
+        isTemp: false
+      }))
+    }
+  } catch (e) {
+    console.error('[GroupChat] Failed to load messages:', e)
+  }
+}
+
+const leaveGroupChat = (groupId) => {
+  const connections = activeGroupWsMap.get(groupId)
+  if (connections) {
+    for (const conn of connections) {
+      if (conn.ws) conn.ws.close()
+    }
+  }
+  activeGroupWsMap.delete(groupId)
+  if (activeGroupId.value === groupId) {
+    activeGroupId.value = null
+  }
+}
+
+const createGroupChatMessageHandler = (groupId, agentName) => {
+  return (data) => {
+    const group = localGroupChats.value.find(g => g.groupId === groupId)
+    if (!group) return
+
+    switch (data.type) {
+    case 'chunk': {
+      // Find or create a typing message for this agent
+      const lastTyping = group.messages[group.messages.length - 1]
+      if (lastTyping && lastTyping.isTyping && lastTyping.agentName === agentName) {
+        lastTyping.text += data.content || ''
+      } else {
+        group.messages.push({
+          text: data.content || '',
+          sender: agentName,
+          agentName: agentName,
+          time: formatTime(new Date().toISOString()),
+          timestamp: Date.now(),
+          isSent: false,
+          isTyping: true
+        })
+      }
+      break
+    }
+    case 'done': {
+      // Finalize the typing message
+      const lastTyping = group.messages[group.messages.length - 1]
+      if (lastTyping && lastTyping.isTyping && lastTyping.agentName === agentName) {
+        lastTyping.isTyping = false
+        lastTyping.text = data.full_response || lastTyping.text
+      }
+      break
+    }
+    case 'tool_call': {
+      group.messages.push({
+        text: `[Tool call: ${data.name}]`,
+        sender: agentName,
+        agentName: agentName,
+        time: formatTime(new Date().toISOString()),
+        timestamp: Date.now(),
+        isSent: false,
+        isSystem: true
+      })
+      break
+    }
+    case 'error': {
+      group.messages.push({
+        text: '[Error: ' + (data.message || 'Unknown error') + ']',
+        sender: agentName,
+        agentName: agentName,
+        time: formatTime(new Date().toISOString()),
+        timestamp: Date.now(),
+        isSent: false,
+        isError: true
+      })
+      break
+    }
+    default:
+      console.log('[GroupChat] Unhandled message type:', data.type, 'from', agentName)
+    }
+  }
+}
+
+const handleDeleteLocalGroup = async (group) => {
+  if (!confirm(`删除群聊 "${group.groupName}"?`)) return
+  try {
+    await groupChatService.deleteGroupChat(group.groupId)
+    leaveGroupChat(group.groupId)
+    const idx = localGroupChats.value.findIndex(g => g.groupId === group.groupId)
+    if (idx >= 0) localGroupChats.value.splice(idx, 1)
+  } catch (error) {
+    console.error('[GroupChat] Failed to delete group:', error)
+  }
+}
+
 const sendMessage = async () => {
-  if (!newMessage.value.trim() || (!activeOpenclawAgent.value && !activeZeroClawSession.value && !activeZAgent.value && activeChat.value === null) || sending.value) return
-   
-  const chat = activeOpenclawAgent.value || chats.value[activeChat.value]
+  if (!newMessage.value.trim() || sending.value) return
   const text = newMessage.value
   sending.value = true
+
+  // Local group chat sending via WebSocket
+  if (activeGroupId.value) {
+    const group = localGroupChats.value.find(g => g.groupId === activeGroupId.value)
+    if (group) {
+      const now = new Date()
+      const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+
+      // Record user message locally
+      group.messages.push({
+        text: text,
+        sender: currentMeshAgentUsername.value || 'You',
+        agentName: 'user',
+        time: time,
+        timestamp: now.getTime(),
+        isSent: true,
+        isTemp: true
+      })
+
+      // Send to all member agents via WS
+      const connections = activeGroupWsMap.get(group.groupId)
+      if (connections) {
+        for (const conn of connections) {
+          if (conn.ws && conn.ws.isConnected()) {
+            conn.ws.sendMessage(text)
+          }
+        }
+      }
+      newMessage.value = ''
+      sending.value = false
+      return
+    }
+  }
+
+  if (!activeOpenclawAgent.value && !activeZeroClawSession.value && !activeZAgent.value && activeChat.value === null) {
+    sending.value = false
+    return
+  }
+
+  const chat = activeOpenclawAgent.value || chats.value[activeChat.value]
 
   // zAgent message sending via WebSocket - delegate to handleZAgentSend
   if (activeZAgent.value && currentActiveChatId.value) {
@@ -1846,34 +2081,30 @@ const switchOpenclawSession = async (chat, sessionId) => {
   }
 }
 
-const createGroupChat = async (selectedUsers, groupName) => {
-  if (!currentMesh.value || !currentMeshAgentUsername.value || selectedUsers.length < 1) return
-  
-  const creator = currentMeshAgentUsername.value
-  const groupId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0
-    const v = c === 'x' ? r : (r & 0x3 | 0x8)
-    return v.toString(16)
-  })
-  
-  const members = [creator, ...selectedUsers.map(u => u.name)]
-  
+const createGroupChat = async (selectedAgentNames, groupName) => {
+  if (!groupName.trim() || selectedAgentNames.length < 1) return
+
   try {
-    await chatService.createGroup(currentMesh.value, creator, groupId, {
-      name: groupName,
-      members: members
+    const res = await groupChatService.createGroupChat(groupName, selectedAgentNames)
+    const result = res.data
+    console.log('[GroupChat] Created:', result)
+
+    // Add to local state
+    localGroupChats.value.push({
+      groupId: result.group_id,
+      groupName: groupName,
+      ownerAgent: result.agent_name,
+      members: selectedAgentNames,
+      sessionId: result.group_id,
+      messages: []
     })
-    
-    await chatService.sendGroupMessage(currentMesh.value, creator, groupId, `Group "${groupName}" created`)
-    
-    await fetchChats()
-    
-    const newChat = chats.value.find(c => c.groupId === groupId)
-    if (newChat) {
-      activeChat.value = chats.value.indexOf(newChat)
-    }
+
+    // Switch to this new group
+    await enterGroupChat(result.group_id)
   } catch (error) {
-    console.error('Failed to create group:', error)
+    console.error('[GroupChat] Failed to create group:', error)
+    const msg = error?.response?.data?.error || error?.message || 'Failed to create group chat'
+    alert(msg)
   }
 }
 
@@ -2131,6 +2362,11 @@ provide('createGroupChat', createGroupChat)
 provide('renameGroupChat', renameGroupChat)
 provide('updateGroupMembers', updateGroupMembers)
 provide('groupChats', groupChats)
+provide('localGroupChats', localGroupChats)
+provide('activeGroupId', activeGroupId)
+provide('enterGroupChat', enterGroupChat)
+provide('leaveGroupChat', leaveGroupChat)
+provide('handleDeleteLocalGroup', handleDeleteLocalGroup)
 provide('currentMeshAgentUsername', currentMeshAgentUsername)
 provide('joinParty', joinParty)
 provide('leaveMesh', leaveMesh)
@@ -2201,16 +2437,17 @@ onUnmounted(() => {
 const startApp = () => {
   if (appStarted) return
   appStarted = true
-  
+
   // 清理可能存在的旧 openclaw chats
   chats.value = chats.value.filter(c => !c.isOpenclaw)
-  
+
   fetchMeshes().then(() => {
     startChatsPolling()
   })
   // fetchOpenclawAgents() // Disabled - openclaw agents not used
   // startZeroClawSessionsPolling() // Disabled - zeroclaw sessions hidden
   fetchZAgents()
+  fetchLocalGroupChats()
 }
 
 const verifyToken = async (token) => {

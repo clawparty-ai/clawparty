@@ -369,4 +369,31 @@ export const chatService = {
   },
 }
 
+export const groupChatService = {
+  getGroupChats() {
+    return api.get('/groupchats')
+  },
+  createGroupChat(groupName, memberAgents) {
+    const groupId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0
+      const v = c === 'x' ? r : (r & 0x3 | 0x8)
+      return v.toString(16)
+    })
+    return api.post('/groupchats', {
+      group_id: groupId,
+      group_name: groupName,
+      members: memberAgents
+    })
+  },
+  getGroupChat(groupId) {
+    return api.get(`/groupchats/${encodeURIComponent(groupId)}`)
+  },
+  deleteGroupChat(groupId) {
+    return api.del(`/groupchats/${encodeURIComponent(groupId)}`)
+  },
+  getGroupMessages(groupId) {
+    return api.get(`/groupchats/${encodeURIComponent(groupId)}/messages`)
+  }
+}
+
 export default api

@@ -7,12 +7,12 @@
         </svg>
       </button>
       <h3 class="channel-name">
-        <span class="channel-icon">#</span>
-        {{ chat.name }}
+        <span class="channel-icon">{{ chat.isGroupChat ? '👥' : '#' }}</span>
+        {{ chat.name || chat.groupName }}
       </h3>
       <div class="header-divider"></div>
       <div class="header-info">
-        <span class="topic">{{ chat.lastMessage }}</span>
+        <span class="topic">{{ chat.isGroupChat ? (chat.members ? chat.members.length + 1 + ' members' : '') : chat.lastMessage }}</span>
       </div>
     </div>
     <div class="header-right">

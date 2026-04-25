@@ -313,6 +313,77 @@ function main(listen, apiToken, noAuth) {
       },
     },
 
+    // ── Local Group Chat APIs (ZeroClaw agent groups) ──────────────────
+
+    '/api/groupchats': {
+      'GET': function () {
+        console.log('[API] GET /api/groupchats')
+        return response(200, db.allGroupChats())
+      },
+
+      'POST': function (_, req) {
+        var body = JSON.decode(req.body)
+        var groupName = body.group_name || body.name || ''
+        var memberAgents = body.members || []
+        var groupId = body.group_id || ''
+
+        if (!groupName) {
+          return response(400, { error: 'group_name is required' })
+        }
+        if (!groupId) {
+          return response(400, { error: 'group_id is required' })
+        }
+        if (memberAgents.length === 0) {
+          return response(400, { error: 'members is required (at least one zAgent)' })
+        }
+
+        console.log('[API] POST /api/groupchats - Creating group: ' + groupName)
+
+        try {
+          var result = api.createGroupOwnerAgent(groupId, groupName, memberAgents)
+          console.log('[API] Group chat created: ' + groupName + ', owner=' + result.agent_name)
+          return response(201, result)
+        } catch (e) {
+          console.log('[API] Group chat creation failed: ' + e)
+          return response(400, { error: e.toString?.() || e })
+        }
+      },
+    },
+
+    '/api/groupchats/{groupId}': {
+      'GET': function ({ groupId }) {
+        groupId = URL.decodeComponent(groupId)
+        var gc = db.getGroupChat(groupId)
+        if (!gc) return response(404, { error: 'Group chat not found: ' + groupId })
+        return response(200, gc)
+      },
+
+      'DELETE': function ({ groupId }) {
+        groupId = URL.decodeComponent(groupId)
+        console.log('[API] DELETE /api/groupchats/' + groupId + ' (soft delete)')
+        db.softDeleteGroupChat(groupId)
+        return response(204)
+      },
+    },
+
+    '/api/groupchats/{groupId}/messages': {
+      'GET': function ({ groupId }) {
+        groupId = URL.decodeComponent(groupId)
+        var gc = db.getGroupChat(groupId)
+        if (!gc) return response(404, { error: 'Group chat not found: ' + groupId })
+
+        var ownerAgent = api.getAgentStatus(gc.owner_agent)
+        if (!ownerAgent || ownerAgent.status !== 'running') {
+          return response(503, { error: 'Group owner agent not running' })
+        }
+
+        var zeroclawAgent = new http.Agent('localhost:' + ownerAgent.port)
+        return zeroclawAgent.request('GET', '/api/sessions/' + gc.session_id + '/messages').then(
+          res => response(res.head.status, res.body.toString())
+        )
+      },
+    },
+
     // ── AI-Agent Management APIs ────────────────────────────────────────
 
     '/api/agents': {

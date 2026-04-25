@@ -283,13 +283,23 @@
       </div>
     </Teleport>
 
-    <!-- Group picker modal (teleported to body to avoid overflow clipping) -->
+    <!-- Group chat creation modal -->
     <Teleport to="body">
       <div v-if="showPicker" class="modal-backdrop" @click.self="closePicker">
         <div class="modal-dialog">
           <div class="modal-header">
-            <span class="modal-title">New Group Chat</span>
+            <span class="modal-title">新群聊</span>
             <button class="modal-close" @click="closePicker">✕</button>
+          </div>
+
+          <!-- Group name -->
+          <div class="modal-search" style="margin-bottom: 4px;">
+            <input
+              v-model="newGroupName"
+              class="search-input"
+              placeholder="输入群聊名称..."
+              autofocus
+            />
           </div>
 
           <!-- Search filter -->
@@ -297,36 +307,12 @@
             <input
               v-model="pickerSearch"
               class="search-input"
-              placeholder="Search members..."
-              autofocus
+              placeholder="搜索 zAgent..."
             />
           </div>
 
           <div class="modal-list">
-            <!-- Mesh users -->
-            <template v-if="filteredUsers.length > 0">
-              <div class="modal-section-label">Members</div>
-              <label
-                v-for="user in filteredUsers"
-                :key="'u-' + user.id"
-                class="modal-item"
-                :class="{ selected: pickerSelected.includes(user.username || user.name) }"
-              >
-                <input
-                  type="checkbox"
-                  :checked="pickerSelected.includes(user.username || user.name)"
-                  @change="togglePickerUser(user.username || user.name)"
-                />
-                <div class="item-avatar" :style="{ background: getAvatarColor(user.username || user.name) }">
-                  {{ (user.username || user.name)[0].toUpperCase() }}
-                </div>
-                <span class="item-name">{{ user.name }}</span>
-                <span class="item-subname" v-if="user.username">{{ user.username }}</span>
-                <span class="item-status" :class="{ online: user.online }"></span>
-              </label>
-            </template>
-
-            <!-- zAgents -->
+            <!-- zAgents only -->
             <template v-if="filteredZAgents.length > 0">
               <div class="modal-section-label">zAgents</div>
               <label
@@ -346,21 +332,20 @@
               </label>
             </template>
 
-            <div v-if="filteredUsers.length === 0 && filteredZAgents.length === 0" class="modal-empty">
-              <span v-if="!currentMesh">Not connected to a party yet.</span>
-              <span v-else-if="users.length === 0">No other members in the party yet. They may still be connecting.</span>
-              <span v-else>No members match your search.</span>
+            <div v-if="filteredZAgents.length === 0" class="modal-empty">
+              <span v-if="zAgents.length === 0">没有可用的 zAgent，请先创建一个。</span>
+              <span v-else>没有匹配的 zAgent。</span>
             </div>
           </div>
 
           <div class="modal-footer">
-            <span class="modal-count">{{ pickerSelected.length }} selected</span>
-            <button class="modal-cancel-btn" @click="closePicker">Cancel</button>
+            <span class="modal-count">{{ pickerSelected.length }} 已选</span>
+            <button class="modal-cancel-btn" @click="closePicker">取消</button>
             <button
               class="modal-create-btn"
-              :disabled="pickerSelected.length === 0"
+              :disabled="pickerSelected.length === 0 || !newGroupName.trim()"
               @click="handleCreateGroup"
-            >Create Group</button>
+            >创建群聊</button>
           </div>
         </div>
       </div>
@@ -468,55 +453,40 @@
     </Teleport>
 
       <div class="panel-list">
-        <!-- Group Chats view — all groups across meshes -->
+        <!-- Group Chats view — local ZeroClaw agent groups -->
         <template v-if="activeOrg === 'groups'">
-          <template v-if="groupChats.length > 0">
+          <template v-if="localGroupChats && localGroupChats.length > 0">
             <div
-              v-for="chat in groupChats"
-              :key="chat.id"
+              v-for="chat in localGroupChats"
+              :key="chat.groupId"
               class="group-chat-entry"
             >
-              <!-- Header row -->
               <div
                 class="panel-item group-chat-header"
-                :class="{ active: getChatIndex(chat.id) === activeChat }"
+                :class="{ active: activeGroupId === chat.groupId }"
+                @click="enterGroupChat(chat.groupId)"
               >
-                <div class="item-hash" @click.stop="toggleExpand(chat.id)" :title="expandedGroups.has(chat.id) ? 'Collapse members' : 'Expand members'">{{ expandedGroups.has(chat.id) ? '▼' : '▶' }}</div>
-                <!-- Rename inline editor -->
-                <template v-if="renamingChatId === chat.id">
-                  <input
-                    class="group-rename-input"
-                    v-model="renameValue"
-                    @keyup.enter="submitRename(chat)"
-                    @keyup.escape="cancelRename"
-                    @blur="submitRename(chat)"
-                    ref="renameInputRef"
-                  />
-                </template>
-                <template v-else>
-                  <span class="item-name" @click="$emit('select', getChatIndex(chat.id))">{{ chat.name }}</span>
-                </template>
-                <span v-if="chat.updated > 0 && renamingChatId !== chat.id" class="unread-badge">{{ chat.updated > 99 ? '99+' : chat.updated }}</span>
-                <button v-if="chat.creator === currentMeshAgentUsername" class="group-action-btn" @click.stop="startRename(chat)" title="Rename">✎</button>
-                <button v-if="chat.creator === currentMeshAgentUsername" class="group-action-btn" @click.stop="openEditMembers(chat)" title="Edit members">
-									<svg t="1775022664441" class="icon" viewBox="0 0 1152 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="3524" width="18" height="18"><path d="M768 770.62144l0-52.77696c70.49216-39.7312 128-138.77248 128-237.83424 0-159.06816 0-288.01024-192-288.01024s-192 128.94208-192 288.01024c0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l896 0c0-128.96256-166.89152-235.64288-384-253.37856z" fill="#515151" p-id="3525" data-spm-anchor-id="a313x.search_index.0.i3.4b4d3a810fYL5Y" class="selected"></path><path d="M327.18848 795.32032c55.31648-36.1472 124.08832-63.63136 199.7824-80.40448-15.0528-17.77664-28.71296-37.62176-40.48896-59.02336-30.4128-55.23456-46.4896-116.06016-46.4896-175.90272 0-86.03648 0-167.30112 30.59712-233.75872 29.696-64.512 83.12832-104.48896 159.232-119.48032-16.91648-76.47232-61.93152-126.75072-181.82144-126.75072-192 0-192 128.94208-192 288.01024 0 99.06176 57.50784 198.10304 128 237.83424l0 52.77696c-217.10848 17.75616-384 124.416-384 253.37856l278.99904 0c14.52032-12.9024 30.59712-25.16992 48.18944-36.67968z" fill="#515151" p-id="3526" data-spm-anchor-id="a313x.search_index.0.i4.4b4d3a810fYL5Y" class="selected"></path></svg>
-								</button>
+                <div class="item-hash" @click.stop="toggleExpand(chat.groupId)">{{ expandedGroups.has(chat.groupId) ? '▼' : '▶' }}</div>
+                <span class="item-name">{{ chat.groupName }}</span>
+                <button class="group-action-btn" @click.stop="handleDeleteLocalGroup(chat)" title="删除群聊">🗑</button>
               </div>
-              <!-- Expanded members list -->
-              <div v-if="expandedGroups.has(chat.id)" class="group-members-list">
+              <div v-if="expandedGroups.has(chat.groupId)" class="group-members-list">
+                <div class="group-member-item">
+                  <div class="member-avatar">👑</div>
+                  <span class="member-name">{{ chat.ownerAgent }} (owner)</span>
+                </div>
                 <div
                   v-for="member in (chat.members || [])"
                   :key="member"
                   class="group-member-item"
                 >
-                  <div class="member-avatar" :style="{ background: getAvatarColor(member) }">{{ member[0].toUpperCase() }}</div>
-                  <span class="member-name">{{ resolveEpDisplayName(member) }}</span>
+                  <div class="member-avatar">🤖</div>
+                  <span class="member-name">{{ member }}</span>
                 </div>
-                <div v-if="!chat.members || chat.members.length === 0" class="group-member-empty">No members</div>
               </div>
             </div>
           </template>
-          <div v-else class="panel-empty">No group chats yet</div>
+          <div v-else class="panel-empty">还没有群聊，点击 #+ 创建</div>
         </template>
 
         
@@ -707,6 +677,11 @@ const zAgents = inject('zAgents')
 const activeZAgent = inject('activeZAgent')
 const selectZAgent = inject('selectZAgent')
 const createZAgent = inject('createZAgent')
+const localGroupChats = inject('localGroupChats')
+const enterGroupChat = inject('enterGroupChat')
+const leaveGroupChat = inject('leaveGroupChat')
+const activeGroupId = inject('activeGroupId')
+const handleDeleteLocalGroup = inject('handleDeleteLocalGroup')
 const deleteZAgent = inject('deleteZAgent')
 const fetchZAgents = inject('fetchZAgents')
 
@@ -885,10 +860,6 @@ const handleLeaveMesh = async (meshName) => {
   }
 }
 
-// Chats split by type
-const groupChats = computed(() =>
-  props.chats.filter(c => c.isGroup && c.groupId && !c.isOpenclaw)
-)
 const dmChats = computed(() =>
   props.chats.filter(c => !c.isGroup && !c.isOpenclaw)
 )
@@ -911,12 +882,14 @@ const getChatIndex = (chatId, isOpenclaw = false) => {
 const showPicker = ref(false)
 const pickerSelected = ref([])
 const pickerSearch = ref('')
+const newGroupName = ref('')
 
 const togglePicker = () => {
   showPicker.value = !showPicker.value
   if (!showPicker.value) {
     pickerSelected.value = []
     pickerSearch.value = ''
+    newGroupName.value = ''
   }
 }
 
@@ -924,6 +897,7 @@ const closePicker = () => {
   showPicker.value = false
   pickerSelected.value = []
   pickerSearch.value = ''
+  newGroupName.value = ''
 }
 
 const filteredUsers = computed(() => {
@@ -1151,27 +1125,13 @@ const handleJoinParty = async () => {
 }
 
 const handleCreateGroup = async () => {
-  if (pickerSelected.value.length === 0) return
-  // pickerSelected stores username (for EP users), agent id (for agents), or session_id (for zeroclaw)
-  const fromUsers = users.value.filter(u => pickerSelected.value.includes(u.username || u.name))
-  const fromAgents = openclawAgents.value.filter(a => pickerSelected.value.includes(a.id))
-  const fromZeroclaw = zeroclawSessions.value.filter(s => pickerSelected.value.includes(s.session_id))
-  const selectedObjs = [
-    // EP users: pass username as the member identifier
-    ...fromUsers.map(u => ({ name: u.username || u.name })),
-    // Agents: use agent id (e.g. "video-agent") so it matches getLocalAgentNames() output
-    ...fromAgents.map(a => ({ name: a.id })),
-    // ZeroClaw sessions: pass session_id as the member identifier
-    ...fromZeroclaw.map(s => ({ name: s.session_id, isZeroclawSession: true }))
-  ]
-  // Build a human-friendly group name using display names
-  const displayNames = [
-    ...fromUsers.map(u => u.name || u.username),
-    ...fromAgents.map(a => a.name),
-    ...fromZeroclaw.map(s => s.name || s.session_id)
-  ]
-  const groupName = displayNames.join(', ')
-  await createGroupChat(selectedObjs, groupName)
+  if (pickerSelected.value.length === 0 || !newGroupName.value.trim()) return
+
+  // Only zAgents are selectable now
+  const selectedAgentNames = pickerSelected.value  // array of agent_name strings
+  const groupName = newGroupName.value.trim()
+
+  await createGroupChat(selectedAgentNames, groupName)
   closePicker()
   activeOrg.value = 'groups'
 }

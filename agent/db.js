@@ -252,6 +252,23 @@ function open(pathname) {
   try {
     db.exec(`ALTER TABLE agents ADD COLUMN description TEXT`)
   } catch {}
+
+  // Group chats for local ZeroClaw agent group chat
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS group_chats (
+      group_id      TEXT PRIMARY KEY,
+      group_name    TEXT NOT NULL,
+      owner_agent   TEXT NOT NULL,
+      members       TEXT NOT NULL,
+      created_at    REAL NOT NULL,
+      updated_at    REAL NOT NULL,
+      deleted       INTEGER NOT NULL DEFAULT 0,
+      session_id    TEXT NOT NULL
+    )
+  `)
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_group_chats_deleted ON group_chats(deleted)`)
+  } catch {}
 }
 
 function allZones() {
@@ -1007,6 +1024,85 @@ function isPortUsed(port) {
   return !!row
 }
 
+// ── Group Chats ─────────────────────────────────────────────────────
+
+function createGroupChat(group) {
+  var t = Date.now() / 1000
+  db.sql(`
+    INSERT INTO group_chats(group_id, group_name, owner_agent, members, created_at, updated_at, deleted, session_id)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(1, group.group_id)
+    .bind(2, group.group_name)
+    .bind(3, group.owner_agent)
+    .bind(4, JSON.stringify(group.members || []))
+    .bind(5, t)
+    .bind(6, t)
+    .bind(7, 0)
+    .bind(8, group.session_id || group.group_id)
+    .exec()
+}
+
+function allGroupChats() {
+  return db.sql('SELECT * FROM group_chats WHERE deleted = 0 ORDER BY created_at DESC')
+    .exec()
+    .map(r => ({
+      group_id: r.group_id,
+      group_name: r.group_name,
+      owner_agent: r.owner_agent,
+      members: r.members ? JSON.parse(r.members) : [],
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+      deleted: r.deleted === 1,
+      session_id: r.session_id,
+    }))
+}
+
+function getGroupChat(groupId) {
+  var row = db.sql('SELECT * FROM group_chats WHERE group_id = ? AND deleted = 0')
+    .bind(1, groupId)
+    .exec()[0]
+  if (!row) return null
+  return {
+    group_id: row.group_id,
+    group_name: row.group_name,
+    owner_agent: row.owner_agent,
+    members: row.members ? JSON.parse(row.members) : [],
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    deleted: row.deleted === 1,
+    session_id: row.session_id,
+  }
+}
+
+function softDeleteGroupChat(groupId) {
+  var t = Date.now() / 1000
+  db.sql('UPDATE group_chats SET deleted = 1, updated_at = ? WHERE group_id = ?')
+    .bind(1, t)
+    .bind(2, groupId)
+    .exec()
+}
+
+function updateGroupChat(groupId, data) {
+  var t = Date.now() / 1000
+  var existing = getGroupChat(groupId)
+  if (!existing) return false
+  db.sql('UPDATE group_chats SET group_name = ?, members = ?, updated_at = ? WHERE group_id = ?')
+    .bind(1, data.group_name !== undefined ? data.group_name : existing.group_name)
+    .bind(2, JSON.stringify(data.members !== undefined ? data.members : existing.members))
+    .bind(3, t)
+    .bind(4, groupId)
+    .exec()
+  return true
+}
+
+function isGroupOwnerAgent(agentName) {
+  var row = db.sql('SELECT 1 FROM group_chats WHERE owner_agent = ? AND deleted = 0')
+    .bind(1, agentName)
+    .exec()[0]
+  return !!row
+}
+
 export default {
   open,
   allZones,
@@ -1055,4 +1151,11 @@ export default {
   hasCliLog,
   addCliLog,
   logCliCall,
+  // Group Chats
+  createGroupChat,
+  allGroupChats,
+  getGroupChat,
+  softDeleteGroupChat,
+  updateGroupChat,
+  isGroupOwnerAgent,
 }

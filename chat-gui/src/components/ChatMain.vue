@@ -31,8 +31,11 @@
           <div v-else-if="msg.isTyping && (chat.isOpenclaw || chat.isZeroClaw)" class="avatar-emoji">
             {{ chat.emoji || '🀄' }}
           </div>
-          <div v-else-if="!msg.isTyping" class="avatar-placeholder" :style="{ background: getAvatarColor(isMessageSent(msg) ? (currentUserName || 'You') : (msg.sender || chat.name)) }">
-            {{ (isMessageSent(msg) ? (currentUserName || 'You') : (msg.sender || chat.name))[0].toUpperCase() }}
+          <div v-else-if="msg.agentName === 'user' && !isMessageSent(msg)" class="avatar-placeholder group-owner-avatar" :style="{ background: '#611f69' }">
+            👑
+          </div>
+          <div v-else-if="!msg.isTyping" class="avatar-placeholder" :class="{ 'group-agent-avatar': chat.isGroupChat && msg.agentName && msg.agentName !== 'user' }" :style="{ background: getAvatarColor(isMessageSent(msg) ? (currentUserName || 'You') : (msg.agentName || msg.sender || chat.name)) }">
+            {{ (isMessageSent(msg) ? (currentUserName || 'You') : (msg.agentName || msg.sender || chat.name))[0].toUpperCase() }}
           </div>
         </div>
         <div class="message-body">
@@ -43,7 +46,11 @@
           </div>
           <template v-else>
             <div class="message-header">
-              <span class="message-author">{{ isMessageSent(msg) ? myDisplayNameWithAgent : (msg.sender || chat.name) }}</span>
+              <span class="message-author">
+                <span v-if="chat.isGroupChat && msg.agentName && msg.agentName !== 'user'" class="agent-tag" :style="{ background: getAvatarColor(msg.agentName) }">{{ msg.agentName }}</span>
+                <span v-else-if="chat.isGroupChat && msg.agentName === 'user'" class="agent-tag owner-tag">👑 owner</span>
+                <template v-else>{{ isMessageSent(msg) ? myDisplayNameWithAgent : (msg.sender || chat.name) }}</template>
+              </span>
               <span class="message-time">{{ msg.time }}</span>
             </div>
             <div class="message-bubble" :class="{ 'system-hint': msg.isSystemHint }">
@@ -190,6 +197,10 @@ const props = defineProps({
   autoFocus: {
     type: Boolean,
     default: true
+  },
+  isGroupChat: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -1751,6 +1762,34 @@ onUnmounted(() => {
 
 .message-content :deep(em) {
   font-style: italic;
+}
+
+/* ── Group chat styles ─────────────────────────────────────── */
+
+.agent-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  margin-right: 6px;
+}
+
+.owner-tag {
+  background: #611f69 !important;
+}
+
+.group-agent-avatar {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.group-owner-avatar {
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 @media (max-width: 768px) {
