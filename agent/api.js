@@ -781,14 +781,24 @@ function sanitizeAgentName(name) {
   }
   // Trim leading hyphens
   var start = 0
-  while (start < chars.length && chars[start] === '-') start++
+  for (var i = 0; i < chars.length; i++) {
+    if (chars[i] !== '-') {
+      start = i
+      break
+    }
+  }
   // Trim trailing hyphens
   var end = chars.length - 1
-  while (end >= 0 && chars[end] === '-') end--
+  for (var j = chars.length - 1; j >= 0; j--) {
+    if (chars[j] !== '-') {
+      end = j
+      break
+    }
+  }
   if (start > end) return 'group'
   // Collapse multiple hyphens (already done during loop via prevHyphen)
   var result = ''
-  for (var i = start; i <= end; i++) result += chars[i]
+  for (var k = start; k <= end; k++) result += chars[k]
   if (!result) return 'group'
   return result
 }
@@ -801,11 +811,11 @@ function createGroupOwnerAgent(groupId, groupName, memberAgents) {
   // De-duplicate: if name exists, append -1, -2, etc.
   var uniqueName = ownerAgentName
   var suffix = 1
-  while (db.getAgent(uniqueName) || db.getGroupChat(uniqueName)) {
+  for (suffix = 1; suffix <= 1000; suffix++) {
+    if (!db.getAgent(uniqueName) && !db.getGroupChat(uniqueName)) break
     uniqueName = ownerAgentName + '-' + suffix
-    suffix++
-    if (suffix > 1000) throw 'Could not find unique agent name for group'
   }
+  if (suffix > 1000) throw 'Could not find unique agent name for group'
   ownerAgentName = uniqueName
 
   // Create the agent using existing template logic
