@@ -1,5 +1,5 @@
 <template>
-  <div class="task-panel">
+  <div class="task-panel" :style="{ height: panelHeight + 'px' }">
     <div class="task-panel-header" @click="toggleExpanded">
       <span class="task-panel-icon">🎯</span>
       <span class="task-panel-title">任务</span>
@@ -11,7 +11,7 @@
         <span class="stat failed" v-if="taskStats.failed > 0">{{ taskStats.failed }} 失败</span>
       </span>
       <span class="task-panel-toggle">{{ expanded ? '▼' : '▶' }}</span>
-    </div>
+        </div>
     <div v-show="expanded" class="task-panel-body">
       <div v-if="tasks.length === 0" class="task-empty">
         <span class="task-empty-icon">✨</span>
@@ -47,11 +47,17 @@
         </div>
       </div>
     </div>
+    <div
+      class="resize-handle"
+      :class="{ resizing: isResizing }"
+      @mousedown="startResize"
+      @touchstart="startResize"
+    ></div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps({
   agentName: {
@@ -77,6 +83,47 @@ const toggleExpanded = () => {
 const formatPriority = (priority) => {
   const map = { low: '低', normal: '中', high: '高', urgent: '紧急' }
   return map[priority] || priority
+}
+
+// Resizable panel height
+const MIN_H = 60
+const MAX_H = 500
+const panelHeight = ref(180)
+const isResizing = ref(false)
+
+let startY = 0
+let startH = 0
+
+const startResize = (e) => {
+  isResizing.value = true
+  startY = e.clientY || e.touches?.[0]?.clientY || 0
+  startH = panelHeight.value
+  document.body.style.cursor = 'ns-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('mousemove', onResize)
+  window.addEventListener('mouseup', stopResize)
+  window.addEventListener('touchmove', onResize, { passive: false })
+  window.addEventListener('touchend', stopResize)
+}
+
+const onResize = (e) => {
+  if (!isResizing.value) return
+  const y = e.clientY || e.touches?.[0]?.clientY || 0
+  const delta = y - startY
+  let h = startH + delta
+  if (h < MIN_H) h = MIN_H
+  if (h > MAX_H) h = MAX_H
+  panelHeight.value = h
+}
+
+const stopResize = () => {
+  isResizing.value = false
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  window.removeEventListener('mousemove', onResize)
+  window.removeEventListener('mouseup', stopResize)
+  window.removeEventListener('touchmove', onResize)
+  window.removeEventListener('touchend', stopResize)
 }
 
 const flattenedTasks = computed(() => {
@@ -123,10 +170,40 @@ const taskStats = computed(() => {
 <style scoped>
 .task-panel {
   flex-shrink: 0;
+  position: relative;
   background: var(--bg-secondary, #f3f6fc);
   border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.07));
-  max-height: 300px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.resize-handle {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  cursor: ns-resize;
+  z-index: 10;
+}
+
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  bottom: 1px;
+  left: calc(50% - 16px);
+  width: 32px;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(0, 0, 0, 0.12);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.resize-handle:hover::after,
+.resize-handle.resizing::after {
+  opacity: 1;
+  background: rgba(64, 149, 254, 0.6);
 }
 
 .task-panel-header {
@@ -181,7 +258,10 @@ const taskStats = computed(() => {
 }
 
 .task-panel-body {
+  flex: 1;
+  overflow-y: auto;
   padding: 4px 16px 10px;
+  min-height: 0;
 }
 
 .task-row {

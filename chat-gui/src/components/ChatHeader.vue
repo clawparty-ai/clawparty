@@ -64,6 +64,15 @@
           </svg>
         </button>
 
+        <button
+          v-if="showTaskButton"
+          class="header-btn"
+          :class="{ active: taskPanelVisible }"
+          title="Toggle Task Panel"
+          @click="emit('toggleTaskPanel')"
+        >
+          <span style="font-size: 13px; font-weight: 600;">🎯</span>
+        </button>
         <button class="header-btn" title="Reload" @click="emit('reload')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M23 4v6h-6"/>
@@ -111,10 +120,18 @@ const props = defineProps({
   showBackButton: {
     type: Boolean,
     default: false
+  },
+  showTaskButton: {
+    type: Boolean,
+    default: false
+  },
+  taskPanelVisible: {
+    type: Boolean,
+    default: true
   }
 })
 
-const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload'])
+const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload', 'toggleTaskPanel'])
 </script>
 
 <style scoped>
@@ -237,6 +254,11 @@ const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 
 .header-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.header-btn.active {
+  background: rgba(64, 149, 254, 0.15);
+  color: #4095fe;
 }
 
 .header-btn-danger:hover {

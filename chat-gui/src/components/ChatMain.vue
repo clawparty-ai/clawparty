@@ -5,6 +5,8 @@
       :openclawSessions="openclawSessions"
       :currentUserName="currentUserName"
       :showBackButton="showBackButton"
+      :showTaskButton="chat.isZeroClaw"
+      :taskPanelVisible="showTaskPanel"
       @switchSession="$emit('switchSession', $event)"
       @deleteGroup="$emit('deleteGroup', $event)"
       @leaveGroup="$emit('leaveGroup', $event)"
@@ -13,13 +15,14 @@
       @download-md="handleDownloadMd"
       @download-pdf="handleDownloadPdf"
       @reload="fetchMessages"
+      @toggleTaskPanel="showTaskPanel = !showTaskPanel"
     />
     <TaskPanel
-      v-if="chat.isZeroClaw"
+      v-if="chat.isZeroClaw && showTaskPanel"
       :agentName="agentName || chat.display_name || chat.agent_name"
       :tasks="tasks"
-      :expanded="taskPanelExpanded"
-      @toggle="taskPanelExpanded = !taskPanelExpanded"
+      :expanded="taskPanelBodyExpanded"
+      @toggle="taskPanelBodyExpanded = !taskPanelBodyExpanded"
     />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
@@ -231,7 +234,8 @@ const quotedMessage = ref(null)
 
 // Task management (zAgent only)
 const tasks = ref([])
-const taskPanelExpanded = ref(true)
+const showTaskPanel = ref(true)          // 由 header Task 按钮控制显/隐
+const taskPanelBodyExpanded = ref(true)  // 由 TaskPanel header 点击控制 body 展开/折叠
 let taskPollTimer = null
 
 const loadTasks = async () => {
