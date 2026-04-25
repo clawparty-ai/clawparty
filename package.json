@@ -1,9 +1,9 @@
 {
   "dependencies": {
-    "blessed": "^0.1.81",
-    "playwright": "^1.59.1"
+    "blessed": "^0.1.81"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1"
+    "@playwright/test": "^1.59.1",
+    "playwright": "^1.59.1"
   }
 }
