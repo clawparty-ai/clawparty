@@ -1096,7 +1096,10 @@ const parseTaskTags = (content, agentName) => {
     // Extract task ID
     let extractedId = null
     const idPatterns = [
+      // key: value format
       /(?:任务ID|Task\s*ID|🆔\s*(?:任务)?ID)[:：\s\t]+([a-f0-9\-]{8,}|[A-Z0-9\-]{8,})/i,
+      // markdown table column format
+      /(?:任务ID|Task\s*ID|🆔)\s*[|｜]\s*([a-f0-9\-]{8,}|[A-Z0-9\-]{8,})/i,
       /(?:编号|No)[:：\s\t]+([a-zA-Z0-9\-_]+)/i,
     ]
     for (const p of idPatterns) {
@@ -1104,15 +1107,20 @@ const parseTaskTags = (content, agentName) => {
       if (m) { extractedId = m[1]; break }
     }
 
-    // Extract task name/title
+    // Extract task name/title — handles both "key: value" and markdown table "key | value" formats
     let extractedName = null
     const namePatterns = [
+      // key: value format
       /(?:任务名称|📛\s*任务名称|Task\s*Name|任务[:：])[:：\s\t]+([^\n]+)/i,
+      // markdown table column format (header cell)
+      /(?:任务名称|Task\s*Name)\s*[|｜]\s*([^\n|｜]+)/i,
+      // Standalone line after "任务名称"
+      /^[^：:]*(?:任务名称|Task\s*Name)[^：:]*$[^\n]*\n\s*([^\n]+)/im,
       /(?:标题|Title)[:：\s\t]+([^\n]+)/i,
     ]
     for (const p of namePatterns) {
       const m = content.match(p)
-      if (m) { extractedName = m[1].trim(); break }
+      if (m) { extractedName = m[1].replace(/[*#\s]+$/g, '').trim(); break }
     }
 
     // Extract status
@@ -1209,6 +1217,10 @@ const handleZeroClawMessage = (data) => {
       })
     }
   } else if (data.type === 'done') {
+    // Parse full_response for task tags (AI may have sent complete markdown/table in full msg)
+    if (agent && data.full_response) {
+      parseTaskTags(data.full_response, agent.agent_name || 'main')
+    }
     const typingIdx = target.messages?.findIndex(m => m.isTyping)
     if (typingIdx >= 0) {
       if (agent) {
