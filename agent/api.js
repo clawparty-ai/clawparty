@@ -769,7 +769,8 @@ function sanitizeAgentName(name) {
   var prevHyphen = false
   for (var i = 0; i < s.length; i++) {
     var c = s.charAt(i)
-    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c === '-') {
+    var code = c.charCodeAt(0)
+    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c === '-' || code >= 128) {
       chars.push(c)
       prevHyphen = false
     } else {

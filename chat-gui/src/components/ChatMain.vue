@@ -14,6 +14,13 @@
       @download-pdf="handleDownloadPdf"
       @reload="fetchMessages"
     />
+    <TaskPanel
+      v-if="chat.isZeroClaw"
+      :agentName="agentName || chat.display_name || chat.agent_name"
+      :tasks="tasks"
+      :expanded="taskPanelExpanded"
+      @toggle="taskPanelExpanded = !taskPanelExpanded"
+    />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
         <span>{{ currentDate }}</span>
@@ -143,7 +150,8 @@ import ChatHeader from './ChatHeader.vue'
 import MessageInput from './MessageInput.vue'
 import HalfAutomationInput from './HalfAutomationInput.vue'
 import ConfigTable from './ConfigTable.vue'
-import { chatService } from '../services/chatService'
+import TaskPanel from './TaskPanel.vue'
+import { chatService, taskService } from '../services/chatService'
 import { getAvatarColor } from '../utils/avatar'
 
 marked.setOptions({
@@ -220,6 +228,37 @@ const currentSessionId = ref('')
 
 // Quote feature
 const quotedMessage = ref(null)
+
+// Task management (zAgent only)
+const tasks = ref([])
+const taskPanelExpanded = ref(true)
+let taskPollTimer = null
+
+const loadTasks = async () => {
+  if (!props.chat.isZeroClaw) return
+  const agentName = props.agentName || props.chat.agent_name
+  if (!agentName) return
+  try {
+    const res = await taskService.getAgentTasks(agentName)
+    if (res.data && res.data.tasks) {
+      tasks.value = res.data.tasks
+    }
+  } catch (e) {
+    console.error('[ChatMain] Failed to load tasks:', e)
+  }
+}
+
+const startTaskPolling = () => {
+  stopTaskPolling()
+  taskPollTimer = setInterval(loadTasks, 3000)
+}
+
+const stopTaskPolling = () => {
+  if (taskPollTimer) {
+    clearInterval(taskPollTimer)
+    taskPollTimer = null
+  }
+}
 
 // Quote function
 const quoteMessage = (msg) => {
@@ -1344,7 +1383,10 @@ watch(
   () => [props.chat.name, props.isActive],
   async ([name, isActive], prev) => {
     if (!name || !isActive) {
-      if (prev && prev[1]) stopPolling()
+      if (prev && prev[1]) {
+        stopPolling()
+        stopTaskPolling()
+      }
       return
     }
     await loadPeerMode()
@@ -1352,6 +1394,10 @@ watch(
       fetchMessages().then(() => {
         startPolling()
       })
+    }
+    if (props.chat.isZeroClaw) {
+      loadTasks()
+      startTaskPolling()
     }
   },
   { immediate: true }
@@ -1363,6 +1409,7 @@ watch(() => props.chat.messages?.length, () => {
 
 onUnmounted(() => {
   stopPolling()
+  stopTaskPolling()
 })
 </script>
 

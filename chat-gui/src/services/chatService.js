@@ -218,6 +218,28 @@ export class ZeroClawWS {
   }
 }
 
+export const taskService = {
+  getAgentTasks(agentName) {
+    return api.get(`/tasks?agent=${encodeURIComponent(agentName)}`)
+  },
+
+  createTask(taskData) {
+    return api.post('/tasks', taskData)
+  },
+
+  updateTask(taskId, updates) {
+    return api.put(`/tasks/${encodeURIComponent(taskId)}`, updates)
+  },
+
+  deleteTask(taskId) {
+    return api.del(`/tasks/${encodeURIComponent(taskId)}`)
+  },
+
+  getTaskEvents(taskId) {
+    return api.get(`/tasks/${encodeURIComponent(taskId)}/events`)
+  }
+}
+
 export const zagentService = {
   getAgents() {
     return api.get('/agents')

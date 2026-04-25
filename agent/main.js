@@ -477,6 +477,84 @@ function main(listen, apiToken, noAuth) {
       },
     },
 
+    // ── Task Management APIs ──────────────────────────────────────────
+
+    '/api/tasks': {
+      'GET': function (_, req) {
+        var url = new URL(req.head.path, 'http://localhost')
+        var agentName = url.searchParams.get('agent')
+        if (!agentName) return response(400, { error: 'agent parameter required' })
+        var tasks = db.getAgentTasks(agentName)
+        return response(200, { agent_name: agentName, tasks: tasks })
+      },
+
+      'POST': function (_, req) {
+        var body
+        try {
+          body = JSON.decode(req.body)
+        } catch {
+          return response(400, { error: 'invalid request body' })
+        }
+        var taskId = body.task_id || ('task-' + Date.now() + '-' + Math.floor(Math.random() * 10000))
+        var existing = db.getTask(taskId)
+        if (existing) {
+          taskId = taskId + '-' + Math.floor(Math.random() * 10000)
+        }
+        var task = {
+          task_id: taskId,
+          agent_name: body.agent_name,
+          parent_id: body.parent_id || null,
+          title: body.title,
+          description: body.description || '',
+          status: body.status || 'pending',
+          progress: body.progress || 0,
+          priority: body.priority || 'normal',
+          dependencies: body.dependencies || [],
+        }
+        return response(201, db.createTask(task))
+      }
+    },
+
+    '/api/tasks/{taskId}': {
+      'GET': function ({ taskId }) {
+        taskId = URL.decodeComponent(taskId)
+        var task = db.getTask(taskId)
+        if (!task) return response(404, { error: 'Task not found' })
+        return response(200, task)
+      },
+
+      'PUT': function ({ taskId }, req) {
+        taskId = URL.decodeComponent(taskId)
+        var body
+        try {
+          body = JSON.decode(req.body)
+        } catch {
+          return response(400, { error: 'invalid request body' })
+        }
+        var updated = db.updateTask(taskId, body)
+        if (!updated) return response(404, { error: 'Task not found' })
+        return response(200, updated)
+      },
+
+      'DELETE': function ({ taskId }) {
+        taskId = URL.decodeComponent(taskId)
+        var task = db.getTask(taskId)
+        if (!task) return response(404, { error: 'Task not found' })
+        db.deleteTaskCascade(taskId)
+        return response(204)
+      }
+    },
+
+    '/api/tasks/{taskId}/events': {
+      'GET': function ({ taskId }) {
+        taskId = URL.decodeComponent(taskId)
+        var task = db.getTask(taskId)
+        if (!task) return response(404, { error: 'Task not found' })
+        var events = db.getTaskEvents(taskId)
+        return response(200, { task_id: taskId, events: events })
+      }
+    },
+
     '/api/global-config': {
       'GET': function () {
         var cfg = api.loadGlobalConfig()

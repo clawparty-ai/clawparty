@@ -269,6 +269,50 @@ function open(pathname) {
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_group_chats_deleted ON group_chats(deleted)`)
   } catch {}
+
+  // Tasks table for zAgent task management
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id       TEXT NOT NULL UNIQUE,
+      agent_name    TEXT NOT NULL,
+      parent_id     TEXT,
+      title         TEXT NOT NULL,
+      description   TEXT,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      progress      INTEGER DEFAULT 0,
+      priority      TEXT DEFAULT 'normal',
+      dependencies  TEXT,
+      created_at    REAL NOT NULL,
+      updated_at    REAL NOT NULL,
+      started_at    REAL,
+      completed_at  REAL
+    )
+  `)
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_agent ON tasks(agent_name)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_task_id ON tasks(task_id)`)
+  } catch {}
+
+  // Task events table for audit trail
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_events (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id       TEXT NOT NULL,
+      event_type    TEXT NOT NULL,
+      from_status   TEXT,
+      to_status     TEXT,
+      progress      INTEGER,
+      message       TEXT,
+      timestamp     REAL NOT NULL
+    )
+  `)
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_task_events_timestamp ON task_events(timestamp)`)
+  } catch {}
 }
 
 function allZones() {
@@ -1103,6 +1147,203 @@ function isGroupOwnerAgent(agentName) {
   return !!row
 }
 
+// ── Task Management ─────────────────────────────────────────────────
+
+function createTask(task) {
+  var t = Date.now() / 1000
+  db.sql(`
+    INSERT INTO tasks(task_id, agent_name, parent_id, title, description, status, progress, priority, dependencies, created_at, updated_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(1, task.task_id)
+    .bind(2, task.agent_name)
+    .bind(3, task.parent_id || null)
+    .bind(4, task.title)
+    .bind(5, task.description || null)
+    .bind(6, task.status || 'pending')
+    .bind(7, task.progress !== undefined ? task.progress : 0)
+    .bind(8, task.priority || 'normal')
+    .bind(9, task.dependencies ? JSON.stringify(task.dependencies) : null)
+    .bind(10, t)
+    .bind(11, t)
+    .exec()
+
+  recordTaskEvent(task.task_id, 'created', null, task.status || 'pending', task.progress || 0, 'Task created')
+  return getTask(task.task_id)
+}
+
+function getTask(taskId) {
+  var row = db.sql('SELECT * FROM tasks WHERE task_id = ?').bind(1, taskId).exec()[0]
+  if (!row) return null
+  return {
+    id: row.id,
+    task_id: row.task_id,
+    agent_name: row.agent_name,
+    parent_id: row.parent_id,
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    progress: row.progress,
+    priority: row.priority,
+    dependencies: row.dependencies ? JSON.parse(row.dependencies) : [],
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    started_at: row.started_at,
+    completed_at: row.completed_at,
+  }
+}
+
+function updateTask(taskId, updates) {
+  var existing = getTask(taskId)
+  if (!existing) return false
+
+  var t = Date.now() / 1000
+  var fields = []
+  var params = []
+
+  if (updates.title !== undefined) { fields.push('title = ?'); params.push(updates.title) }
+  if (updates.description !== undefined) { fields.push('description = ?'); params.push(updates.description) }
+  if (updates.status !== undefined) { fields.push('status = ?'); params.push(updates.status) }
+  if (updates.progress !== undefined) { fields.push('progress = ?'); params.push(updates.progress) }
+  if (updates.priority !== undefined) { fields.push('priority = ?'); params.push(updates.priority) }
+  if (updates.dependencies !== undefined) { fields.push('dependencies = ?'); params.push(JSON.stringify(updates.dependencies)) }
+  if (updates.started_at !== undefined) { fields.push('started_at = ?'); params.push(updates.started_at) }
+  if (updates.completed_at !== undefined) { fields.push('completed_at = ?'); params.push(updates.completed_at) }
+
+  fields.push('updated_at = ?')
+  params.push(t)
+  params.push(taskId)
+
+  if (fields.length > 1) {
+    var sql = 'UPDATE tasks SET ' + fields.join(', ') + ' WHERE task_id = ?'
+    var stmt = db.sql(sql)
+    for (var j = 0; j < params.length; j++) {
+      stmt = stmt.bind(j + 1, params[j])
+    }
+    stmt.exec()
+  }
+
+  var newTask = getTask(taskId)
+  if (updates.status && updates.status !== existing.status) {
+    recordTaskEvent(taskId, 'status_changed', existing.status, updates.status, updates.progress !== undefined ? updates.progress : existing.progress, updates.message || '')
+  } else if (updates.progress !== undefined && updates.progress !== existing.progress) {
+    recordTaskEvent(taskId, 'progress', existing.status, existing.status, updates.progress, updates.message || '')
+  }
+
+  return newTask
+}
+
+function deleteTask(taskId) {
+  var task = getTask(taskId)
+  if (!task) return false
+
+  // Delete events first
+  db.sql('DELETE FROM task_events WHERE task_id = ?').bind(1, taskId).exec()
+  // Delete task
+  db.sql('DELETE FROM tasks WHERE task_id = ?').bind(1, taskId).exec()
+  return true
+}
+
+function deleteTaskCascade(taskId) {
+  var children = db.sql('SELECT task_id FROM tasks WHERE parent_id = ?').bind(1, taskId).exec()
+  for (var i = 0; i < children.length; i++) {
+    deleteTaskCascade(children[i].task_id)
+  }
+  deleteTask(taskId)
+}
+
+function getAgentTasks(agentName) {
+  var rows = db.sql('SELECT * FROM tasks WHERE agent_name = ? ORDER BY created_at ASC')
+    .bind(1, agentName)
+    .exec()
+
+  var taskMap = {}
+  var rootTasks = []
+
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i]
+    var task = {
+      task_id: row.task_id,
+      agent_name: row.agent_name,
+      parent_id: row.parent_id,
+      title: row.title,
+      description: row.description,
+      status: row.status,
+      progress: row.progress,
+      priority: row.priority,
+      dependencies: row.dependencies ? JSON.parse(row.dependencies) : [],
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      started_at: row.started_at,
+      completed_at: row.completed_at,
+      subtasks: []
+    }
+    taskMap[task.task_id] = task
+  }
+
+  for (var i = 0; i < rows.length; i++) {
+    var task = taskMap[rows[i].task_id]
+    if (task.parent_id && taskMap[task.parent_id]) {
+      taskMap[task.parent_id].subtasks.push(task)
+    } else {
+      rootTasks.push(task)
+    }
+  }
+
+  return rootTasks
+}
+
+function recordTaskEvent(taskId, eventType, fromStatus, toStatus, progress, message) {
+  db.sql(`
+    INSERT INTO task_events(task_id, event_type, from_status, to_status, progress, message, timestamp)
+    VALUES(?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(1, taskId)
+    .bind(2, eventType)
+    .bind(3, fromStatus || null)
+    .bind(4, toStatus || null)
+    .bind(5, progress !== undefined ? progress : null)
+    .bind(6, message || null)
+    .bind(7, Date.now() / 1000)
+    .exec()
+}
+
+function getTaskEvents(taskId) {
+  var rows = db.sql('SELECT * FROM task_events WHERE task_id = ? ORDER BY timestamp DESC')
+    .bind(1, taskId)
+    .exec()
+  var result = []
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]
+    result.push({
+      id: r.id,
+      task_id: r.task_id,
+      event_type: r.event_type,
+      from_status: r.from_status,
+      to_status: r.to_status,
+      progress: r.progress,
+      message: r.message,
+      timestamp: r.timestamp,
+    })
+  }
+  return result
+}
+
+function getTaskCount(agentName, status) {
+  var sql = 'SELECT COUNT(*) as cnt FROM tasks WHERE agent_name = ?'
+  var params = [agentName]
+  if (status) {
+    sql += ' AND status = ?'
+    params.push(status)
+  }
+  var stmt = db.sql(sql)
+  for (var k = 0; k < params.length; k++) {
+    stmt = stmt.bind(k + 1, params[k])
+  }
+  var rows = stmt.exec()
+  return rows[0] ? rows[0].cnt : 0
+}
+
 export default {
   open,
   allZones,
@@ -1158,4 +1399,14 @@ export default {
   softDeleteGroupChat,
   updateGroupChat,
   isGroupOwnerAgent,
+  // Task Management
+  createTask,
+  getTask,
+  updateTask,
+  deleteTask,
+  deleteTaskCascade,
+  getAgentTasks,
+  recordTaskEvent,
+  getTaskEvents,
+  getTaskCount,
 }

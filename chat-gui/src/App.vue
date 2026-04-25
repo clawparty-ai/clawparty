@@ -204,7 +204,7 @@ import { ref, onMounted, onUnmounted, provide, computed, watch, reactive } from 
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
 import TemplatePicker from './components/TemplatePicker.vue'
-import { meshService, chatService, openclawService, zeroclawService, zagentService, groupChatService, ZeroClawWS, setApiToken, getApiToken } from './services/chatService'
+import { meshService, chatService, openclawService, zeroclawService, zagentService, groupChatService, taskService, ZeroClawWS, setApiToken, getApiToken } from './services/chatService'
 import ShellService from './services/ShellService'
 import { platform } from '@tauri-apps/plugin-os';
 import { getAvatarColor } from './utils/avatar'
@@ -1002,6 +1002,89 @@ const handleZeroClawError = (error) => {
   }, delay)
 }
 
+// ── Task Management: parse <task> and <subtask> tags from AI responses ──
+
+const parseTaskTags = (content, agentName) => {
+  if (!content || !agentName) return
+
+  // Parse <task id="..." title="..." status="..." progress="N">...</task>
+  const taskRegex = /<task\s+id="([^"]+)"\s+title="([^"]*)"(?:\s+status="([^"]*)")?(?:\s+progress="(\d+)")?[^>]*>([\s\S]*?)<\/task>/gi
+  let taskMatch
+  while ((taskMatch = taskRegex.exec(content)) !== null) {
+    const taskId = taskMatch[1]
+    const title = taskMatch[2]
+    const status = taskMatch[3] || 'pending'
+    const progress = parseInt(taskMatch[4] || '0', 10)
+    const description = taskMatch[5]?.trim() || ''
+
+    taskService.getAgentTasks(agentName).then(res => {
+      const existingTasks = res.data?.tasks || []
+      let found = false
+      function findTaskById(list) {
+        for (let i = 0; i < list.length; i++) {
+          if (list[i].task_id === taskId) { found = list[i]; return }
+          if (list[i].subtasks && list[i].subtasks.length > 0) findTaskById(list[i].subtasks)
+        }
+      }
+      findTaskById(existingTasks)
+
+      if (found) {
+        taskService.updateTask(taskId, { status, progress, title, description }).catch(e => console.warn('[Task] Update failed:', e))
+      } else {
+        taskService.createTask({
+          task_id: taskId,
+          agent_name: agentName,
+          parent_id: null,
+          title,
+          description,
+          status,
+          progress,
+          priority: 'normal'
+        }).catch(e => console.warn('[Task] Create failed:', e))
+      }
+    }).catch(e => console.warn('[Task] Query failed:', e))
+  }
+
+  // Parse <subtask parent="..." id="..." title="..." status="..." progress="N">...</subtask>
+  const subtaskRegex = /<subtask\s+parent="([^"]+)"\s+id="([^"]+)"\s+title="([^"]*)"(?:\s+status="([^"]*)")?(?:\s+progress="(\d+)")?[^>]*>([\s\S]*?)<\/subtask>/gi
+  let subMatch
+  while ((subMatch = subtaskRegex.exec(content)) !== null) {
+    const parentId = subMatch[1]
+    const taskId = subMatch[2]
+    const title = subMatch[3]
+    const status = subMatch[4] || 'pending'
+    const progress = parseInt(subMatch[5] || '0', 10)
+    const description = subMatch[6]?.trim() || ''
+
+    taskService.getAgentTasks(agentName).then(res => {
+      const existingTasks = res.data?.tasks || []
+      let found = false
+      function findTaskById(list) {
+        for (let i = 0; i < list.length; i++) {
+          if (list[i].task_id === taskId) { found = list[i]; return }
+          if (list[i].subtasks && list[i].subtasks.length > 0) findTaskById(list[i].subtasks)
+        }
+      }
+      findTaskById(existingTasks)
+
+      if (found) {
+        taskService.updateTask(taskId, { status, progress, title, description }).catch(e => console.warn('[Subtask] Update failed:', e))
+      } else {
+        taskService.createTask({
+          task_id: taskId,
+          agent_name: agentName,
+          parent_id: parentId,
+          title,
+          description,
+          status,
+          progress,
+          priority: 'normal'
+        }).catch(e => console.warn('[Subtask] Create failed:', e))
+      }
+    }).catch(e => console.warn('[Subtask] Query failed:', e))
+  }
+}
+
 const handleZeroClawMessage = (data) => {
   const session = activeZeroClawSession.value
   const agent = activeZAgent.value
@@ -1019,6 +1102,10 @@ const handleZeroClawMessage = (data) => {
       session.session_id = data.session_id || session.session_id
     }
   } else if (data.type === 'chunk' || data.type === 'thinking') {
+    if (data.content) {
+      const agentName = agent?.agent_name || 'main'
+      parseTaskTags(data.content, agentName)
+    }
     const typingIdx = target.messages?.findIndex(m => m.isTyping)
     if (typingIdx >= 0) {
       if (agent) {
