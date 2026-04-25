@@ -21,8 +21,8 @@ export const meshService = {
     return api.get('/meshes')
   },
 
-  joinParty(regUrl, userName) {
-    return api.post('/join-party', { regUrl, userName })
+  joinParty(regUrl, userName, inviteCode) {
+    return api.post('/join-party', { regUrl, userName, inviteCode })
   },
 
   leaveMesh(meshName) {

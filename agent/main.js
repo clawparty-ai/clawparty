@@ -605,6 +605,15 @@ function main(listen, apiToken, noAuth) {
       },
     },
 
+    '/api/meshes/{mesh}/hubs/{id}/invite-codes': {
+      'POST': function ({ mesh, id }, req) {
+        mesh = URL.decodeComponent(mesh)
+        return api.createInviteCode(mesh, id, JSON.decode(req.body)).then(
+          ret => ret ? response(201, ret) : response(500, { message: 'Failed to create invite code' })
+        )
+      }
+    },
+
     //
     // Endpoint
     //   id: string (UUID)
@@ -1286,6 +1295,7 @@ function main(listen, apiToken, noAuth) {
 
         var regUrl = (body && body.regUrl) ? body.regUrl : 'https://clawparty.flomesh.io:7779'
         var customUserName = (body && body.userName) ? body.userName : ''
+        var inviteCode = (body && body.inviteCode) ? body.inviteCode : ''
 
         // Check if already joined clawparty
         var meshName = 'clawparty'
@@ -1350,6 +1360,7 @@ function main(listen, apiToken, noAuth) {
           UserName: userName,
           EpName: epName,
           PassKey: passKey,
+          InviteCode: inviteCode,
         })
 
         var urlBase = parsedUrl.pathname

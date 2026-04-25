@@ -65,6 +65,10 @@ var routes = Object.entries({
     'GET': () => getUsers,
   },
 
+  '/api/invite-codes': {
+    'POST': () => postInviteCode,
+  },
+
   '/api/user-log': {
     'GET': () => getUserLog,
   },
@@ -698,6 +702,22 @@ var postInvite = pipeline($=>$
 
       var passKey = typeof body?.PassKey === 'string' ? body.PassKey : ''
 
+      // Invite code validation
+      var inviteCode = typeof body?.InviteCode === 'string' ? body.InviteCode.trim().toUpperCase() : ''
+      if (!inviteCode) {
+        db.addApiLog('POST', '/invite', clientIp, 400, null, { error: 'missing InviteCode' })
+        return regResponse(400, 'missing InviteCode')
+      }
+      var invite = db.getInviteCode(inviteCode)
+      if (!invite) {
+        db.addApiLog('POST', '/invite', clientIp, 403, null, { error: 'invalid invite code' })
+        return regResponse(403, 'invalid invite code')
+      }
+      if (invite.used) {
+        db.addApiLog('POST', '/invite', clientIp, 403, null, { error: 'invite code already used' })
+        return regResponse(403, 'invite code already used')
+      }
+
       // Resolve userName and epName, handling conflicts
       var existingUser = db.getUser(userName)
       if (existingUser) {
@@ -768,6 +788,7 @@ var postInvite = pipeline($=>$
         }
 
         db.setUserStatus(userName, 'permit-issued')
+        db.markInviteCodeUsed(inviteCode, userName)
         db.addApiLog('POST', '/invite', clientIp, 201, userName, { epName, bootstraps: hubAddresses })
         db.addUserLog(userName, 'cert_issued', null, { via: 'registration', epName })
         logInfo(`Registration: issued certificate for user '${userName}' (ep: ${epName})`)
@@ -1042,6 +1063,32 @@ var getUsers = pipeline($=>$
         )
       }
       return response(200, buildUsersFromEndpoints(endpointList, nameFilter, keyword, offset, limit))
+    }
+  )
+)
+
+var postInviteCode = pipeline($=>$
+  .replaceMessage(
+    function (req) {
+      if ($ctx.username !== 'root') return response(403)
+      var body
+      try {
+        body = JSON.decode(req.body)
+      } catch {
+        return response(400, 'invalid JSON body')
+      }
+      var code = typeof body?.code === 'string' ? body.code.trim().toUpperCase() : ''
+      var name = typeof body?.name === 'string' ? body.name.trim() : ''
+      var email = typeof body?.email === 'string' ? body.email.trim() : ''
+      if (!code || !name || !email) {
+        return response(400, 'missing required fields')
+      }
+      var existing = db.getInviteCode(code)
+      if (existing) {
+        return response(409, 'invite code already exists')
+      }
+      db.createInviteCode(code, name, email)
+      return response(201, { code, name, email })
     }
   )
 )

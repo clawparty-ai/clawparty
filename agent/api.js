@@ -146,6 +146,12 @@ function getHubLog(mesh, id) {
   return m.findHubLog(id)
 }
 
+function createInviteCode(mesh, hubId, data) {
+  var m = meshes[mesh]
+  if (!m) return Promise.resolve(null)
+  return m.createInviteCode(hubId, data)
+}
+
 function allEndpoints(mesh, id, name, user, keyword, offset, limit) {
   var m = meshes[mesh]
   if (!m) return Promise.resolve([])
@@ -413,7 +419,7 @@ function allocatePort() {
   throw 'No available ports in range ' + PORT_START + '-' + PORT_END
 }
 
-function createAgent(agentName, displayName, modelConfig, description) {
+function createAgent(agentName, displayName, modelConfig, description, workspaceFiles) {
   console.log('[AGENT] Creating agent: ' + agentName)
 
   // Check if agent already exists
@@ -457,6 +463,18 @@ function createAgent(agentName, displayName, modelConfig, description) {
   var configPath = os.path.join(agentDir, 'config.toml')
   os.write(configPath, patchedConfig)
   console.log('[AGENT] Wrote config with pairing disabled: ' + configPath)
+
+  // Write AI-generated workspace files if provided
+  if (workspaceFiles) {
+    if (workspaceFiles.soul_md) {
+      os.write(os.path.join(workspaceDir, 'SOUL.md'), workspaceFiles.soul_md)
+      console.log('[AGENT] Wrote SOUL.md')
+    }
+    if (workspaceFiles.agents_md) {
+      os.write(os.path.join(workspaceDir, 'AGENTS.md'), workspaceFiles.agents_md)
+      console.log('[AGENT] Wrote AGENTS.md')
+    }
+  }
 
   // Record to database
   db.createAgent({
@@ -822,6 +840,7 @@ export default {
   setHub,
   getHub,
   getHubLog,
+  createInviteCode,
   allEndpoints,
   getEndpoint,
   getEndpointLabels,

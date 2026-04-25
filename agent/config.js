@@ -16,39 +16,38 @@ function parseToml(content) {
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].trim()
 
-    // Skip comments and empty lines
-    if (!line || line.startsWith('#')) continue
+    if (line && !line.startsWith('#')) {
+      // Parse section headers like [llm] or [metadata]
+      if (line.startsWith('[') && line.endsWith(']')) {
+        var sectionName = line.slice(1, -1)
+        var parts = sectionName.split('.')
+        currentSection = result
+        for (var j = 0; j < parts.length; j++) {
+          var part = parts[j]
+          if (!currentSection[part]) currentSection[part] = {}
+          currentSection = currentSection[part]
+        }
+      } else {
+        // Parse key = value pairs
+        var eqIndex = line.indexOf('=')
+        if (eqIndex > 0) {
+          var key = line.slice(0, eqIndex).trim()
+          var value = line.slice(eqIndex + 1).trim()
 
-    // Parse section headers like [llm] or [metadata]
-    if (line.startsWith('[') && line.endsWith(']')) {
-      var sectionName = line.slice(1, -1)
-      var parts = sectionName.split('.')
-      currentSection = result
-      for (var j = 0; j < parts.length; j++) {
-        var part = parts[j]
-        if (!currentSection[part]) currentSection[part] = {}
-        currentSection = currentSection[part]
+          // Remove quotes from string values
+          if (value.startsWith('"') && value.endsWith('"')) {
+            value = value.slice(1, -1)
+          }
+
+          // Try to parse numbers
+          var num = Number(value)
+          if (!Number.isNaN(num) && value !== '') {
+            value = num
+          }
+
+          currentSection[key] = value
+        }
       }
-      continue
-    }
-
-    // Parse key = value pairs
-    var eqIndex = line.indexOf('=')
-    if (eqIndex > 0) {
-      var key = line.slice(0, eqIndex).trim()
-      var value = line.slice(eqIndex + 1).trim()
-
-      // Remove quotes from string values
-      if (value.startsWith('"') && value.endsWith('"')) {
-        value = value.slice(1, -1)
-      }
-
-      // Try to parse numbers
-      if (!isNaN(value) && value !== '') {
-        value = parseFloat(value)
-      }
-
-      currentSection[key] = value
     }
   }
 

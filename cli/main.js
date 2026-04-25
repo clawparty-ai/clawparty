@@ -327,6 +327,19 @@ function doCommand(meshName, epName, argv, program) {
       },
 
       {
+        title: `Generate an invite code for a new user`,
+        usage: 'add-invite-code',
+        options: `
+          --name   <name>    Invitee's name (required)
+          --email  <email>   Invitee's email (required)
+          --code   <code>    Custom invite code (optional, auto-generated if not specified)
+        `,
+        action: (args) => selectMesh(meshName).then(
+          mesh => addInviteCode(args['--name'], args['--email'], args['--code'], mesh)
+        ),
+      },
+
+      {
         title: `Try using services of a certain type`,
         usage: 'try <service type>',
         options: `
@@ -1429,6 +1442,39 @@ function evict(name, mesh) {
   return client.delete(`/api/meshes/${uri(mesh.name)}/users/${uri(username)}`).catch(
     err => Promise.reject(err.status === 404 ? `user '${username}' not found` : err)
   )
+}
+
+//
+// Command: add-invite-code
+//
+
+function generateInviteCode() {
+  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  var code = ''
+  for (var i = 0; i < 8; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return code
+}
+
+function addInviteCode(name, email, code, mesh) {
+  if (!mesh) throw `no mesh specified`
+  if (!name) throw `missing --name`
+  if (!email) throw `missing --email`
+  var inviteCode = code ? code.trim().toUpperCase() : generateInviteCode()
+  return client.post(
+    `/api/meshes/${uri(mesh.name)}/hubs/local/invite-codes`,
+    JSON.encode({ code: inviteCode, name, email })
+  ).then(() => {
+    println(`邀请码已生成：`)
+    println(`  姓名：${name}`)
+    println(`  邮箱：${email}`)
+    println(`  邀请码：${inviteCode}`)
+  }).catch(err => {
+    if (err.status === 409) throw `invite code already exists: ${inviteCode}`
+    if (err.status === 403) throw `permission denied (root required)`
+    throw err
+  })
 }
 
 //
