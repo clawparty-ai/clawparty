@@ -511,7 +511,7 @@
                 :class="{ active: activeZAgent?.agent_name === agent.agent_name }"
                 @click="selectZAgent(agent)"
               >
-                <div class="item-avatar">🤖</div>
+                <div class="item-avatar" :style="{ background: getAvatarColor(agent.display_name || agent.agent_name) }">{{ getAgentEmoji(agent.display_name || agent.agent_name) }}</div>
                 <div class="zagent-info">
                   <div class="zagent-name-row">
                     <span class="item-name">{{ agent.display_name || agent.agent_name }}</span>
@@ -655,6 +655,7 @@
 <script setup>
 import { ref, computed, inject, watch, onMounted, onUnmounted } from 'vue'
 import { getAvatarColor } from '../utils/avatar'
+import { getAgentEmoji } from '../utils/emoji'
 
 const props = defineProps({
   chats: { type: Array, required: true },

@@ -208,6 +208,7 @@ import { meshService, chatService, openclawService, zeroclawService, zagentServi
 import ShellService from './services/ShellService'
 import { platform } from '@tauri-apps/plugin-os';
 import { getAvatarColor } from './utils/avatar'
+import { getSemanticEmoji } from './utils/emoji'
 
 const shellService = new ShellService();
 const meshes = ref([])
@@ -273,6 +274,7 @@ const activeZAgentConnectionItems = computed(() => {
         chat: {
           ...agent,
           isZeroClaw: true,
+          emoji: getSemanticEmoji(agent.display_name || agent.agent_name),
           _msgCount: msgCount,
           messages: cached.messages || []
         }
