@@ -761,14 +761,36 @@ function stopAgent(agentName) {
 }
 
 // Sanitize group name to valid agent name
+// Note: uses char-by-char loop because PipyJS does not support RegExp
 function sanitizeAgentName(name) {
   if (typeof name !== 'string') return 'agent'
-  var sanitized = name.toLowerCase()
-    .replace(/[^a-z0-9\-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-  if (!sanitized) sanitized = 'group'
-  return sanitized
+  var s = name.toLowerCase()
+  var chars = []
+  var prevHyphen = false
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charAt(i)
+    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c === '-') {
+      chars.push(c)
+      prevHyphen = false
+    } else {
+      if (!prevHyphen) {
+        chars.push('-')
+        prevHyphen = true
+      }
+    }
+  }
+  // Trim leading hyphens
+  var start = 0
+  while (start < chars.length && chars[start] === '-') start++
+  // Trim trailing hyphens
+  var end = chars.length - 1
+  while (end >= 0 && chars[end] === '-') end--
+  if (start > end) return 'group'
+  // Collapse multiple hyphens (already done during loop via prevHyphen)
+  var result = ''
+  for (var i = start; i <= end; i++) result += chars[i]
+  if (!result) return 'group'
+  return result
 }
 
 function createGroupOwnerAgent(groupId, groupName, memberAgents) {
