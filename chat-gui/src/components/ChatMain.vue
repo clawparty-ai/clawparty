@@ -1,5 +1,5 @@
 <template>
-  <main class="chat-main">
+  <main ref="chatMainEl" class="chat-main">
     <ChatHeader
       :chat="chat"
       :openclawSessions="openclawSessions"
@@ -22,6 +22,7 @@
       :agentName="agentName || chat.display_name || chat.agent_name"
       :tasks="tasks"
       :expanded="taskPanelBodyExpanded"
+      :initialHeight="taskPanelInitialHeight"
       @toggle="taskPanelBodyExpanded = !taskPanelBodyExpanded"
     />
     <div class="messages" ref="messagesContainer">
@@ -217,6 +218,7 @@ const props = defineProps({
 
 const emit = defineEmits(['send', 'update:modelValue', 'switchSession', 'deleteGroup', 'leaveGroup', 'back', 'send-images', 'send-files', 'clear-quote'])
 
+const chatMainEl = ref(null)
 const messagesContainer = ref(null)
 let pollTimer = null
 const openclawAgents = inject('openclawAgents', ref([]))
@@ -236,7 +238,19 @@ const quotedMessage = ref(null)
 const tasks = ref([])
 const showTaskPanel = ref(true)          // 由 header Task 按钮控制显/隐
 const taskPanelBodyExpanded = ref(true)  // 由 TaskPanel header 点击控制 body 展开/折叠
+const taskPanelInitialHeight = ref(180)  // 初始高度 = message panel 可用空间的 50%
 let taskPollTimer = null
+
+  const calcTaskPanelHeight = async () => {
+  if (!chatMainEl.value) return
+  await nextTick()
+  await nextTick()
+  // Measure ChatMain total and subtract header -> message panel remaining space
+  const totalH = chatMainEl.value.clientHeight
+  const headerH = chatMainEl.value.querySelector('.chat-header')?.clientHeight || 56
+  const msgAreaH = Math.max(totalH - headerH, 120)
+  taskPanelInitialHeight.value = Math.round(msgAreaH * 0.5)
+}
 
 const loadTasks = async () => {
   if (!props.chat.isZeroClaw) return
@@ -1400,6 +1414,7 @@ watch(
       })
     }
     if (props.chat.isZeroClaw) {
+      calcTaskPanelHeight()
       loadTasks()
       startTaskPolling()
     }

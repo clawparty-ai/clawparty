@@ -10,8 +10,7 @@
         <span class="stat pending" v-else-if="taskStats.total === 0">0 待办</span>
         <span class="stat failed" v-if="taskStats.failed > 0">{{ taskStats.failed }} 失败</span>
       </span>
-      <span class="task-panel-toggle">{{ expanded ? '▼' : '▶' }}</span>
-        </div>
+    </div>
     <div v-show="expanded" class="task-panel-body">
       <div v-if="tasks.length === 0" class="task-empty">
         <span class="task-empty-icon">✨</span>
@@ -71,6 +70,10 @@ const props = defineProps({
   expanded: {
     type: Boolean,
     default: true
+  },
+  initialHeight: {
+    type: Number,
+    default: 180
   }
 })
 
@@ -88,7 +91,7 @@ const formatPriority = (priority) => {
 // Resizable panel height
 const MIN_H = 60
 const MAX_H = 500
-const panelHeight = ref(180)
+const panelHeight = ref(props.initialHeight)
 const isResizing = ref(false)
 
 let startY = 0
