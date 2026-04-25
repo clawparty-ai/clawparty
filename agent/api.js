@@ -476,6 +476,20 @@ function createAgent(agentName, displayName, modelConfig, description, workspace
     }
   }
 
+  // P2: Auto-inject Task Management into SOUL.md
+  var soulPath = os.path.join(workspaceDir, 'SOUL.md')
+  var soulContent = ''
+  try {
+    soulContent = os.read(soulPath).toString()
+  } catch (e) {
+    soulContent = ''
+  }
+  if (soulContent.indexOf('## 任务管理 (Task Management)') < 0) {
+    var taskOverlay = '\n\n## 任务管理 (Task Management)\n\n当你处理用户的请求时，你必须维护一个结构化的任务日志，帮助用户追踪你的工作进度。\n\n### 规则：\n\n1. **当用户要求你做一件大事时**（如写代码、调研、规划等），创建一个顶层任务：\n   ```\n   <task id="task-{timestamp}-{shortid}" title="简短的任务标题" status="running" progress="0">\n   任务描述\n   </task>\n   ```\n\n2. **当你有进展时，更新任务**：\n   ```\n   <task id="task-{timestamp}-{shortid}" status="running" progress="35">\n   更新：完成了某某步骤\n   </task>\n   ```\n\n3. **当任务有子步骤时，创建子任务**：\n   ```\n   <subtask parent="task-{timestamp}-{shortid}" id="subtask-{timestamp}-{shortid}" title="子步骤标题" status="pending">\n   子步骤描述\n   </subtask>\n   ```\n\n4. **当任务完成时，标记完成**：\n   ```\n   <task id="task-{timestamp}-{shortid}" status="completed" progress="100">\n   任务已完成，总结结果\n   </task>\n   ```\n\n5. **如果任务失败，标记失败并说明原因**：\n   ```\n   <task id="task-{timestamp}-{shortid}" status="failed" progress="0">\n   失败原因说明\n   </task>\n   ```\n\n### 状态值：\n- `pending`：尚未开始\n- `running`：正在执行\n- `completed`：已完成\n- `failed`：失败\n\n### 重要提示：\n- 更新任务时**必须使用同一个 id**\n- 进度 progress 是 0-100 的百分比\n- 子任务必须引用父任务的 id\n- 标题保持简洁（50字以内）\n- 这些标记对用户不可见，系统会自动解析\n'
+    os.write(soulPath, soulContent + taskOverlay)
+    console.log('[AGENT] Injected Task Management into SOUL.md')
+  }
+
   // Record to database
   db.createAgent({
     agent_name: agentName,

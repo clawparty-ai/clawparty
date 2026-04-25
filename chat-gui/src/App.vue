@@ -1009,10 +1009,12 @@ const handleZeroClawError = (error) => {
 const parseTaskTags = (content, agentName) => {
   if (!content || !agentName) return
 
-  // Parse <task id="..." title="..." status="..." progress="N">...</task>
+  // ── Step 1: Parse <task> and <subtask> XML tags ──
   const taskRegex = /<task\s+id="([^"]+)"\s+title="([^"]*)"(?:\s+status="([^"]*)")?(?:\s+progress="(\d+)")?[^>]*>([\s\S]*?)<\/task>/gi
   let taskMatch
+  let foundXml = false
   while ((taskMatch = taskRegex.exec(content)) !== null) {
+    foundXml = true
     const taskId = taskMatch[1]
     const title = taskMatch[2]
     const status = taskMatch[3] || 'pending'
@@ -1047,7 +1049,6 @@ const parseTaskTags = (content, agentName) => {
     }).catch(e => console.warn('[Task] Query failed:', e))
   }
 
-  // Parse <subtask parent="..." id="..." title="..." status="..." progress="N">...</subtask>
   const subtaskRegex = /<subtask\s+parent="([^"]+)"\s+id="([^"]+)"\s+title="([^"]*)"(?:\s+status="([^"]*)")?(?:\s+progress="(\d+)")?[^>]*>([\s\S]*?)<\/subtask>/gi
   let subMatch
   while ((subMatch = subtaskRegex.exec(content)) !== null) {
@@ -1084,6 +1085,78 @@ const parseTaskTags = (content, agentName) => {
         }).catch(e => console.warn('[Subtask] Create failed:', e))
       }
     }).catch(e => console.warn('[Subtask] Query failed:', e))
+  }
+
+  // ── P3: Fallback — parse markdown table / key-value / text format ──
+  // Only trigger when no XML <task> tags were found and content looks like a task report
+  if (!foundXml) {
+    const isTaskContext = /(?:已创建|创建成功|新建|任务已|task created|created task|new task|🆔|📛)/i.test(content)
+    if (!isTaskContext) return
+
+    // Extract task ID
+    let extractedId = null
+    const idPatterns = [
+      /(?:任务ID|Task\s*ID|🆔\s*(?:任务)?ID)[:：\s\t]+([a-f0-9\-]{8,}|[A-Z0-9\-]{8,})/i,
+      /(?:编号|No)[:：\s\t]+([a-zA-Z0-9\-_]+)/i,
+    ]
+    for (const p of idPatterns) {
+      const m = content.match(p)
+      if (m) { extractedId = m[1]; break }
+    }
+
+    // Extract task name/title
+    let extractedName = null
+    const namePatterns = [
+      /(?:任务名称|📛\s*任务名称|Task\s*Name|任务[:：])[:：\s\t]+([^\n]+)/i,
+      /(?:标题|Title)[:：\s\t]+([^\n]+)/i,
+    ]
+    for (const p of namePatterns) {
+      const m = content.match(p)
+      if (m) { extractedName = m[1].trim(); break }
+    }
+
+    // Extract status
+    let extractedStatus = 'running'
+    const statusPatterns = [
+      /(?:状态|Status)[:：\s\t]+(pending|running|completed|failed)/i,
+    ]
+    for (const p of statusPatterns) {
+      const m = content.match(p)
+      if (m) { extractedStatus = m[1].toLowerCase(); break }
+    }
+
+    // Create task if we have at least a name (or context + id)
+    if (extractedName || (isTaskContext && extractedId)) {
+      const taskId = extractedId ? ('md-' + extractedId) : ('fb-' + Date.now())
+      const title = extractedName || '未命名任务'
+      const description = content.slice(0, 200)
+
+      taskService.getAgentTasks(agentName).then(res => {
+        const existingTasks = res.data?.tasks || []
+        let found = false
+        function findTaskById(list) {
+          for (let i = 0; i < list.length; i++) {
+            if (list[i].task_id === taskId) { found = list[i]; return }
+            if (list[i].subtasks && list[i].subtasks.length > 0) findTaskById(list[i].subtasks)
+          }
+        }
+        findTaskById(existingTasks)
+
+        if (found) {
+          taskService.updateTask(taskId, { status: extractedStatus, title, description }).catch(e => console.warn('[Task/Fallback] Update failed:', e))
+        } else {
+          taskService.createTask({
+            task_id: taskId,
+            agent_name: agentName,
+            title,
+            description,
+            status: extractedStatus,
+            progress: 0,
+            priority: 'normal'
+          }).catch(e => console.warn('[Task/Fallback] Create failed:', e))
+        }
+      }).catch(e => console.warn('[Task/Fallback] Query failed:', e))
+    }
   }
 }
 
@@ -1224,8 +1297,34 @@ const selectChat = (index) => {
   }
 }
 
+// P1: Check if user message contains "任务" or "task" keyword and auto-create task
+const autoCreateUserTask = (agentName, text) => {
+  if (!text) return
+  var lower = text.toLowerCase()
+  if (lower.indexOf('任务') >= 0 || lower.indexOf('task') >= 0) {
+    var taskId = 'TASK-' + Math.floor(1000 + Math.random() * 9000)
+    taskService.createTask({
+      task_id: taskId,
+      agent_name: agentName,
+      title: taskId,
+      description: text,
+      status: 'running',
+      progress: 0,
+      priority: 'normal'
+    }).then(() => {
+      console.log('[Task] User-side task created: ' + taskId + ' for agent ' + agentName)
+    }).catch((e) => {
+      console.warn('[Task] User-side create failed:', e)
+    })
+  }
+}
+
 const handleZAgentSend = (agentName, text) => {
   console.log('[zAgent] handleZAgentSend called:', agentName, 'text:', JSON.stringify(text))
+
+  // P1: Auto-create task if user mentions "任务" or "task"
+  autoCreateUserTask(agentName, text)
+
   const cached = wsConnections[agentName]
   if (!cached) {
     console.error('[zAgent] No connection found for:', agentName)
