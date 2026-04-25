@@ -124,6 +124,14 @@
               placeholder="Leave empty for random name"
               :disabled="joinPartyLoading"
             />
+            <label class="join-party-label">邀请码 Invite Code <span class="required">*</span></label>
+            <input
+              v-model="joinPartyInviteCode"
+              class="search-input"
+              placeholder="请输入邀请码"
+              :disabled="joinPartyLoading"
+              maxlength="32"
+            />
             <div v-if="joinPartyStep" class="join-party-step">{{ joinPartyStep }}</div>
             <div v-if="joinPartyError" class="join-party-error">{{ joinPartyError }}</div>
             <div v-if="joinPartySuccess" class="join-party-success">{{ joinPartySuccess }}</div>
@@ -943,6 +951,7 @@ const togglePickerUser = (name) => {
 const showJoinParty = ref(false)
 const joinPartyUrl = ref('https://join.clawparty.ai')
 const joinPartyUserName = ref('')
+const joinPartyInviteCode = ref('')
 const joinPartyLoading = ref(false)
 const joinPartyError = ref('')
 const joinPartySuccess = ref('')
@@ -963,6 +972,7 @@ const closeJoinParty = () => {
   joinPartySuccess.value = ''
   joinPartyStep.value = ''
   joinPartyUserName.value = ''
+  joinPartyInviteCode.value = ''
 }
 
 // Create Session state
@@ -1099,12 +1109,19 @@ const handleStopAgent = async (agentName) => {
 
 const handleJoinParty = async () => {
   if (joinPartyLoading.value) return
+
+  // Validate invite code
+  if (!joinPartyInviteCode.value.trim()) {
+    joinPartyError.value = '请输入邀请码'
+    return
+  }
+
   joinPartyLoading.value = true
   joinPartyError.value = ''
   joinPartySuccess.value = ''
   joinPartyStep.value = '正在连接 Hub...'
   try {
-    await joinParty(joinPartyUrl.value, joinPartyUserName.value.trim() || undefined)
+    await joinParty(joinPartyUrl.value, joinPartyUserName.value.trim() || undefined, joinPartyInviteCode.value.trim())
     joinPartyStep.value = '正在获取配置...'
     // Wait a bit to show the step
     await new Promise(resolve => setTimeout(resolve, 300))
@@ -1117,7 +1134,16 @@ const handleJoinParty = async () => {
     }, 1500)
   } catch (err) {
     const msg = err?.response?.data?.message || err?.message || 'Failed to join party'
-    joinPartyError.value = msg
+    // Map error messages to Chinese
+    if (msg === 'missing InviteCode') {
+      joinPartyError.value = '请输入邀请码'
+    } else if (msg === 'invalid invite code') {
+      joinPartyError.value = '邀请码无效，请确认后重试'
+    } else if (msg === 'invite code already used') {
+      joinPartyError.value = '该邀请码已被使用'
+    } else {
+      joinPartyError.value = msg
+    }
     joinPartyStep.value = ''
   } finally {
     joinPartyLoading.value = false
@@ -2002,6 +2028,11 @@ const getStatusText = (agent) => {
   color: rgba(255, 255, 255, 0.7);
   font-size: 13px;
   font-weight: 600;
+}
+
+.join-party-label .required {
+  color: #e01e5a;
+  margin-left: 2px;
 }
 
 .join-party-error {

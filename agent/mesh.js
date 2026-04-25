@@ -734,6 +734,20 @@ export default function (rootDir, listen, proxy, pqc, p2pCfg, config, onConfigUp
       })
     }
 
+    function createInviteCode(data) {
+      return requestHub.spawn(
+        new Message({ method: 'POST', path: '/api/invite-codes' }, JSON.encode(data))
+      ).then(
+        function (res) {
+          var status = res?.head?.status
+          if (status === 200 || status === 201) {
+            try { return JSON.decode(res.body) } catch {}
+          }
+          return null
+        }
+      )
+    }
+
     function leave() {
       closed = true
       connections.forEach(
@@ -766,6 +780,7 @@ export default function (rootDir, listen, proxy, pqc, p2pCfg, config, onConfigUp
       findFile,
       getEndpointStats,
       pingEndpoint,
+      createInviteCode,
       leave,
       requestHub,
     }
@@ -1471,6 +1486,11 @@ export default function (rootDir, listen, proxy, pqc, p2pCfg, config, onConfigUp
         return null
       }
     ).catch(() => null)
+  }
+
+  function createInviteCode(name, data) {
+    checkConnectivity()
+    return hubActive[0].createInviteCode(data)
   }
 
   function selectHub(ep) {
@@ -2641,6 +2661,7 @@ export default function (rootDir, listen, proxy, pqc, p2pCfg, config, onConfigUp
     evictUser,
     findHub,
     findHubLog,
+    createInviteCode,
     findEndpoint,
     findFile,
     findApp,

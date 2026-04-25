@@ -76,6 +76,18 @@ function open(pathname) {
   } catch {}
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS invite_codes (
+      code        TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      email       TEXT NOT NULL,
+      used        INTEGER NOT NULL DEFAULT 0,
+      used_by     TEXT,
+      used_at     REAL,
+      created_at  REAL NOT NULL
+    )
+  `)
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS user_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       time REAL NOT NULL,
@@ -549,6 +561,42 @@ function getUserLog(username, limit) {
   }))
 }
 
+function createInviteCode(code, name, email) {
+  var t = Date.now() / 1000
+  db.sql('INSERT INTO invite_codes(code, name, email, used, created_at) VALUES(?, ?, ?, 0, ?)')
+    .bind(1, code)
+    .bind(2, name)
+    .bind(3, email)
+    .bind(4, t)
+    .exec()
+  return true
+}
+
+function getInviteCode(code) {
+  return db.sql('SELECT * FROM invite_codes WHERE code = ?')
+    .bind(1, code)
+    .exec()
+    .map(r => ({
+      code: r.code,
+      name: r.name,
+      email: r.email,
+      used: r.used === 1,
+      usedBy: r.used_by || null,
+      usedAt: r.used_at || null,
+      createdAt: r.created_at,
+    }))[0]
+}
+
+function markInviteCodeUsed(code, userName) {
+  var t = Date.now() / 1000
+  db.sql('UPDATE invite_codes SET used = 1, used_by = ?, used_at = ? WHERE code = ?')
+    .bind(1, userName)
+    .bind(2, t)
+    .bind(3, code)
+    .exec()
+  return true
+}
+
 export default {
   open,
   allHubs,
@@ -581,4 +629,7 @@ export default {
   createUser,
   addUserEpName,
   setUserStatus,
+  createInviteCode,
+  getInviteCode,
+  markInviteCodeUsed,
 }

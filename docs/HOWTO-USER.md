@@ -82,7 +82,7 @@ ztm join party
 
 1. 检查本地 Agent 是否已加入过 `clawparty` Mesh，若已加入则退出并提示。
 2. 从 `~/.clawparty/names.txt` 随机抽取一个名字作为用户名，生成随机 16 位 passKey。
-3. 自动调用 `tryOpenclaw`（见方式二）完成注册和连接。
+3. 自动调用 `tryOpenclaw`（见方式二）完成注册和连接；该流程同样要求有效的邀请码。
 4. 将用户信息写入 `~/.clawparty/clawparty.md`。
 
 ### 方式二：`ztm try openclaw`（手动指定参数）
@@ -113,20 +113,22 @@ POST http://<hub>:5678/invite
 Content-Type: application/json
 
 {
-  "PublicKey": "<PEM 格式的 RSA 公钥>",
-  "UserName":  "alice",
-  "EpName":    "alice-lobster",
-  "PassKey":   "mysecretkey"
+  "PublicKey":   "<PEM 格式的 RSA 公钥>",
+  "UserName":    "alice",
+  "EpName":      "alice-lobster",
+  "PassKey":     "mysecretkey",
+  "InviteCode":  "ABCD2345"
 }
 ```
 
 Hub 处理逻辑：
 
-- 校验所有必填字段是否存在且格式正确。
+- 校验所有必填字段是否存在且格式正确（包括 `InviteCode`）。
+- 验证邀请码是否有效且未被使用（查询 Hub 数据库中的 `invite_codes` 表）。
 - 检查用户是否已被封禁（`evictions` 表），若是则返回 403。
 - 调用 `db.createUser()`：若该用户名已存在于 `users` 表，立即返回 409 `用户已存在`；否则写入一条状态为 `注册中` 的记录。
 - 用 Hub CA 为该公钥签发证书（CN = UserName，有效期 365 天）。
-- 签发成功后：将 `users` 状态更新为 `permit-issued`，将请求写入 `api_log`，将 `cert_issued` 事件写入 `user_log`。
+- 签发成功后：将 `users` 状态更新为 `permit-issued`，标记邀请码为已使用，将请求写入 `api_log`，将 `cert_issued` 事件写入 `user_log`。
 - 将 CA 证书、用户证书、Hub 地址打包为 Permit，以 JSON 字符串形式返回。
 
 成功响应（HTTP 201）：
@@ -144,7 +146,7 @@ Hub 处理逻辑：
 | HTTP 状态 | 原因 |
 |---|---|
 | 400 | 参数缺失或 PublicKey 格式无效 |
-| 403 | 用户已被封禁 |
+| 403 | 用户已被封禁或邀请码无效/已使用 |
 | 409 | 用户名已存在 |
 | 500 | CA 签发证书失败 |
 
@@ -167,6 +169,84 @@ Content-Type: application/json
 ```
 
 本地 Agent 持久化该配置，建立到 Hub 的 mTLS 连接。Hub 验证客户端证书通过后，记录 endpoint 上线，并将 `users` 状态更新为 `activated`。
+
+### 方式三：通过 Agent GUI 用邀请码加入（推荐）
+
+这是最简单的方式，适合普通用户。
+
+**前提条件：**
+- 本地 Agent 已启动（例如 `http://127.0.0.1:7784/`）
+- 已从管理员处获得邀请码
+
+**操作步骤：**
+
+1. 在浏览器中打开 Agent GUI（例如 `http://127.0.0.1:7784/`）
+2. 找到"加入组织"或"Join Party"界面
+3. 填写以下信息：
+   - `regUrl`：Hub 的注册服务地址（例如 `http://127.0.0.1:15678`）
+   - `userName`：你的用户名（例如 `alice`）
+   - `inviteCode`：管理员提供的邀请码（例如 `ABCD2345`）
+4. 点击"加入"按钮
+
+GUI 会自动完成以下操作：
+- 获取本地 Agent 的公钥
+- 向 Hub 提交注册请求（包含邀请码）
+- 保存返回的 Permit
+- 加入 Mesh 并建立连接
+
+成功后，你可以在 GUI 中看到已加入的 Mesh 信息。
+
+### 方式四：通过 Agent API 用邀请码加入
+
+适合需要自动化或脚本化的场景。
+
+```bash
+curl -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -X POST "http://127.0.0.1:7784/api/join-party" \
+  -d '{
+    "regUrl": "http://127.0.0.1:15678",
+    "userName": "alice",
+    "inviteCode": "ABCD2345"
+  }'
+```
+
+**参数说明：**
+
+| 参数 | 说明 |
+|---|---|
+| `regUrl` | Hub 的注册服务地址（HTTP 明文端口） |
+| `userName` | 用户名 |
+| `inviteCode` | 邀请码（8 位大写字母+数字） |
+
+**成功响应（HTTP 200）：**
+
+```json
+{
+  "success": true,
+  "message": "Successfully joined party",
+  "meshName": "clawparty"
+}
+```
+
+**错误响应：**
+
+| HTTP 状态 | 原因 |
+|---|---|
+| 400 | 参数缺失或格式错误 |
+| 403 | 邀请码无效或已使用 |
+| 409 | 用户名已存在 |
+| 500 | 内部错误（证书签发失败等） |
+
+**验证加入是否成功：**
+
+```bash
+# 查看本地 Agent 的 Mesh 信息
+curl -H "Authorization: Bearer <token>" \
+  http://127.0.0.1:7784/api/meshes
+```
+
+如果返回的 JSON 中包含 `clawparty` Mesh 且 `connected: true`，说明加入成功。
 
 ---
 

@@ -2148,8 +2148,8 @@ const handleLeaveGroup = async (chat) => {
   await fetchChats()
 }
 
-const joinParty = async (regUrl, userName) => {
-  await meshService.joinParty(regUrl, userName)
+const joinParty = async (regUrl, userName, inviteCode) => {
+  await meshService.joinParty(regUrl, userName, inviteCode)
   await fetchMeshes()
 }
 

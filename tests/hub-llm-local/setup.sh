@@ -86,10 +86,12 @@ start_hub() {
     --names "127.0.0.1:$HUB_PORT" \
     --enable-registration "127.0.0.1:$REG_PORT" \
     --zeroclaw-config "$zeroclaw_config" \
+    --permit "$TMP/root.json" \
     > "$TMP/hub.log" 2>&1 &
   echo $! > "$TMP/hub.pid"
   wait_port $HUB_PORT hub
   wait_port $REG_PORT registration
+  log "root permit saved to $TMP/root.json"
 }
 
 start_agent() {
@@ -105,13 +107,13 @@ start_agent() {
   wait_port "$port" "agent $name"
 }
 
-join_party() {
+join_with_permit() {
   local name=$1 port=$2
-  log "$name joining via local reg server"
+  log "$name joining with root permit"
   ZTM_CONFIG="127.0.0.1:$port" ZTM_API_TOKEN="$API_TOKEN" \
-    "$ZTM" join party \
-      --reg-url "http://127.0.0.1:$REG_PORT" \
-      --name "$name"
+    "$ZTM" join clawparty \
+      --as "$name" \
+      --permit "$TMP/root.json"
 }
 
 verify_agent() {
@@ -162,8 +164,8 @@ start_hub "$ZEROCLAW_CONFIG"
 start_agent alice $ALICE_PORT
 start_agent bob   $BOB_PORT
 
-join_party alice $ALICE_PORT
-join_party bob   $BOB_PORT
+join_with_permit alice $ALICE_PORT
+join_with_permit bob   $BOB_PORT
 
 sleep 3
 

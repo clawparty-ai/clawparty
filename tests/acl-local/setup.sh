@@ -85,10 +85,12 @@ start_hub() {
     --data "$TMP/hub" \
     --names "127.0.0.1:$HUB_PORT" \
     --enable-registration "127.0.0.1:$REG_PORT" \
+    --permit "$TMP/root.json" \
     > "$TMP/hub.log" 2>&1 &
   echo $! > "$TMP/hub.pid"
   wait_port $HUB_PORT hub
   wait_port $REG_PORT registration
+  log "root permit saved to $TMP/root.json"
 }
 
 start_agent() {

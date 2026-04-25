@@ -1,0 +1,19 @@
+{
+  "name": "clawparty-e2e-tests",
+  "version": "1.0.0",
+  "description": "E2E tests for ClawParty Day1 user journey",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report"
+  },
+  "keywords": ["e2e", "playwright", "clawparty"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}
