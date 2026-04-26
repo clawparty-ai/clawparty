@@ -168,7 +168,10 @@
       @leaveGroup="handleLeaveGroup"
       @back="activeOpenclawAgent ? (activeOpenclawAgent = null) : (activeZeroClawSession = null)"
     />
-    <div v-else-if="!isMobile && allChatConnectionItems.length === 0" class="empty-state">
+    <div
+      v-if="!isMobile && activeChat === null && !activeGroupId && !activeOpenclawAgent && !activeZeroClawSession && currentActiveChatId === null"
+      class="empty-state"
+    >
       <div class="empty-icon">
         <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
           <circle cx="40" cy="40" r="40" fill="#E8E8E8"/>
