@@ -468,6 +468,7 @@
       mode="zagent"
       @close="showZAgentTemplates = false"
       @installed="fetchZAgents()"
+      @created="(data) => emit('zagentTemplateCreated', data)"
     />
 
       <div class="panel-list">
@@ -847,7 +848,7 @@ const handleUpdateMembers = async () => {
 // Active org
 const activeOrg = ref('zagents')
 
-const emit = defineEmits(['select', 'selectOpenclaw', 'changeOrg', 'openLocalTemplates', 'openSharedTemplates', 'resetActiveChat'])
+const emit = defineEmits(['select', 'selectOpenclaw', 'changeOrg', 'openLocalTemplates', 'openSharedTemplates', 'resetActiveChat', 'zagentTemplateCreated'])
 
 watch(currentMesh, (val) => {
   if (val && activeOrg.value !== 'zagents' && activeOrg.value !== 'groups') activeOrg.value = val

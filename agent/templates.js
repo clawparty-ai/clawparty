@@ -452,6 +452,7 @@ function scanTemplatesInDir(baseDir, source) {
       agents.push({
         name: name,
         slug: agentSlug,
+        industrySlug: slug,
         emoji: '',
         description: description,
         systemPrompt: soulContent || '',

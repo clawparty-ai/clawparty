@@ -26,6 +26,7 @@
       @resetActiveChat="activeChat = null"
       @openLocalTemplates="openLocalTemplates"
       @openSharedTemplates="openSharedTemplates"
+      @zagentTemplateCreated="handleZAgentTemplateCreated"
     />
     <!-- Mobile agents list view -->
     <div v-if="isMobile && activeChat === null && mobileActiveOrg === 'agents'" class="mobile-agents-view">
@@ -1406,6 +1407,77 @@ const generateTaskTitleByAI = async (taskId, originalText) => {
     }, 8000)
   } catch (e) {
     console.warn('[TaskTitle] Failed:', e)
+  }
+}
+
+const handleZAgentTemplateCreated = async (data) => {
+  const { agentName, industrySlug, agentSlug, source, displayName } = data
+
+  const prompt = `[系统初始化任务] 新 zAgent: ${agentName}
+
+请帮我初始化这个 zAgent 的 workspace：
+
+- **Agent 名称**: ${agentName}
+- **显示名称**: ${displayName}
+- **模板来源**: ${source}
+- **行业目录**: ${industrySlug}
+- **Agent 目录**: ${agentSlug}
+
+请按以下步骤操作：
+
+1. **定位模板目录**:
+   - 如果 source=shared: ~/.clawparty/.agent-template/.shared/${industrySlug}/${agentSlug}/
+   - 如果 source=local: ~/.clawparty/.agent-template/${industrySlug}/${agentSlug}/
+
+2. **查找 zAgent workspace**: ~/.clawparty/agents/${agentName}/workspace/
+
+3. **复制模板文件**: 把模板目录下所有 .md 文件（不区分大小写，包括 identity.md、IDENTITY.md、soul.md、SOUL.md、agents.md 等所有 .md 文件）复制到 zAgent 的 workspace 目录
+
+4. **占位符替换**: 在复制后的所有 .md 文件中：
+   - 把 {{AGENT_NAME}} 替换为 ${agentName}
+   - 把 {{DISPLAY_NAME}} 替换为 ${displayName}
+
+5. **LLM Wiki 方法论**: 检查模板目录中是否存在 llm-wiki.md 文件。如果存在，读取其内容，并将 wiki 方法论注入到 zAgent workspace 的 AGENTS.md（或 agents.md）中。如果不存在，跳过此步骤。
+
+6. **工作追踪规则**: 确保 zAgent workspace 的 SOUL.md 或 AGENTS.md 中有完整的工作追踪规则（使用 <task> 和 <subtask> XML 标签来追踪进度）。如果没有，请在 AGENTS.md 中添加。
+
+7. **格式优化**: 检查所有 .md 文件的排版和格式
+
+完成后回复："✅ ${agentName} 初始化完成"`
+
+  // Ensure 0#Agent is connected
+  let conn = wsConnections['0#Agent']
+  if (!conn || !conn.zeroclawWS || !conn.zeroclawWS.isConnected()) {
+    const agentsRes = await zagentService.getAgents()
+    const zeroAgent = agentsRes.data.find(a => a.agent_name === '0#Agent')
+    if (!zeroAgent) { console.warn('[ZAgentInit] 0#Agent not found'); return }
+    await selectZAgent(zeroAgent)
+    conn = wsConnections['0#Agent']
+  }
+
+  if (conn && conn.zeroclawWS && conn.zeroclawWS.isConnected()) {
+    const now = new Date()
+    const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+    conn.messages.push({
+      text: prompt,
+      time: time,
+      sender: currentMeshAgentUsername.value || 'You',
+      timestamp: now.getTime(),
+      isSent: true,
+      isTemp: false
+    })
+    conn.messages.push({
+      text: '',
+      time: time,
+      sender: '0#Agent',
+      timestamp: now.getTime() + 1,
+      isSent: false,
+      isTyping: true
+    })
+    conn._msgCount = conn.messages.length
+    conn.zeroclawWS.sendMessage(prompt)
+  } else {
+    console.warn('[ZAgentInit] 0#Agent WebSocket not connected')
   }
 }
 

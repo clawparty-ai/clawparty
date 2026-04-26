@@ -11,7 +11,7 @@ const props = defineProps({
   mode: { type: String, default: 'openclaw' }, // 'openclaw' | 'zagent'
 })
 
-const emit = defineEmits(['close', 'installed', 'open-main-chat', 'send-messages'])
+const emit = defineEmits(['close', 'installed', 'created', 'open-main-chat', 'send-messages'])
 
 const industries = ref([])
 const selectedIndustry = ref(null)
@@ -156,7 +156,13 @@ const handleInstall = async (agent) => {
       try { await zs.startAgent(actualName) } catch (e) {
         console.warn('[ZAgentTemplate] Start failed, may need manual start:', e)
       }
-      emit('installed')
+      emit('created', {
+        agentName: actualName,
+        industrySlug: agent.industrySlug,
+        agentSlug: agent.slug,
+        source: props.source,
+        displayName: agentName.value || agent.name
+      })
       emit('close')
     } catch (e) {
       console.error('Failed to create zAgent from template:', e)
