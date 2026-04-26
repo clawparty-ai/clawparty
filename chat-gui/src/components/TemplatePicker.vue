@@ -2,12 +2,13 @@
 import { ref, computed, watch, inject } from 'vue'
 import { templateService } from '../services/templateService'
 
-const openclawAgents = inject('openclawAgents')
+const openclawAgents = inject('openclawAgents', ref([]))
 
 const props = defineProps({
   show: Boolean,
   source: { type: String, default: 'local' },
   installedAgentIds: { type: Array, default: () => [] },
+  mode: { type: String, default: 'openclaw' }, // 'openclaw' | 'zagent'
 })
 
 const emit = defineEmits(['close', 'installed', 'open-main-chat', 'send-messages'])
@@ -29,6 +30,13 @@ watch(() => props.show, async (val) => {
     error.value = ''
     await loadTemplates()
   }
+})
+
+const isZAgentMode = computed(() => props.mode === 'zagent')
+
+const modalTitle = computed(() => {
+  if (isZAgentMode.value) return '从模板创建 zAgent'
+  return props.source === 'local' ? '添加本地 Agent' : '添加共享 Agent'
 })
 
 const loadTemplates = async () => {
@@ -60,55 +68,106 @@ const agentsWithStatus = computed(() => {
 })
 
 const notInstalledCount = computed(() => {
+  if (isZAgentMode.value) return agentsWithStatus.value.length
   return agentsWithStatus.value.filter(a => !a.installed).length
 })
 
 const handleInstallAll = async () => {
   if (installAllLoading.value || notInstalledCount.value === 0) return
-  
   installAllLoading.value = true
   error.value = ''
-  
-  // Build all messages first
-  const notInstalledAgents = agentsWithStatus.value.filter(a => !a.installed)
-  const messageTexts = notInstalledAgents.map(agent => 
-    `帮我创建一个agent，agent-id使用拼音'${agent.slug}'，agent-name使用中文名'${agent.name}'，创建完成后，把它加入到 main 的 subagents.allowAgents，他的soul.md是：
 
-${agent.systemPrompt || ''}`
+  if (isZAgentMode.value) {
+    // zAgent mode: create all from templates using default config
+    const { zagentService: zs } = await import('../services/chatService')
+    let gcRes = null
+    try { gcRes = await zs.getGlobalConfig() } catch {}
+    const llm = gcRes?.data?.llm || {}
+    const agents = agentsWithStatus.value
+    for (let idx = 0; idx < agents.length; idx++) {
+      const ag = agents[idx]
+      try {
+        const res = await zs.createAgent({
+          agent_name: ag.slug,
+          display_name: ag.name,
+          soul_content: ag.systemPrompt || '',
+          provider: llm.provider || null,
+          api_endpoint: llm.api_endpoint || null,
+          api_key: llm.api_key || null,
+          model: llm.model || null
+        })
+        const actualName = res.data?.agent_name || ag.slug
+        try { await zs.startAgent(actualName) } catch {}
+      } catch (e) {
+        console.error('[ZAgentTemplate] Failed to create', ag.slug, e)
+      }
+    }
+    emit('installed')
+    emit('close')
+    installAllLoading.value = false
+    return
+  }
+
+  // openclaw mode
+  const notInstalledAgents = agentsWithStatus.value.filter(a => !a.installed)
+  const messageTexts = notInstalledAgents.map(agent =>
+    `帮我创建一个agent，agent-id使用拼音'${agent.slug}'，agent-name使用中文名'${agent.name}'，创建完成后，把它加入到 main 的 subagents.allowAgents，他的soul.md是：\n\n${agent.systemPrompt || ''}`
   )
-  
-  // Emit messages to be sent by parent component
   emit('send-messages', messageTexts)
   emit('open-main-chat')
   emit('close')
-  
-  // Wait a bit for main to process, then refresh
   setTimeout(async () => {
     try {
       const { openclawService } = await import('../services/chatService')
-      // First call GET /api/openclaw/agents to trigger cache update
       await openclawService.getAgents()
-      // Then wait a bit and get the updated list
       setTimeout(async () => {
         const response = await openclawService.getAgents()
         openclawAgents.value = response.data || []
-        console.log(`[Install All] Agents refreshed:`, openclawAgents.value.length)
       }, 500)
     } catch (e) {
       console.error(`[Install All] Failed to refresh agents:`, e)
     }
   }, 3000)
-  
   installAllLoading.value = false
 }
 
 const handleInstall = async (agent) => {
-  if (agent.installed || installing.value[agent.slug]) return
-  
-  const message = `帮我创建一个agent，agent-id使用拼音，agent-name使用中文名'${agentName.value}'，把它加入到 main 的 subagents.allowAgents 中，他的soul.md是：
+  if (!isZAgentMode.value && (agent.installed || installing.value[agent.slug])) return
+  if (isZAgentMode.value && installing.value[agent.slug]) return
 
-${editorContent.value}`
-  
+  if (isZAgentMode.value) {
+    installing.value[agent.slug] = true
+    error.value = ''
+    try {
+      const { zagentService: zs } = await import('../services/chatService')
+      let gcRes = null
+      try { gcRes = await zs.getGlobalConfig() } catch {}
+      const llm = gcRes?.data?.llm || {}
+      const res = await zs.createAgent({
+        agent_name: agent.slug,
+        display_name: agentName.value || agent.name,
+        soul_content: editorContent.value,
+        provider: llm.provider || null,
+        api_endpoint: llm.api_endpoint || null,
+        api_key: llm.api_key || null,
+        model: llm.model || null
+      })
+      const actualName = res.data?.agent_name || agent.slug
+      try { await zs.startAgent(actualName) } catch (e) {
+        console.warn('[ZAgentTemplate] Start failed, may need manual start:', e)
+      }
+      emit('installed')
+      emit('close')
+    } catch (e) {
+      console.error('Failed to create zAgent from template:', e)
+      error.value = '创建失败: ' + (e.message || e)
+    } finally {
+      installing.value[agent.slug] = false
+    }
+    return
+  }
+
+  const message = `帮我创建一个agent，agent-id使用拼音，agent-name使用中文名'${agentName.value}'，把它加入到 main 的 subagents.allowAgents 中，他的soul.md是：\n\n${editorContent.value}`
   emit('send-messages', [message])
   emit('open-main-chat')
   emit('close')
@@ -127,6 +186,10 @@ const handleCancelEdit = () => {
 }
 
 const handleClose = () => {
+  editingAgent.value = null
+  editorContent.value = ''
+  agentName.value = ''
+  error.value = ''
   emit('close')
 }
 
@@ -147,7 +210,7 @@ const handleBackToEdit = () => {
     <div v-if="show" class="modal-backdrop" @click.self="handleClose">
       <div class="modal-dialog template-picker">
         <div class="modal-header">
-          <span class="modal-title">{{ source === 'local' ? '添加本地 Agent' : '添加共享 Agent' }}</span>
+          <span class="modal-title">{{ modalTitle }}</span>
           <button class="modal-close" @click="handleClose">✕</button>
         </div>
 
@@ -195,11 +258,11 @@ const handleBackToEdit = () => {
               </div>
               <button
                 class="install-btn"
-                :class="{ installed: agent.installed, installing: installing[agent.slug] }"
-                :disabled="agent.installed || installing[agent.slug]"
+                :class="{ installed: !isZAgentMode && agent.installed, installing: installing[agent.slug] }"
+                :disabled="(!isZAgentMode && agent.installed) || installing[agent.slug]"
                 @click="handleSelect(agent)"
               >
-                <span v-if="agent.installed">已安装</span>
+                <span v-if="!isZAgentMode && agent.installed">已安装</span>
                 <span v-else>选择</span>
               </button>
             </div>

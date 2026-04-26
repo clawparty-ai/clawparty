@@ -254,7 +254,8 @@ export const zagentService = {
       provider: config.provider || null,
       api_endpoint: config.api_endpoint || null,
       api_key: config.api_key || null,
-      model: config.model || null
+      model: config.model || null,
+      soul_content: config.soul_content || null
     })
   },
   deleteAgent(name) {

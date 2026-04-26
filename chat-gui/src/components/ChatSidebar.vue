@@ -96,7 +96,8 @@
           </button>
         </div>
         <div v-if="activeOrg === 'zagents'" class="panel-header-actions">
-          <button class="add-agent-btn" @click="showCreateZAgentDialog = true" title="创建 Agent">+A</button>
+          <button class="add-agent-btn" @click="showZAgentTemplates = true" title="从模板添加 zAgent">#A</button>
+          <button class="add-agent-btn plain" @click="showCreateZAgentDialog = true" title="创建 Agent">+A</button>
         </div>
       </div>
 
@@ -460,6 +461,15 @@
       </div>
     </Teleport>
 
+    <!-- zAgent Template Picker -->
+    <TemplatePicker
+      :show="showZAgentTemplates"
+      source="local"
+      mode="zagent"
+      @close="showZAgentTemplates = false"
+      @installed="fetchZAgents()"
+    />
+
       <div class="panel-list">
         <!-- Group Chats view — local ZeroClaw agent groups -->
         <template v-if="activeOrg === 'groups'">
@@ -656,6 +666,7 @@
 import { ref, computed, inject, watch, onMounted, onUnmounted } from 'vue'
 import { getAvatarColor } from '../utils/avatar'
 import { getAgentEmoji } from '../utils/emoji'
+import TemplatePicker from './TemplatePicker.vue'
 
 const props = defineProps({
   chats: { type: Array, required: true },
@@ -993,6 +1004,7 @@ const handleCreateSession = async () => {
 
 // Create zAgent state
 const showCreateZAgentDialog = ref(false)
+const showZAgentTemplates = ref(false)
 const newZAgentName = ref('')
 const newZAgentDescription = ref('')
 const showModelConfig = ref(true)
@@ -1423,6 +1435,16 @@ const getStatusText = (agent) => {
 
 .add-agent-btn:hover {
   opacity: 0.85;
+}
+
+.add-agent-btn.plain {
+  background: none;
+  border: 1px solid var(--slack-green);
+  color: var(--slack-green);
+}
+
+.add-agent-btn.plain:hover {
+  background: rgba(1, 178, 75, 0.1);
 }
 
 .shared-btn {

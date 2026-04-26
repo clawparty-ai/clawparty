@@ -397,6 +397,7 @@ function main(listen, apiToken, noAuth) {
         var agentName = body.agent_name
         var displayName = body.display_name
         var description = body.description || null
+        var soulContent = body.soul_content || null
         var modelConfig = null
 
         // Extract model config if any key field is provided
@@ -412,12 +413,16 @@ function main(listen, apiToken, noAuth) {
         console.log('[API] POST /api/agents - Creating agent: ' + agentName)
 
         try {
-          var result = api.createAgent(agentName, displayName, modelConfig, description)
-          console.log('[API] Agent created: ' + agentName + ', result=OK')
+          var workspaceFiles = null
+          if (soulContent) {
+            workspaceFiles = { soul_md: soulContent }
+          }
+          var result = api.createAgent(agentName, displayName, modelConfig, description, workspaceFiles)
+          console.log('[API] Agent created: ' + result.agent_name + ', result=OK')
           return response(201, result)
         } catch (e) {
-          console.log('[API] Agent creation failed: ' + e.message)
-          return response(400, { error: e.message })
+          console.log('[API] Agent creation failed: ' + e)
+          return response(400, { error: e })
         }
       },
     },

@@ -422,10 +422,23 @@ function allocatePort() {
 function createAgent(agentName, displayName, modelConfig, description, workspaceFiles) {
   console.log('[AGENT] Creating agent: ' + agentName)
 
-  // Check if agent already exists
+  // Check if agent already exists — if so, append random 2-digit suffix
+  var originalName = agentName
   if (db.getAgent(agentName)) {
-    console.log('[AGENT] Create failed: agent already exists: ' + agentName)
-    throw 'Agent already exists: ' + agentName
+    var attempt = 0
+    for (attempt = 0; attempt < 100; attempt++) {
+      var suffix = String(Math.floor(Math.random() * 90) + 10)
+      var candidate = originalName + '-' + suffix
+      if (!db.getAgent(candidate) && !db.getGroupChat(candidate)) {
+        agentName = candidate
+        break
+      }
+    }
+    if (attempt >= 100) {
+      console.log('[AGENT] Create failed: could not find unique name for ' + originalName)
+      throw 'Could not find unique agent name for ' + originalName
+    }
+    console.log('[AGENT] Name ' + originalName + ' taken, using ' + agentName)
   }
 
   // Allocate port
