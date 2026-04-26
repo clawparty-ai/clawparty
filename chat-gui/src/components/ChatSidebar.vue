@@ -526,16 +526,15 @@
                 <div class="zagent-info">
                   <div class="zagent-name-row">
                     <span class="item-name">{{ agent.display_name || agent.agent_name }}</span>
-                    <span class="zagent-status-dot" :class="'status-' + (agent.status || 'created')"></span>
                   </div>
                   <div class="zagent-status-text" :class="'status-' + (agent.status || 'created')">
                     {{ getStatusText(agent) }}
                   </div>
                 </div>
                 <div class="zagent-actions">
-                  <!-- Start button: show for created/stopped/error -->
+                  <!-- Start button: show for non-0#Agent created/stopped/error -->
                   <button
-                    v-if="['created', 'stopped', 'error'].includes(agent.status || 'created')"
+                    v-if="agent.agent_name !== '0#Agent' && ['created', 'stopped', 'error'].includes(agent.status || 'created')"
                     class="agent-action-btn start-btn"
                     @click.stop="handleStartAgent(agent.agent_name)"
                     title="Start Agent"
@@ -544,9 +543,9 @@
                       <path d="M8 5v14l11-7z"/>
                     </svg>
                   </button>
-                  <!-- Stop button: show for running -->
+                  <!-- Stop button: show for non-0#Agent running -->
                   <button
-                    v-if="agent.status === 'running'"
+                    v-if="agent.agent_name !== '0#Agent' && agent.status === 'running'"
                     class="agent-action-btn stop-btn"
                     @click.stop="handleStopAgent(agent.agent_name)"
                     title="Stop Agent"
@@ -2488,29 +2487,6 @@ const getStatusText = (agent) => {
 .zagent-name-row .item-name {
   flex: 1;
   min-width: 0;
-}
-
-.zagent-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: #9CA3AF;
-}
-
-.zagent-status-dot.status-created  { background: #9CA3AF; }
-.zagent-status-dot.status-stopped  { background: #6B7280; }
-.zagent-status-dot.status-running  { background: #10B981; }
-.zagent-status-dot.status-error    { background: #EF4444; }
-.zagent-status-dot.status-starting {
-  background: #F59E0B;
-  animation: spin-dot 1s linear infinite;
-}
-
-@keyframes spin-dot {
-  0%   { opacity: 1; }
-  50%  { opacity: 0.3; }
-  100% { opacity: 1; }
 }
 
 .zagent-status-text {

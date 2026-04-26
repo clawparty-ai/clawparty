@@ -236,17 +236,22 @@ const quotedMessage = ref(null)
 
 // Task management (zAgent only)
 const tasks = ref([])
-const showTaskPanel = ref(true)          // 由 header Task 按钮控制显/隐
+const showTaskPanel = ref(false)          // 默认关闭，有任务时自动打开
 const taskPanelBodyExpanded = ref(true)  // 由 TaskPanel header 点击控制 body 展开/折叠
 const taskPanelInitialHeight = ref(180)  // 初始高度 = message panel 可用空间的 50%
 let taskPollTimer = null
 
-  const calcTaskPanelHeight = async () => {
+const calcTaskPanelHeight = async () => {
   if (!chatMainEl.value) return
   await nextTick()
   await nextTick()
   // Measure ChatMain total and subtract header -> message panel remaining space
   const totalH = chatMainEl.value.clientHeight
+  if (totalH === 0) {
+    // DOM 刚显示，布局尚未完成，延迟重试
+    setTimeout(calcTaskPanelHeight, 100)
+    return
+  }
   const headerH = chatMainEl.value.querySelector('.chat-header')?.clientHeight || 56
   const msgAreaH = Math.max(totalH - headerH, 120)
   taskPanelInitialHeight.value = Math.round(msgAreaH * 0.5)
@@ -1415,8 +1420,13 @@ watch(
       })
     }
     if (props.chat.isZeroClaw) {
-      calcTaskPanelHeight()
-      loadTasks()
+      await loadTasks()
+      if (tasks.value.length > 0) {
+        showTaskPanel.value = true
+        requestAnimationFrame(() => {
+          calcTaskPanelHeight()
+        })
+      }
       startTaskPolling()
     }
   },
@@ -1430,9 +1440,13 @@ watch(() => props.chat.messages?.length, () => {
 // Bug fix: when Task button toggles showTaskPanel back on, immediately load
 watch(showTaskPanel, async (visible) => {
   if (visible && props.chat.isZeroClaw) {
-    calcTaskPanelHeight()
+    requestAnimationFrame(() => {
+      calcTaskPanelHeight()
+    })
     await loadTasks()
     startTaskPolling()
+  } else if (!visible) {
+    stopTaskPolling()
   }
 })
 

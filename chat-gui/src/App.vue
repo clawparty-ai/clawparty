@@ -103,6 +103,7 @@
       :agentStatus="item.agent?.status"
       :agentErrorMsg="item.agent?.error_msg"
       :agentName="item.id"
+      :isActive="currentActiveChatId === item.id"
       v-model="newMessage"
       @send="(text) => handleZAgentSend(item.id, text)"
       @send-images="handleSendImages"
