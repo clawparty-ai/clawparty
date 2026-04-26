@@ -1313,24 +1313,81 @@ const selectChat = (index) => {
 }
 
 // P1: Check if user message contains "任务" or "task" keyword and auto-create task
-const autoCreateUserTask = (agentName, text) => {
+// P1: Auto-create task when user mentions "任务" or "task"
+// Supports both zAgent and group chat (groupId passed for group mode)
+const autoCreateUserTask = async (agentName, text, groupId) => {
   if (!text) return
   var lower = text.toLowerCase()
   if (lower.indexOf('任务') >= 0 || lower.indexOf('task') >= 0) {
     var taskId = 'TASK-' + Math.floor(1000 + Math.random() * 9000)
-    taskService.createTask({
-      task_id: taskId,
-      agent_name: agentName,
-      title: taskId,
-      description: text,
-      status: 'running',
-      progress: 0,
-      priority: 'normal'
-    }).then(() => {
-      console.log('[Task] User-side task created: ' + taskId + ' for agent ' + agentName)
-    }).catch((e) => {
+    try {
+      var res = await taskService.createTask({
+        task_id: taskId,
+        agent_name: agentName,
+        group_id: groupId || null,
+        title: taskId,
+        description: text,
+        status: 'running',
+        progress: 0,
+        priority: 'normal'
+      })
+      console.log('[Task] User-side task created: ' + taskId)
+      // Async: ask 0#Agent to generate short title
+      generateTaskTitleByAI(taskId, text)
+    } catch (e) {
       console.warn('[Task] User-side create failed:', e)
-    })
+    }
+  }
+}
+
+// Ask 0#Agent to generate short_title (<8 chars) and ai_description
+// Uses a temporary WebSocket connection (hidden from UI)
+const generateTaskTitleByAI = async (taskId, originalText) => {
+  try {
+    var agentsRes = await zagentService.getAgents()
+    var zeroAgent = agentsRes.data.find(function(a) { return a.agent_name === '0#Agent' })
+    if (!zeroAgent || !zeroAgent.port) { console.log('[TaskTitle] 0#Agent not found'); return }
+
+    var sessionId = 'sys-title-gen-' + Date.now()
+    var fullResponse = ''
+    var hasResponded = false
+
+    var ws = new ZeroClawWS(
+      '0#Agent',
+      sessionId,
+      function(data) {
+        if (data.type === 'chunk') fullResponse += data.content
+        else if (data.type === 'done') {
+          hasResponded = true
+          ws.close()
+          var nameMatch = fullResponse.match(/名字[：:]\s*([^\n]+)/)
+          var descMatch = fullResponse.match(/描述[：:]\s*([^\n]+)/)
+          if (nameMatch) {
+            var shortTitle = nameMatch[1].replace(/[\s*#]/g, '').trim().slice(0, 8)
+            var aiDesc = descMatch ? descMatch[1].replace(/[\s*#]/g, '').trim() : ''
+            taskService.updateTask(taskId, {
+              short_title: shortTitle,
+              ai_description: aiDesc
+            }).then(function() {
+              console.log('[TaskTitle] Updated ' + taskId + ' with: ' + shortTitle)
+            }).catch(function() {})
+          }
+        }
+      },
+      function() {
+        ws.sendMessage('[SYSTEM] 请为这个任务起短名字（<8字）和描述：' + originalText + '\n\n用以下格式回复：\n名字：xxx\n描述：xxx')
+      },
+      function() {}, 
+      function() {},
+      zeroAgent.port
+    )
+    ws.connect()
+
+    setTimeout(function() {
+      if (!hasResponded) { ws.close(); console.log('[TaskTitle] Timeout for ' + taskId) }
+    }, 8000)
+  } catch (e) {
+    console.warn('[TaskTitle] Failed:', e)
   }
 }
 
@@ -1526,6 +1583,10 @@ const createGroupChatMessageHandler = (groupId, agentName) => {
 
     switch (data.type) {
     case 'chunk': {
+      if (data.content) {
+        // Parse task tags from AI response for group chat (use owner agent)
+        parseTaskTags(data.content, agentName)
+      }
       // Find or create a typing message for this agent
       const lastTyping = group.messages[group.messages.length - 1]
       if (lastTyping && lastTyping.isTyping && lastTyping.agentName === agentName) {
@@ -1544,6 +1605,10 @@ const createGroupChatMessageHandler = (groupId, agentName) => {
       break
     }
     case 'done': {
+      // Parse full response for task tags
+      if (data.full_response) {
+        parseTaskTags(data.full_response, agentName)
+      }
       // Finalize the typing message
       const lastTyping = group.messages[group.messages.length - 1]
       if (lastTyping && lastTyping.isTyping && lastTyping.agentName === agentName) {
@@ -1603,6 +1668,9 @@ const sendMessage = async () => {
   if (activeGroupId.value) {
     const group = localGroupChats.value.find(g => g.groupId === activeGroupId.value)
     if (group) {
+      // Auto-create task for group chat if user mentions keyword
+      autoCreateUserTask(group.ownerAgent, text, group.groupId)
+
       const now = new Date()
       const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
 

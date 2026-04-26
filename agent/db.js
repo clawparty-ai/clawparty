@@ -276,9 +276,12 @@ function open(pathname) {
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       task_id       TEXT NOT NULL UNIQUE,
       agent_name    TEXT NOT NULL,
+      group_id      TEXT,
       parent_id     TEXT,
       title         TEXT NOT NULL,
+      short_title   TEXT,
       description   TEXT,
+      ai_description TEXT,
       status        TEXT NOT NULL DEFAULT 'pending',
       progress      INTEGER DEFAULT 0,
       priority      TEXT DEFAULT 'normal',
@@ -291,6 +294,7 @@ function open(pathname) {
   `)
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_agent ON tasks(agent_name)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_group ON tasks(group_id)`)
     db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id)`)
     db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`)
     db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_task_id ON tasks(task_id)`)
@@ -1152,20 +1156,23 @@ function isGroupOwnerAgent(agentName) {
 function createTask(task) {
   var t = Date.now() / 1000
   db.sql(`
-    INSERT INTO tasks(task_id, agent_name, parent_id, title, description, status, progress, priority, dependencies, created_at, updated_at)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks(task_id, agent_name, group_id, parent_id, title, short_title, description, ai_description, status, progress, priority, dependencies, created_at, updated_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
     .bind(1, task.task_id)
     .bind(2, task.agent_name)
-    .bind(3, task.parent_id || null)
-    .bind(4, task.title)
-    .bind(5, task.description || null)
-    .bind(6, task.status || 'pending')
-    .bind(7, task.progress !== undefined ? task.progress : 0)
-    .bind(8, task.priority || 'normal')
-    .bind(9, task.dependencies ? JSON.stringify(task.dependencies) : null)
-    .bind(10, t)
-    .bind(11, t)
+    .bind(3, task.group_id || null)
+    .bind(4, task.parent_id || null)
+    .bind(5, task.title)
+    .bind(6, task.short_title || null)
+    .bind(7, task.description || null)
+    .bind(8, task.ai_description || null)
+    .bind(9, task.status || 'pending')
+    .bind(10, task.progress !== undefined ? task.progress : 0)
+    .bind(11, task.priority || 'normal')
+    .bind(12, task.dependencies ? JSON.stringify(task.dependencies) : null)
+    .bind(13, t)
+    .bind(14, t)
     .exec()
 
   recordTaskEvent(task.task_id, 'created', null, task.status || 'pending', task.progress || 0, 'Task created')
@@ -1179,9 +1186,12 @@ function getTask(taskId) {
     id: row.id,
     task_id: row.task_id,
     agent_name: row.agent_name,
+    group_id: row.group_id,
     parent_id: row.parent_id,
     title: row.title,
+    short_title: row.short_title,
     description: row.description,
+    ai_description: row.ai_description,
     status: row.status,
     progress: row.progress,
     priority: row.priority,
@@ -1202,7 +1212,9 @@ function updateTask(taskId, updates) {
   var params = []
 
   if (updates.title !== undefined) { fields.push('title = ?'); params.push(updates.title) }
+  if (updates.short_title !== undefined) { fields.push('short_title = ?'); params.push(updates.short_title) }
   if (updates.description !== undefined) { fields.push('description = ?'); params.push(updates.description) }
+  if (updates.ai_description !== undefined) { fields.push('ai_description = ?'); params.push(updates.ai_description) }
   if (updates.status !== undefined) { fields.push('status = ?'); params.push(updates.status) }
   if (updates.progress !== undefined) { fields.push('progress = ?'); params.push(updates.progress) }
   if (updates.priority !== undefined) { fields.push('priority = ?'); params.push(updates.priority) }
@@ -1265,9 +1277,12 @@ function getAgentTasks(agentName) {
     var task = {
       task_id: row.task_id,
       agent_name: row.agent_name,
+      group_id: row.group_id,
       parent_id: row.parent_id,
       title: row.title,
+      short_title: row.short_title,
       description: row.description,
+      ai_description: row.ai_description,
       status: row.status,
       progress: row.progress,
       priority: row.priority,

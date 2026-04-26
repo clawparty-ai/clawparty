@@ -219,8 +219,10 @@ export class ZeroClawWS {
 }
 
 export const taskService = {
-  getAgentTasks(agentName) {
-    return api.get(`/tasks?agent=${encodeURIComponent(agentName)}`)
+  getAgentTasks(agentName, groupId) {
+    var url = `/tasks?agent=${encodeURIComponent(agentName)}`
+    if (groupId) url += `&group=${encodeURIComponent(groupId)}`
+    return api.get(url)
   },
 
   createTask(taskData) {

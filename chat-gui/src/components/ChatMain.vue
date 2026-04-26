@@ -5,7 +5,7 @@
       :openclawSessions="openclawSessions"
       :currentUserName="currentUserName"
       :showBackButton="showBackButton"
-      :showTaskButton="chat.isZeroClaw"
+      :showTaskButton="chat.isZeroClaw || chat.isGroupChat"
       :taskPanelVisible="showTaskPanel"
       @switchSession="$emit('switchSession', $event)"
       @deleteGroup="$emit('deleteGroup', $event)"
@@ -18,7 +18,7 @@
       @toggleTaskPanel="showTaskPanel = !showTaskPanel"
     />
     <TaskPanel
-      v-if="chat.isZeroClaw && showTaskPanel"
+      v-if="(chat.isZeroClaw || chat.isGroupChat) && showTaskPanel"
       :agentName="agentName || chat.display_name || chat.agent_name"
       :tasks="tasks"
       :expanded="taskPanelBodyExpanded"
@@ -253,11 +253,12 @@ let taskPollTimer = null
 }
 
 const loadTasks = async () => {
-  if (!props.chat.isZeroClaw) return
-  const agentName = props.agentName || props.chat.agent_name
+  if (!props.chat.isZeroClaw && !props.chat.isGroupChat) return
+  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
+  const groupId = props.chat.isGroupChat ? props.chat.groupId : null
   if (!agentName) return
   try {
-    const res = await taskService.getAgentTasks(agentName)
+    const res = await taskService.getAgentTasks(agentName, groupId)
     if (res.data && res.data.tasks) {
       tasks.value = res.data.tasks
     }

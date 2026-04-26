@@ -34,7 +34,7 @@
         </div>
         <div class="task-content">
           <div class="task-line">
-            <span class="task-title" :title="task.description">{{ task.title }}</span>
+            <span class="task-title" :title="task.ai_description || task.description">{{ task.short_title || task.title }}</span>
             <span class="task-priority" v-if="task.priority !== 'normal'" :class="'priority-' + task.priority">{{ formatPriority(task.priority) }}</span>
           </div>
           <div class="task-meta">

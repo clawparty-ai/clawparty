@@ -483,9 +483,18 @@ function main(listen, apiToken, noAuth) {
       'GET': function (_, req) {
         var url = new URL(req.head.path, 'http://localhost')
         var agentName = url.searchParams.get('agent')
+        var groupId = url.searchParams.get('group')
         if (!agentName) return response(400, { error: 'agent parameter required' })
         var tasks = db.getAgentTasks(agentName)
-        return response(200, { agent_name: agentName, tasks: tasks })
+        // Filter by group_id if specified
+        if (groupId) {
+          var filtered = []
+          for (var f = 0; f < tasks.length; f++) {
+            if (tasks[f].group_id === groupId) filtered.push(tasks[f])
+          }
+          tasks = filtered
+        }
+        return response(200, { agent_name: agentName, group_id: groupId || null, tasks: tasks })
       },
 
       'POST': function (_, req) {
@@ -503,9 +512,12 @@ function main(listen, apiToken, noAuth) {
         var task = {
           task_id: taskId,
           agent_name: body.agent_name,
+          group_id: body.group_id || null,
           parent_id: body.parent_id || null,
           title: body.title,
+          short_title: body.short_title || null,
           description: body.description || '',
+          ai_description: body.ai_description || null,
           status: body.status || 'pending',
           progress: body.progress || 0,
           priority: body.priority || 'normal',
