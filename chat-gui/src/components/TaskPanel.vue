@@ -56,7 +56,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   agentName: {
@@ -92,6 +92,12 @@ const formatPriority = (priority) => {
 const MIN_H = 60
 const MAX_H = 500
 const panelHeight = ref(props.initialHeight)
+
+// Sync height when parent recalculates (e.g. first open via Task button)
+watch(() => props.initialHeight, (newH) => {
+  panelHeight.value = newH
+})
+
 const isResizing = ref(false)
 
 let startY = 0
