@@ -269,7 +269,7 @@ const loadTasks = async () => {
 
 const startTaskPolling = () => {
   stopTaskPolling()
-  taskPollTimer = setInterval(loadTasks, 3000)
+  taskPollTimer = setInterval(loadTasks, 30000)
 }
 
 const stopTaskPolling = () => {
