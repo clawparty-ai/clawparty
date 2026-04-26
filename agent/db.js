@@ -300,6 +300,11 @@ function open(pathname) {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_task_id ON tasks(task_id)`)
   } catch {}
 
+  // Migration: add columns for existing databases created before group chat tasks
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN group_id TEXT`) } catch {}
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN short_title TEXT`) } catch {}
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN ai_description TEXT`) } catch {}
+
   // Task events table for audit trail
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_events (

@@ -1096,7 +1096,7 @@ const parseTaskTags = (content, agentName) => {
   // ── P3: Fallback — parse markdown table / key-value / text format ──
   // Only trigger when no XML <task> tags were found and content looks like a task report
   if (!foundXml) {
-    const isTaskContext = /(?:已创建|创建成功|新建|任务已|task created|created task|new task|🆔|📛)/i.test(content)
+    const isTaskContext = /(?:已创建|创建成功|新建|任务已|任务名称|task created|created task|new task|🆔|📛)/i.test(content)
     if (!isTaskContext) return
 
     // Extract task ID
@@ -1323,12 +1323,27 @@ const autoCreateUserTask = async (agentName, text, groupId) => {
   var lower = text.toLowerCase()
   if (lower.indexOf('任务') >= 0 || lower.indexOf('task') >= 0) {
     var taskId = 'TASK-' + Math.floor(1000 + Math.random() * 9000)
+
+    // Extract title from user message
+    var title = text
+    var titleMatch = text.match(/(?:任务名称|创建一个任务|任务名字)[：:\s]*["']*([^"'\n]{2,})/i)
+    if (titleMatch) {
+      title = titleMatch[1].trim()
+    } else {
+      var colonMatch = text.match(/[：:]\s*([^\n]+)/)
+      if (colonMatch) title = colonMatch[1].trim()
+    }
+    if (title.length === 0 || title.length > 100) {
+      // fallback: use full text if extraction failed, trim to 100 chars
+      title = text.slice(0, 100)
+    }
+
     try {
       var res = await taskService.createTask({
         task_id: taskId,
         agent_name: agentName,
         group_id: groupId || null,
-        title: taskId,
+        title: title,
         description: text,
         status: 'running',
         progress: 0,
