@@ -419,6 +419,17 @@ function allocatePort() {
   throw 'No available ports in range ' + PORT_START + '-' + PORT_END
 }
 
+function makeDisplayDirName(displayName, agentsDir) {
+  var baseName = displayName || 'agent'
+  var dirPath = os.path.join(agentsDir, baseName)
+  try {
+    os.mkdir(dirPath)
+    return baseName
+  } catch (e) {
+    throw 'Agent "' + baseName + '" 已经存在，请使用其他名称'
+  }
+}
+
 function createAgent(agentName, displayName, modelConfig, description, workspaceFiles) {
   console.log('[AGENT] Creating agent: ' + agentName)
 
@@ -445,13 +456,12 @@ function createAgent(agentName, displayName, modelConfig, description, workspace
   var port = allocatePort()
   console.log('[AGENT] Allocated port: ' + port)
 
-  // Create directory structure
+  // Create directory structure using display_name (or agent_name as fallback)
   var agentsDir = os.path.join(rootDir, 'agents')
-  var agentDir = os.path.join(agentsDir, agentName)
+  var dirName = makeDisplayDirName(displayName || agentName, agentsDir)
+  var agentDir = os.path.join(agentsDir, dirName)
   var workspaceDir = os.path.join(agentDir, 'workspace')
 
-  os.mkdir(agentDir, { recursive: true })
-  console.log('[AGENT] Created directory: ' + agentDir)
   os.mkdir(workspaceDir, { recursive: true })
   console.log('[AGENT] Created workspace: ' + workspaceDir)
 
@@ -551,12 +561,12 @@ function createZeroAgentFromConfig(configTomlContent) {
     var port = allocatePort()
     console.log('[AGENT] Allocated port for 0#Agent: ' + port)
 
-    // Create directory structure
+    // Create directory structure using display_name
     var agentsDir = os.path.join(rootDir, 'agents')
-    var agentDir = os.path.join(agentsDir, agentName)
+    var dirName = makeDisplayDirName('0#Agent', agentsDir)
+    var agentDir = os.path.join(agentsDir, dirName)
     var workspaceDir = os.path.join(agentDir, 'workspace')
 
-    os.mkdir(agentDir, { recursive: true })
     os.mkdir(workspaceDir, { recursive: true })
     console.log('[AGENT] Created 0#Agent directory: ' + agentDir)
 
@@ -858,10 +868,10 @@ function createGroupOwnerAgent(groupId, groupName, memberAgents) {
   // Create the agent using existing template logic
   var port = allocatePort()
   var agentsDir = os.path.join(rootDir, 'agents')
-  var agentDir = os.path.join(agentsDir, ownerAgentName)
+  var dirName = makeDisplayDirName(groupName, agentsDir)
+  var agentDir = os.path.join(agentsDir, dirName)
   var workspaceDir = os.path.join(agentDir, 'workspace')
 
-  os.mkdir(agentDir, { recursive: true })
   os.mkdir(workspaceDir, { recursive: true })
 
   // Read template: prefer hub-distributed config, fallback to local
