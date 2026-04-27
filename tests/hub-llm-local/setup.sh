@@ -1,12 +1,15 @@
 #!/bin/bash
 #
-# Integration test: 1 hub (with zeroclaw config) + 2 agents.
-# Tests the full join-party → auto-global-config → 0#Agent creation flow.
+# Integration test: 1 hub (with zeroclaw config) + 3 agents.
+# Tests the full invite-only flow for test users:
+#   admin joins with root permit (bootstrap only)
+#   alice/bob join via invite code -> auto-global-config -> 0#Agent creation
 #
 # Layout (all under tests/hub-llm-local/tmp/):
 #   hub   -> hub data dir, listens on 127.0.0.1:18888 (+ reg :15678)
-#   alice -> agent data dir, listens on 127.0.0.1:7781
-#   bob   -> agent data dir, listens on 127.0.0.1:7782
+#   admin -> bootstrap admin endpoint, listens on 127.0.0.1:7780
+#   alice -> test user endpoint, listens on 127.0.0.1:7781
+#   bob   -> test user endpoint, listens on 127.0.0.1:7782
 #
 
 set -e
@@ -18,14 +21,15 @@ ZTM="${ZTM_BIN:-$PROJECT_ROOT/bin/ztm}"
 
 HUB_PORT=18888
 REG_PORT=15678
+ADMIN_PORT=7780
 ALICE_PORT=7781
 BOB_PORT=7782
 MESH_NAME=clawparty
 API_TOKEN=hub-llm-test
 
-green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
-yellow() { printf '\033[1;33m%s\033[0m\n' "$*"; }
-red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
+green()  { printf '\033[0;32m%s\033[0m\n' "$*" >&2; }
+yellow() { printf '\033[1;33m%s\033[0m\n' "$*" >&2; }
+red()    { printf '\033[0;31m%s\033[0m\n' "$*" >&2; }
 log()    { green "[setup] $*"; }
 
 wait_port() {
@@ -39,7 +43,7 @@ wait_port() {
 
 cleanup() {
   log "cleaning previous run"
-  for port in $HUB_PORT $REG_PORT $ALICE_PORT $BOB_PORT; do
+  for port in $HUB_PORT $REG_PORT $ADMIN_PORT $ALICE_PORT $BOB_PORT; do
     local pid
     pid=$(lsof -ti:"$port" 2>/dev/null || true)
     [ -n "$pid" ] && kill -9 $pid 2>/dev/null || true
@@ -98,22 +102,74 @@ start_agent() {
   local name=$1 port=$2
   log "starting agent '$name' on :$port"
   mkdir -p "$TMP/$name"
-  nohup "$ZTM" run agent \
-    --listen "127.0.0.1:$port" \
-    --data "$TMP/$name" \
-    --api-token "$API_TOKEN" \
-    > "$TMP/$name.log" 2>&1 &
-  echo $! > "$TMP/$name.pid"
+  # Run from agent/ dir so relative 'gui' directory resolves correctly
+  (
+    cd "$PROJECT_ROOT/agent"
+    nohup "$ZTM" run agent \
+      --listen "127.0.0.1:$port" \
+      --data "$TMP/$name" \
+      --api-token "$API_TOKEN" \
+      > "$TMP/$name.log" 2>&1 &
+    echo $! > "$TMP/$name.pid"
+  )
   wait_port "$port" "agent $name"
 }
 
 join_with_permit() {
   local name=$1 port=$2
-  log "$name joining with root permit"
+  log "$name joining with root permit (admin bootstrap only)"
   ZTM_CONFIG="127.0.0.1:$port" ZTM_API_TOKEN="$API_TOKEN" \
     "$ZTM" join clawparty \
       --as "$name" \
       --permit "$TMP/root.json"
+}
+
+generate_invite_code() {
+  local username=$1
+  log "generating invite code for '$username' via admin..."
+
+  # Wait for admin to be connected to mesh
+  local tries=15
+  while true; do
+    local connected
+    connected=$(curl -sS -H "Authorization: Bearer $API_TOKEN" \
+      "http://127.0.0.1:$ADMIN_PORT/api/meshes" 2>/dev/null | \
+      python3 -c "import sys,json; m=json.load(sys.stdin); print(m[0]['connected'] if m else False)" 2>/dev/null || echo "False")
+    [ "$connected" = "True" ] && break
+    tries=$((tries - 1))
+    [ "$tries" -le 0 ] && red "admin not connected to mesh" && exit 1
+    sleep 1
+  done
+
+  local out code
+  out=$(ZTM_CONFIG="127.0.0.1:$ADMIN_PORT" ZTM_API_TOKEN="$API_TOKEN" \
+    "$ZTM" add-invite-code --name "$username" --email "${username}@test.local" 2>&1)
+  code=$(echo "$out" | grep -o '[A-Z0-9]\{8\}' | head -1)
+  [ -z "$code" ] && red "failed to generate invite code: $out" && exit 1
+  green "  invite code for $username: $code"
+  echo "$code"
+}
+
+join_with_invite_code() {
+  local name=$1 port=$2 username=$3 code=$4
+  log "$name joining as '$username' via invite code $code"
+
+  local payload
+  payload=$(python3 -c "import json; print(json.dumps({'regUrl':'http://127.0.0.1:$REG_PORT','userName':'$username','inviteCode':'$code'}))")
+
+  local http_code
+  http_code=$(curl -sS -o "$TMP/${name}-join.json" -w "%{http_code}" \
+    -H "Authorization: Bearer $API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -X POST "http://127.0.0.1:$port/api/join-party" \
+    -d "$payload")
+
+  if [ "$http_code" != "200" ]; then
+    red "$name join-party failed (HTTP $http_code)"
+    cat "$TMP/${name}-join.json"
+    exit 1
+  fi
+  green "  $name joined via invite code"
 }
 
 verify_agent() {
@@ -161,11 +217,21 @@ verify_global_config() {
 cleanup
 prepare_zeroclaw_config
 start_hub "$ZEROCLAW_CONFIG"
+
+# Admin: bootstrap endpoint using root permit (not a test user)
+start_agent admin $ADMIN_PORT
+join_with_permit admin $ADMIN_PORT
+
+# Generate invite codes for alice and bob via admin
+ALICE_CODE=$(generate_invite_code "alice")
+BOB_CODE=$(generate_invite_code "bob")
+
+# Alice and bob: join via invite code (triggers zeroclaw_config + 0#Agent creation)
 start_agent alice $ALICE_PORT
 start_agent bob   $BOB_PORT
 
-join_with_permit alice $ALICE_PORT
-join_with_permit bob   $BOB_PORT
+join_with_invite_code alice $ALICE_PORT "alice" "$ALICE_CODE"
+join_with_invite_code bob   $BOB_PORT  "bob"   "$BOB_CODE"
 
 sleep 3
 
@@ -178,7 +244,8 @@ verify_agent bob   $BOB_PORT
 echo
 green "Hub:     127.0.0.1:$HUB_PORT"
 green "RegSrv:  http://127.0.0.1:$REG_PORT   <-- paste into GUI's 加入组织 dialog"
-green "Alice:   http://127.0.0.1:$ALICE_PORT  (token $API_TOKEN)"
-green "Bob:     http://127.0.0.1:$BOB_PORT  (token $API_TOKEN)"
+green "Admin:   http://127.0.0.1:$ADMIN_PORT  (token $API_TOKEN, user: root)"
+green "Alice:   http://127.0.0.1:$ALICE_PORT  (token $API_TOKEN, user: alice)"
+green "Bob:     http://127.0.0.1:$BOB_PORT    (token $API_TOKEN, user: bob)"
 echo
 yellow "Logs: tail -f $TMP/alice.log $TMP/bob.log $TMP/hub.log"
