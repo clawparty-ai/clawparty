@@ -46,7 +46,7 @@ jobs:
           ./build/deps.sh
           ./build/pipy.sh
           mkdir -p bin
-          cp pipy/bin/Release/pipy bin/ztm
+          cp pipy/bin/pipy bin/ztm
 
       - name: Build ZeroClaw
         run: |
