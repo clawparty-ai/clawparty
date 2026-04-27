@@ -50,7 +50,7 @@
           </div>
         </div>
         <div class="message-body">
-          <div v-if="msg.isTyping" class="typing-indicator">
+          <div v-if="msg.isTyping" class="typing-indicator" :class="{ 'typing-indicator-hidden': chat.isGroupChat }">
             <span class="typing-dot"></span>
             <span class="typing-dot"></span>
             <span class="typing-dot"></span>
@@ -1806,6 +1806,10 @@ onUnmounted(() => {
 
 .message-content :deep(a:hover) {
   text-decoration: underline;
+}
+
+.typing-indicator-hidden {
+  display: none !important;
 }
 
 .typing-indicator {
