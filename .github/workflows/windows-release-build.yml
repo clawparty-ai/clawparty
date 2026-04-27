@@ -1,0 +1,85 @@
+name: windows-release-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.5.3)'
+        required: true
+        default: 'v0.5.3'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history including tags for git describe
+
+      - name: Setup MSBuild (x64)
+        uses: microsoft/setup-msbuild@v2
+        with:
+          msbuild-architecture: x64
+
+      - name: Setup CMake + Ninja
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "~3.25.0"
+          ninjaVersion: "^1.11.1"
+
+      - name: Setup NASM
+        uses: ilammy/setup-nasm@v1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Fetch all tags
+        shell: bash
+        run: git fetch --force --tags
+
+      - name: Build ztm (Pipy)
+        run: |
+          CALL build\deps.cmd
+          CALL build\pipy.cmd
+          IF NOT EXIST bin (MD bin)
+          COPY pipy\bin\Release\pipy.exe bin\ztm.exe
+
+      - name: Build ZeroClaw
+        run: |
+          cd zeroclaw
+          cargo build --release --features gateway
+          cd ..
+          COPY zeroclaw\target\release\zeroclaw.exe bin\zeroclaw.exe
+
+      - name: Build Web GUI
+        run: |
+          cd chat-gui
+          npm install --no-audit
+          npm run build
+          cd ..
+
+      - name: Package release (ZIP)
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path "dist"
+          Copy-Item "bin\ztm.exe" "dist\ztm.exe"
+          Copy-Item "bin\zeroclaw.exe" "dist\zeroclaw.exe"
+          Copy-Item -Recurse -Force "agent\gui" "dist\gui"
+          $tag = "${{ github.event.inputs.tag }}"
+          Compress-Archive -Path "dist\*" -DestinationPath "clawparty-$tag-win-x86_64.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawparty-${{ github.event.inputs.tag }}-win-x86_64
+          path: clawparty-${{ github.event.inputs.tag }}-win-x86_64.zip
