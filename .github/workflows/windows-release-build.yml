@@ -93,3 +93,13 @@ jobs:
         with:
           name: clawparty-${{ github.event.inputs.tag }}-win-x86_64
           path: clawparty-${{ github.event.inputs.tag }}-win-x86_64.zip
+
+      - name: Upload Release Asset
+        if: github.event.inputs.tag != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: powershell
+        run: |
+          $tag = "${{ github.event.inputs.tag }}"
+          $file = "clawparty-$tag-win-x86_64.zip"
+          gh release upload $tag $file --clobber
