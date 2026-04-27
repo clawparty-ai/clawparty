@@ -200,12 +200,19 @@
 
             <!-- Description -->
             <div class="form-field">
-              <label class="form-label">描述（可选）</label>
-              <input
+              <label class="form-label">
+                描述（可选）
+                <span class="char-count" :class="{ 'char-count-warn': newZAgentDescription.length > 2800 }">
+                  {{ newZAgentDescription.length }}/3000
+                </span>
+              </label>
+              <textarea
                 v-model="newZAgentDescription"
-                class="search-input"
+                class="search-input desc-textarea"
                 placeholder="Agent 描述，例如：负责客服回复的助手"
-              />
+                :maxlength="3000"
+                rows="4"
+              ></textarea>
             </div>
 
             <!-- Model Config Section -->
@@ -1007,7 +1014,7 @@ const showCreateZAgentDialog = ref(false)
 const showZAgentTemplates = ref(false)
 const newZAgentName = ref('')
 const newZAgentDescription = ref('')
-const showModelConfig = ref(true)
+const showModelConfig = ref(false)
 const newZAgentProvider = ref('')
 const newZAgentApiEndpoint = ref('')
 const newZAgentApiKey = ref('')
@@ -2399,6 +2406,26 @@ const getStatusText = (agent) => {
   color: #555;
   font-size: 13px;
   font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.char-count {
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.char-count-warn {
+  color: #e01e5a;
+}
+
+.desc-textarea {
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.5;
+  font-family: inherit;
 }
 
 .required {

@@ -23,6 +23,11 @@ const editingAgent = ref(null)
 const editorContent = ref('')
 const agentName = ref('')
 const showDuplicateConfirm = ref(false)
+const showModelConfig = ref(false)
+const tplProvider = ref('')
+const tplApiEndpoint = ref('')
+const tplApiKey = ref('')
+const tplModel = ref('')
 
 watch(() => props.show, async (val) => {
   if (val) {
@@ -143,14 +148,17 @@ const handleInstall = async (agent) => {
       let gcRes = null
       try { gcRes = await zs.getGlobalConfig() } catch {}
       const llm = gcRes?.data?.llm || {}
+
+      // Use user-provided model config if any field is filled, otherwise use global config
+      const hasCustomConfig = tplProvider.value || tplApiEndpoint.value || tplApiKey.value || tplModel.value
       const res = await zs.createAgent({
         agent_name: agent.slug,
         display_name: agentName.value || agent.name,
         soul_content: editorContent.value,
-        provider: llm.provider || null,
-        api_endpoint: llm.api_endpoint || null,
-        api_key: llm.api_key || null,
-        model: llm.model || null
+        provider: hasCustomConfig ? (tplProvider.value || null) : (llm.provider || null),
+        api_endpoint: hasCustomConfig ? (tplApiEndpoint.value || null) : (llm.api_endpoint || null),
+        api_key: hasCustomConfig ? (tplApiKey.value || null) : (llm.api_key || null),
+        model: hasCustomConfig ? (tplModel.value || null) : (llm.model || null)
       })
       const actualName = res.data?.agent_name || agent.slug
       try { await zs.startAgent(actualName) } catch (e) {
@@ -189,6 +197,11 @@ const handleCancelEdit = () => {
   editingAgent.value = null
   editorContent.value = ''
   agentName.value = ''
+  showModelConfig.value = false
+  tplProvider.value = ''
+  tplApiEndpoint.value = ''
+  tplApiKey.value = ''
+  tplModel.value = ''
 }
 
 const handleClose = () => {
@@ -196,6 +209,11 @@ const handleClose = () => {
   editorContent.value = ''
   agentName.value = ''
   error.value = ''
+  showModelConfig.value = false
+  tplProvider.value = ''
+  tplApiEndpoint.value = ''
+  tplApiKey.value = ''
+  tplModel.value = ''
   emit('close')
 }
 
@@ -293,6 +311,43 @@ const handleBackToEdit = () => {
               class="editor-textarea"
               placeholder="Edit SOUL.md content..."
             ></textarea>
+
+            <!-- Collapsible model config -->
+            <div class="model-config-section">
+              <button class="model-config-toggle" @click="showModelConfig = !showModelConfig">
+                <span class="toggle-icon">{{ showModelConfig ? '▾' : '▸' }}</span>
+                模型配置（可选，留空使用全局配置）
+              </button>
+              <div v-if="showModelConfig" class="model-config-fields">
+                <div class="tpl-form-row">
+                  <label class="tpl-label">Provider</label>
+                  <select v-model="tplProvider" class="tpl-input tpl-select">
+                    <option value="">-- 使用全局配置 --</option>
+                    <option value="custom">OpenAI 兼容（自定义端点）</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="qwen">阿里云通义</option>
+                    <option value="moonshot">月之暗面 Kimi</option>
+                    <option value="doubao">字节豆包</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="ollama">本地 Ollama</option>
+                  </select>
+                </div>
+                <div v-if="tplProvider === 'custom' || tplProvider === 'ollama'" class="tpl-form-row">
+                  <label class="tpl-label">API 端点</label>
+                  <input v-model="tplApiEndpoint" class="tpl-input" :placeholder="tplProvider === 'ollama' ? 'http://localhost:11434' : 'https://your-endpoint/v1'" />
+                </div>
+                <div class="tpl-form-row">
+                  <label class="tpl-label">API Key</label>
+                  <input v-model="tplApiKey" type="password" class="tpl-input" placeholder="sk-..." autocomplete="new-password" />
+                </div>
+                <div class="tpl-form-row">
+                  <label class="tpl-label">模型名称</label>
+                  <input v-model="tplModel" class="tpl-input" placeholder="gpt-4o-mini" />
+                </div>
+              </div>
+            </div>
+
             <div class="editor-actions">
               <button class="cancel-btn" @click="handleCancelEdit">取消</button>
               <button
@@ -677,6 +732,7 @@ const handleBackToEdit = () => {
 
 .editor-textarea {
   flex: 1;
+  min-height: 80px;
   width: 100%;
   padding: 12px;
   border: 1px solid rgba(0, 0, 0, 0.15);
@@ -765,5 +821,80 @@ const handleBackToEdit = () => {
   display: flex;
   gap: 12px;
   justify-content: center;
+}
+
+.model-config-section {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+
+.model-config-toggle {
+  width: 100%;
+  background: rgba(102, 126, 234, 0.06);
+  border: none;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s;
+}
+
+.model-config-toggle:hover {
+  background: rgba(102, 126, 234, 0.12);
+}
+
+.toggle-icon {
+  font-size: 10px;
+  color: #667eea;
+}
+
+.model-config-fields {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fafafa;
+}
+
+.tpl-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tpl-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  width: 72px;
+  flex-shrink: 0;
+}
+
+.tpl-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+  color: #333;
+}
+
+.tpl-input:focus {
+  outline: none;
+  border-color: #4095fe;
+}
+
+.tpl-select {
+  appearance: none;
+  cursor: pointer;
 }
 </style>

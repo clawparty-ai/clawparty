@@ -477,16 +477,25 @@ function createAgent(agentName, displayName, modelConfig, description, workspace
   os.write(configPath, patchedConfig)
   console.log('[AGENT] Wrote config with pairing disabled: ' + configPath)
 
+  // Build identity header from display_name / description and prepend to SOUL.md
+  var identityHeader = ''
+  if (displayName || description) {
+    identityHeader += '# ' + (displayName || agentName) + '\n\n'
+    if (description) identityHeader += description + '\n\n'
+  }
+
   // Write AI-generated workspace files if provided
-  if (workspaceFiles) {
-    if (workspaceFiles.soul_md) {
-      os.write(os.path.join(workspaceDir, 'SOUL.md'), workspaceFiles.soul_md)
-      console.log('[AGENT] Wrote SOUL.md')
-    }
-    if (workspaceFiles.agents_md) {
-      os.write(os.path.join(workspaceDir, 'AGENTS.md'), workspaceFiles.agents_md)
-      console.log('[AGENT] Wrote AGENTS.md')
-    }
+  if (workspaceFiles && workspaceFiles.soul_md) {
+    os.write(os.path.join(workspaceDir, 'SOUL.md'), identityHeader + workspaceFiles.soul_md)
+    console.log('[AGENT] Wrote SOUL.md')
+  } else if (identityHeader) {
+    // No soul_md provided but we have identity info — write it as the initial SOUL.md
+    os.write(os.path.join(workspaceDir, 'SOUL.md'), identityHeader)
+    console.log('[AGENT] Wrote SOUL.md with identity header')
+  }
+  if (workspaceFiles && workspaceFiles.agents_md) {
+    os.write(os.path.join(workspaceDir, 'AGENTS.md'), workspaceFiles.agents_md)
+    console.log('[AGENT] Wrote AGENTS.md')
   }
 
   // P2: Auto-inject Task Management into SOUL.md

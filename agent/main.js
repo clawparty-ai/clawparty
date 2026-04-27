@@ -372,15 +372,46 @@ function main(listen, apiToken, noAuth) {
         var gc = db.getGroupChat(groupId)
         if (!gc) return response(404, { error: 'Group chat not found: ' + groupId })
 
-        var ownerAgent = api.getAgentStatus(gc.owner_agent)
-        if (!ownerAgent || ownerAgent.status !== 'running') {
-          return response(503, { error: 'Group owner agent not running' })
-        }
+        // Aggregate messages from all member agents (owner + members)
+        var allAgentNames = [gc.owner_agent].concat(gc.members || [])
+        var allMessages = []
+        var seenUserKeys = {}
 
-        var zeroclawAgent = new http.Agent('localhost:' + ownerAgent.port)
-        return zeroclawAgent.request('GET', '/api/sessions/' + gc.session_id + '/messages').then(
-          res => response(res.head.status, res.body.toString())
-        )
+        var promises = allAgentNames.map(function(agentName) {
+          var agentStatus = api.getAgentStatus(agentName)
+          if (!agentStatus || agentStatus.status !== 'running') return Promise.resolve()
+          var zeroclawAgent = new http.Agent('localhost:' + agentStatus.port)
+          return zeroclawAgent.request('GET', '/api/sessions/' + gc.session_id + '/messages').then(
+            function(res) {
+              if (res.head.status !== 200) return
+              try {
+                var data = JSON.decode(res.body)
+                var messages = data.messages || []
+                messages.forEach(function(msg) {
+                  if (msg.role === 'assistant') {
+                    allMessages.push(Object.assign({}, msg, { _agentName: agentName }))
+                  } else if (msg.role === 'user') {
+                    // Deduplicate: same injected text appears in every agent's session
+                    var key = (msg.content || '') + '|' + (msg.created_at || '')
+                    if (!seenUserKeys[key]) {
+                      seenUserKeys[key] = true
+                      allMessages.push(msg)
+                    }
+                  }
+                })
+              } catch(e) {}
+            }
+          ).catch(function() {})
+        })
+
+        return Promise.all(promises).then(function() {
+          allMessages.sort(function(a, b) {
+            var ta = a.created_at ? new Date(a.created_at).getTime() : 0
+            var tb = b.created_at ? new Date(b.created_at).getTime() : 0
+            return ta - tb
+          })
+          return response(200, JSON.encode({ messages: allMessages }))
+        })
       },
     },
 
@@ -413,9 +444,9 @@ function main(listen, apiToken, noAuth) {
         console.log('[API] POST /api/agents - Creating agent: ' + agentName)
 
         try {
-          var workspaceFiles = null
+          var workspaceFiles = {}
           if (soulContent) {
-            workspaceFiles = { soul_md: soulContent }
+            workspaceFiles.soul_md = soulContent
           }
           var result = api.createAgent(agentName, displayName, modelConfig, description, workspaceFiles)
           console.log('[API] Agent created: ' + result.agent_name + ', result=OK')

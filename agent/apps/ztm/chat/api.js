@@ -36,7 +36,7 @@ function loadFilter(name) {
   }
 }
 
-export default function ({ app, mesh, db, spawnOpenclaw }) {
+export default function ({ app, mesh, db, spawnOpenclaw, getLocalZAgentNames }) {
   var chats = []
   
   // Helper: spawn openclaw via gateway call instead of CLI
@@ -197,52 +197,40 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
   // Fetch local openclaw agent names as a Promise resolving to a string[]
   function getLocalAgentNames() {
     console.log('[getLocalAgentNames] Starting to fetch local agent names')
-    try {
-      console.log('[getLocalAgentNames] Attempting to get cache local_agent_ids')
-      var ids = db.getCache('local_agent_ids')
-      console.log('[getLocalAgentNames] Got cache, ids =', ids, 'type =', typeof ids)
-      var openclawAgents = []
-      if (ids && typeof ids.forEach === 'function') {
-        ids.forEach(function (id) { openclawAgents.push('' + id) })
-      } else if (Array.isArray(ids)) {
-        openclawAgents = ids.map(String)
-      }
-    } catch (e) {
-      console.error('[getLocalAgentNames] Error:', e)
-      openclawAgents = []
-    }
-    console.log('[getLocalAgentNames] openclaw agents:', openclawAgents)
 
-    // Fetch zeroclaw sessions and prepend them to the list
-    return getZeroclawSessionsFromAgent().then(function(zeroclawSessions) {
-      var zeroclawAgents = []
-      if (zeroclawSessions && zeroclawSessions.length > 0) {
-        zeroclawSessions.forEach(function(session) {
-          zeroclawAgents.push('zeroclaw:' + session.session_id)
-        })
+    // Fetch zeroclaw agents from agent manager API
+    return getZeroclawAgentsFromManager().then(function(zeroclawAgents) {
+      console.log('[getLocalAgentNames] zeroclaw agents from manager:', zeroclawAgents)
+
+      // Also get openclaw agents from cache
+      var openclawAgents = []
+      try {
+        var ids = db.getCache('local_agent_ids')
+        console.log('[getLocalAgentNames] Got cache local_agent_ids, ids =', ids)
+        if (ids && typeof ids.forEach === 'function') {
+          ids.forEach(function (id) { openclawAgents.push('' + id) })
+        } else if (Array.isArray(ids)) {
+          openclawAgents = ids.map(String)
+        }
+      } catch (e) {
+        console.error('[getLocalAgentNames] Error reading cache:', e)
       }
-      console.log('[getLocalAgentNames] zeroclaw agents:', zeroclawAgents)
-      console.log('[getLocalAgentNames] Returning combined list:', zeroclawAgents.concat(openclawAgents))
-      // Return zeroclaw sessions first, then openclaw agents
-      return zeroclawAgents.concat(openclawAgents)
+      console.log('[getLocalAgentNames] openclaw agents from cache:', openclawAgents)
+
+      var combined = zeroclawAgents.concat(openclawAgents)
+      console.log('[getLocalAgentNames] Returning combined list:', combined)
+      return combined
     })
   }
 
-  // Fetch zeroclaw sessions from zeroclaw gateway
-  function getZeroclawSessionsFromAgent() {
-    console.log('[getZeroclawSessionsFromAgent] Fetching zeroclaw sessions')
+  // Fetch zeroclaw agents from agent manager API via HTTP
+  function getZeroclawAgentsFromManager() {
     try {
-      var agent = new http.Agent('localhost:42617')
-      return agent.request('GET', '/api/sessions').then(function(res) {
-        var data = JSON.decode(res.body)
-        console.log('[getZeroclawSessionsFromAgent] Got sessions:', data)
-        return data.sessions || []
-      }).catch(function(e) {
-        console.error('[getZeroclawSessionsFromAgent] Error:', e)
-        return []
-      })
+      var names = getLocalZAgentNames ? getLocalZAgentNames() : []
+      console.log('[getZeroclawAgentsFromManager] in-memory agent names:', names)
+      return Promise.resolve(Array.isArray(names) ? names : [])
     } catch (e) {
-      console.error('[getZeroclawSessionsFromAgent] Error:', e)
+      console.error('[getZeroclawAgentsFromManager] Error:', e)
       return Promise.resolve([])
     }
   }
@@ -435,9 +423,9 @@ export default function ({ app, mesh, db, spawnOpenclaw }) {
     // Build rewritten message for the openclaw agent CLI
     function buildAgentMessage(isMentioned) {
       if (isMentioned) {
-        return '在group chat ' + groupName + '里，' + senderUsername + ' 给你发送了信息，给他回复一下，发送的内容是"' + text + '"'
+        return '在群聊"' + groupName + '"里，' + senderUsername + ' @了你并说："' + cleanedText + '"'
       } else {
-        return '在group chat ' + groupName + '里，' + senderUsername + ' 说话了看看如何回复，说的内容是"' + text + '"'
+        return '在群聊"' + groupName + '"里，' + senderUsername + ' 说："' + cleanedText + '"'
       }
     }
 

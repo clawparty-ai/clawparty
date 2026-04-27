@@ -106,13 +106,23 @@ start_agent() {
   wait_port "$port" "agent $name"
 }
 
+create_invite_code() {
+  local code=$1 name=$2
+  log "creating invite code: $code for $name"
+  curl -sS -X POST "http://127.0.0.1:$HUB_PORT/api/invite-codes" \
+    -H "Content-Type: application/json" \
+    -d "{\"code\":\"$code\",\"name\":\"$name\",\"email\":\"$name@test.local\"}" \
+    > /dev/null
+}
+
 join_party() {
-  local name=$1 port=$2
-  log "$name joining via local reg server (username=$name)"
-  ZTM_CONFIG="127.0.0.1:$port" ZTM_API_TOKEN="$API_TOKEN" \
-    "$ZTM" join party \
-      --reg-url "http://127.0.0.1:$REG_PORT" \
-      --name "$name"
+  local name=$1 port=$2 invite_code=$3
+  log "$name joining via local reg server (username=$name, invite=$invite_code)"
+  curl -sS -X POST "http://127.0.0.1:$port/api/join-party" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $API_TOKEN" \
+    -d "{\"regUrl\":\"http://127.0.0.1:$REG_PORT\",\"userName\":\"$name\",\"inviteCode\":\"$invite_code\"}" \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print('OK' if d.get('ok') else 'FAIL: ' + d.get('message','unknown'))"
 }
 
 cleanup
@@ -120,10 +130,13 @@ start_hub
 start_agent alice $ALICE_PORT
 start_agent bob   $BOB_PORT
 
-# Both agents join via the local reg server. The reg server issues unique
-# usernames if collision occurs (alice-<suffix>, bob-<suffix>).
-join_party alice $ALICE_PORT
-join_party bob   $BOB_PORT
+# Create invite codes for alice and bob
+create_invite_code "ALICE001" "Alice Test User"
+create_invite_code "BOB001" "Bob Test User"
+
+# Both agents join via the local reg server using their invite codes
+join_party alice $ALICE_PORT "ALICE001"
+join_party bob   $BOB_PORT "BOB001"
 
 sleep 2
 log "done"

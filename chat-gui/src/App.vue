@@ -1636,18 +1636,47 @@ const enterGroupChat = async (groupId) => {
 
   activeGroupWsMap.set(groupId, connections)
 
-  // Load historical messages from owner agent
+  // Load historical messages from all member agents
   try {
-    const res = await groupChatService.getGroupMessages(groupId)
+    const res = await groupChatService.getGroupMessages(group.groupId)
     if (res.data && res.data.messages) {
-      group.messages = res.data.messages.map(msg => ({
-        text: msg.content || '',
-        sender: msg.role === 'user' ? (currentMeshAgentUsername.value || 'You') : (msg.role === 'assistant' ? group.ownerAgent : msg.role),
-        time: formatTime(msg.created_at),
-        timestamp: new Date(msg.created_at).getTime(),
-        isSent: msg.role === 'user',
-        isTemp: false
-      }))
+      const parsed = []
+      for (const msg of res.data.messages) {
+        let text = msg.content || ''
+        let sender
+        let isSent = false
+
+        if (msg.role === 'user') {
+          // Parse injected text to recover original message and sender
+          // Formats:
+          //   在群聊"..."里，{sender} 说："..."，如果...
+          //   在群聊"..."里，{sender} @了你并说："..."，请回复。
+          //   在群聊"..."里，{sender} 对其他人说："..."，如果...
+          const m = text.match(/在群聊"[^"]*"里，(.+?)(?:@了你并)?(?:对其他人)?说："([\s\S]*?)"[，。]/)
+          if (m) {
+            sender = m[1].trim()
+            text = m[2]
+          } else {
+            sender = currentMeshAgentUsername.value || 'You'
+          }
+          isSent = sender === (currentMeshAgentUsername.value || 'You')
+        } else {
+          // assistant message — use the tagged agent name
+          sender = msg._agentName || group.ownerAgent
+          // Filter out NO_REPLY responses
+          if (text.trim() === 'NO_REPLY' || text.trim() === '不回复') continue
+        }
+
+        parsed.push({
+          text,
+          sender,
+          time: formatTime(msg.created_at),
+          timestamp: msg.created_at ? new Date(msg.created_at).getTime() : 0,
+          isSent,
+          isTemp: false
+        })
+      }
+      group.messages = parsed
     }
   } catch (e) {
     console.error('[GroupChat] Failed to load messages:', e)
@@ -1700,11 +1729,34 @@ const createGroupChatMessageHandler = (groupId, agentName) => {
       if (data.full_response) {
         parseTaskTags(data.full_response, agentName)
       }
+      const replyText = data.full_response || ''
+      // Check if agent replied with NO_REPLY / 不回复 marker
+      const isNoReply = replyText.includes('NO_REPLY') || replyText.includes('不回复')
+
       // Finalize the typing message
       const lastTyping = group.messages[group.messages.length - 1]
       if (lastTyping && lastTyping.isTyping && lastTyping.agentName === agentName) {
-        lastTyping.isTyping = false
-        lastTyping.text = data.full_response || lastTyping.text
+        if (isNoReply) {
+          // Remove the typing message if agent chose not to reply
+          group.messages.pop()
+        } else {
+          lastTyping.isTyping = false
+          lastTyping.text = replyText
+        }
+      }
+
+      // Broadcast this agent's reply to all other agents in the group (skip if NO_REPLY)
+      if (replyText && !isNoReply) {
+        const groupName = group.groupName || '群聊'
+        const injectedReply = `在群聊"${groupName}"里，${agentName} 说："${replyText}"，如果不需要你回复，请只回复 NO_REPLY。`
+        const connections = activeGroupWsMap.get(groupId)
+        if (connections) {
+          for (const conn of connections) {
+            if (conn.agentName !== agentName && conn.ws && conn.ws.isConnected()) {
+              conn.ws.sendMessage(injectedReply)
+            }
+          }
+        }
       }
       break
     }
@@ -1776,13 +1828,44 @@ const sendMessage = async () => {
         isTemp: true
       })
 
-      // Send to all member agents via WS
+      // Send to all member agents via WS with prompt injection
       const connections = activeGroupWsMap.get(group.groupId)
       if (connections) {
-        for (const conn of connections) {
-          if (conn.ws && conn.ws.isConnected()) {
-            conn.ws.sendMessage(text)
+        const groupName = group.groupName || '群聊'
+        const senderName = currentMeshAgentUsername.value || 'You'
+
+        // Parse @mentions from the message
+        const mentionPunctChars = ' ,.!?;:\'"、。！？；："'
+        const mentionedNames = []
+        text.split(' ').forEach(token => {
+          if (token.length > 1 && token.charAt(0) === '@') {
+            let name = token.substring(1)
+            for (let i = 0; i < name.length; i++) {
+              if (mentionPunctChars.includes(name.charAt(i))) { name = name.substring(0, i); break }
+            }
+            if (name.length > 0) mentionedNames.push(name.toLowerCase())
           }
+        })
+        const hasMentions = mentionedNames.length > 0
+        // Clean text: strip @name tokens
+        const cleanedText = hasMentions
+          ? text.split(' ').filter(t => !(t.length > 1 && t.charAt(0) === '@')).join(' ').trim()
+          : text
+
+        for (const conn of connections) {
+          if (!conn.ws || !conn.ws.isConnected()) continue
+          const isMentioned = hasMentions && mentionedNames.includes(conn.agentName.toLowerCase())
+          let injectedText
+          if (isMentioned) {
+            injectedText = `在群聊"${groupName}"里，${senderName} @了你并说："${cleanedText}"，请回复。`
+          } else if (hasMentions) {
+            // Someone else was @-mentioned — agent just observes
+            injectedText = `在群聊"${groupName}"里，${senderName} 对其他人说："${text}"，如果这条消息不需要你参与，请只回复 NO_REPLY。`
+          } else {
+            // No mentions — all agents should consider responding
+            injectedText = `在群聊"${groupName}"里，${senderName} 说："${text}"，请根据你的角色参与群聊，如果这条消息完全不需要你回复，请只回复 NO_REPLY。`
+          }
+          conn.ws.sendMessage(injectedText)
         }
       }
       newMessage.value = ''

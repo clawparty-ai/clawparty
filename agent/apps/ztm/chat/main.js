@@ -186,7 +186,7 @@ export default function ({ app, mesh, utils }) {
   }
   // ────────────────────────────────────────────────────────────────────────
 
-  var api = initAPI({ app, mesh, db, spawnOpenclaw })
+  var api = initAPI({ app, mesh, db, spawnOpenclaw, getLocalZAgentNames: () => api.allAgentStatuses().map(function(a) { return a.agent_name }) })
   var cli = initCLI({ app, mesh, utils, api })
 
   var $ctx
