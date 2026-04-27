@@ -41,7 +41,7 @@ jobs:
           node-version: '22'
 
       - name: Setup Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Fetch all tags
         shell: bash
