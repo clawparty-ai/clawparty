@@ -1,0 +1,98 @@
+name: linux-arm64-release-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.5.3)'
+        required: true
+        default: 'v0.5.3'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y clang cmake make
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify architecture
+        run: |
+          set -e
+          echo "Runner architecture: $(uname -m)"
+          if [ "$(uname -m)" != "aarch64" ]; then
+            echo "Expected aarch64 runner"
+            exit 1
+          fi
+
+      - name: Build ztm (Pipy)
+        run: |
+          set -e
+          ./build/deps.sh
+          ./build/pipy.sh
+          mkdir -p bin
+          cp pipy/bin/Release/pipy bin/ztm
+
+      - name: Build ZeroClaw
+        run: |
+          set -e
+          cd zeroclaw
+          cargo build --release --features gateway
+          cd ..
+          cp zeroclaw/target/release/zeroclaw bin/zeroclaw
+
+      - name: Install GUI dependencies
+        working-directory: ./chat-gui
+        run: npm ci --no-audit
+
+      - name: Build Web GUI
+        working-directory: ./chat-gui
+        run: npm run build
+
+      - name: Verify GUI output
+        run: |
+          if [ ! -f "agent/gui/index.html" ]; then
+            echo "GUI build failed: agent/gui/index.html not found"
+            exit 1
+          fi
+          echo "GUI build OK"
+
+      - name: Package release (tar.gz)
+        run: |
+          set -e
+          mkdir -p dist
+          cp bin/ztm dist/ztm
+          cp bin/zeroclaw dist/zeroclaw
+          cp -r agent/gui dist/gui
+          tag="${{ github.event.inputs.tag }}"
+          tar -czf "clawparty-${tag}-linux-arm64.tar.gz" -C dist .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawparty-${{ github.event.inputs.tag }}-linux-arm64
+          path: clawparty-${{ github.event.inputs.tag }}-linux-arm64.tar.gz
+
+      - name: Upload Release Asset
+        if: github.event.inputs.tag != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ github.event.inputs.tag }}"
+          file="clawparty-${tag}-linux-arm64.tar.gz"
+          gh release upload "$tag" "$file" --clobber
