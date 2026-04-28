@@ -50,7 +50,7 @@
           </div>
         </div>
         <div class="message-body">
-          <div v-if="msg.isTyping" class="typing-indicator" :class="{ 'typing-indicator-hidden': chat.isGroupChat }">
+          <div v-if="msg.isTyping && !chat.isGroupChat" class="typing-indicator">
             <span class="typing-dot"></span>
             <span class="typing-dot"></span>
             <span class="typing-dot"></span>
