@@ -429,6 +429,7 @@ function main(listen, apiToken, noAuth) {
         var displayName = body.display_name
         var description = body.description || null
         var soulContent = body.soul_content || null
+        var templateSource = body.template_source || null
         var modelConfig = null
 
         // Extract model config if any key field is provided
@@ -448,7 +449,7 @@ function main(listen, apiToken, noAuth) {
           if (soulContent) {
             workspaceFiles.soul_md = soulContent
           }
-          var result = api.createAgent(agentName, displayName, modelConfig, description, workspaceFiles)
+          var result = api.createAgent(agentName, displayName, modelConfig, description, workspaceFiles, templateSource)
           console.log('[API] Agent created: ' + result.agent_name + ', result=OK')
           return response(201, result)
         } catch (e) {

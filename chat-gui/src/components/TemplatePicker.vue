@@ -96,6 +96,11 @@ const handleInstallAll = async () => {
           agent_name: ag.slug,
           display_name: ag.name,
           soul_content: ag.systemPrompt || '',
+          template_source: {
+            industry: ag.industrySlug,
+            slug: ag.slug,
+            shared: props.source === 'shared'
+          },
           provider: llm.provider || null,
           api_endpoint: llm.api_endpoint || null,
           api_key: llm.api_key || null,
@@ -155,6 +160,11 @@ const handleInstall = async (agent) => {
         agent_name: agent.slug,
         display_name: agentName.value || agent.name,
         soul_content: editorContent.value,
+        template_source: {
+          industry: agent.industrySlug,
+          slug: agent.slug,
+          shared: props.source === 'shared'
+        },
         provider: hasCustomConfig ? (tplProvider.value || null) : (llm.provider || null),
         api_endpoint: hasCustomConfig ? (tplApiEndpoint.value || null) : (llm.api_endpoint || null),
         api_key: hasCustomConfig ? (tplApiKey.value || null) : (llm.api_key || null),

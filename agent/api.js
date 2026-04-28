@@ -430,7 +430,7 @@ function makeDisplayDirName(displayName, agentsDir) {
   }
 }
 
-function createAgent(agentName, displayName, modelConfig, description, workspaceFiles) {
+function createAgent(agentName, displayName, modelConfig, description, workspaceFiles, templateSource) {
   console.log('[AGENT] Creating agent: ' + agentName)
 
   // Check if agent already exists — if so, append random 2-digit suffix
@@ -464,6 +464,31 @@ function createAgent(agentName, displayName, modelConfig, description, workspace
 
   os.mkdir(workspaceDir, { recursive: true })
   console.log('[AGENT] Created workspace: ' + workspaceDir)
+
+  // Copy all .md files from template directory
+  if (templateSource) {
+    var templateBaseDir = templateSource.shared
+      ? os.path.join(os.home(), '.clawparty', '.agent-template', '.shared')
+      : os.path.join(os.home(), '.clawparty', '.agent-template')
+    var tplDir = os.path.join(templateBaseDir, templateSource.industry, templateSource.slug)
+    
+    var files = []
+    try { files = os.readDir(tplDir) } catch (e) { files = [] }
+    
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i]
+      if (f.endsWith('.md')) {
+        var srcPath = os.path.join(tplDir, f)
+        var destPath = os.path.join(workspaceDir, f)
+        try {
+          os.write(destPath, os.read(srcPath).toString())
+          console.log('[AGENT] Copied template file: ' + f)
+        } catch (e) {
+          console.log('[AGENT] Warning: failed to copy ' + f + ': ' + e)
+        }
+      }
+    }
+  }
 
   // Read template: prefer global-config, fallback to hub-distributed
   // Removed fallback to ~/.zeroclaw/config.toml
