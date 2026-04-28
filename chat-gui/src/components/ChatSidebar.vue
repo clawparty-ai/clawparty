@@ -712,48 +712,44 @@ const handleDeleteLocalGroup = inject('handleDeleteLocalGroup')
 const deleteZAgent = inject('deleteZAgent')
 const fetchZAgents = inject('fetchZAgents')
 
-// Agent status polling
-const pollingTimers = ref(new Map())
+// Agent status polling — global timer to avoid one request per starting agent
+var sidebarPollingTimer = null
 
-const startPolling = (agentName, interval) => {
-  stopPolling(agentName)
-  const timerId = setInterval(() => {
+const startPolling = () => {
+  if (sidebarPollingTimer) return
+  sidebarPollingTimer = setInterval(() => {
     fetchZAgents()
-  }, interval)
-  pollingTimers.value.set(agentName, timerId)
+  }, 3000)
 }
 
-const stopPolling = (agentName) => {
-  const timerId = pollingTimers.value.get(agentName)
-  if (timerId) {
-    clearInterval(timerId)
-    pollingTimers.value.delete(agentName)
+const stopPolling = () => {
+  if (sidebarPollingTimer) {
+    clearInterval(sidebarPollingTimer)
+    sidebarPollingTimer = null
   }
 }
 
 const stopAllPolling = () => {
-  pollingTimers.value.forEach((timerId) => clearInterval(timerId))
-  pollingTimers.value.clear()
+  stopPolling()
 }
 
 // Watch zAgents for status changes
-watch(zAgents, (newAgents, oldAgents) => {
+watch(zAgents, (newAgents) => {
   if (!newAgents) return
 
-  newAgents.forEach(agent => {
-    const oldAgent = oldAgents?.find(a => a.agent_name === agent.agent_name)
-    const status = agent.status || 'created'
-
-    // Start polling for 'starting' agents
-    if (status === 'starting' && !pollingTimers.value.has(agent.agent_name)) {
-      startPolling(agent.agent_name, 2000)
+  var hasStarting = false
+  for (var i = 0; i < newAgents.length; i++) {
+    if (newAgents[i].status === 'starting') {
+      hasStarting = true
+      break
     }
+  }
 
-    // Stop polling when status changes from 'starting' to 'running' or 'error'
-    if (oldAgent?.status === 'starting' && (status === 'running' || status === 'error')) {
-      stopPolling(agent.agent_name)
-    }
-  })
+  if (hasStarting) {
+    startPolling()
+  } else {
+    stopPolling()
+  }
 }, { deep: true })
 
 onUnmounted(() => {
@@ -1106,8 +1102,8 @@ const handleStartAgent = async (agentName) => {
   try {
     const { zagentService } = await import('../services/chatService')
     await zagentService.startAgent(agentName)
-    // Start polling immediately after starting the agent
-    startPolling(agentName, 2000)
+    // Start polling immediately after starting the agent (global timer)
+    startPolling()
     await fetchZAgents()
   } catch (error) {
     console.error('Failed to start zAgent:', error)
