@@ -465,19 +465,18 @@ function createAgent(agentName, displayName, modelConfig, description, workspace
   os.mkdir(workspaceDir, { recursive: true })
   console.log('[AGENT] Created workspace: ' + workspaceDir)
 
-  // Read template: prefer hub-distributed config, fallback to local
+  // Read template: prefer global-config, fallback to hub-distributed
+  // Removed fallback to ~/.zeroclaw/config.toml
+  var globalConfigPath = os.path.join(rootDir, 'global-config.toml')
   var hubTemplatePath = os.path.join(rootDir, 'zeroclaw-template.toml')
-  var localTemplatePath = os.path.join(os.home(), '.zeroclaw', 'config.toml')
-  var templatePath = hubTemplatePath
   var templateContent
 
   try {
-    templateContent = os.read(hubTemplatePath).toString()
-    console.log('[AGENT] Using hub-distributed config template: ' + hubTemplatePath)
+    templateContent = os.read(globalConfigPath).toString()
+    console.log('[AGENT] Using global config as template: ' + globalConfigPath)
   } catch (e) {
-    console.log('[AGENT] Hub template not found, using local template: ' + localTemplatePath)
-    templatePath = localTemplatePath
-    templateContent = os.read(localTemplatePath).toString()
+    console.log('[AGENT] Global config not found, using hub template: ' + hubTemplatePath)
+    templateContent = os.read(hubTemplatePath).toString()
   }
 
   // Patch config to disable pairing (all agents managed by ClawParty)
