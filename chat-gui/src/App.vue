@@ -1603,6 +1603,38 @@ const enterGroupChat = async (groupId) => {
   activeGroupId.value = groupId
   const allMembers = [group.ownerAgent, ...group.members]
 
+  // ── Auto-start non-running member agents ────────────────────────────
+  const startPromises = allMembers.map(async (agentName) => {
+    const agent = zAgents.value.find(a => a.agent_name === agentName)
+    if (!agent || agent.status === 'running') return { agentName, ok: true }
+    try {
+      console.log('[GroupChat] Auto-starting member:', agentName)
+      await zagentService.startAgent(agentName)
+      return { agentName, ok: true }
+    } catch (e) {
+      console.error('[GroupChat] Failed to start member:', agentName, e)
+      return { agentName, ok: false }
+    }
+  })
+  await Promise.all(startPromises)
+
+  // ── Wait for all members to reach running state ─────────────────────
+  const MAX_WAIT_MS = 15000
+  const POLL_INTERVAL_MS = 1000
+  const waitStart = Date.now()
+  while (Date.now() - waitStart < MAX_WAIT_MS) {
+    await fetchZAgents()
+    const allRunning = allMembers.every(name => {
+      const agent = zAgents.value.find(a => a.agent_name === name)
+      return agent?.status === 'running'
+    })
+    if (allRunning) {
+      console.log('[GroupChat] All members running')
+      break
+    }
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
+  }
+
   // Close old WS connections for this group if any
   const oldConnections = activeGroupWsMap.get(groupId)
   if (oldConnections) {
