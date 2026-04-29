@@ -1591,17 +1591,14 @@ const enterGroupChat = async (groupId) => {
   const group = localGroupChats.value.find(g => g.groupId === groupId)
   if (!group) return
 
-  // Clear other active chat states
+  // Clear other active chat states, but do NOT close zeroclawWS here —
+  // that belongs to the zAgent connection cache and will be reused when switching back.
   activeOpenclawAgent.value = null
   activeZeroClawSession.value = null
   activeZAgent.value = null
   activeChat.value = null
   currentZAgentName = null
   currentActiveChatId.value = null
-  if (zeroclawWS) {
-    zeroclawWS.close()
-    zeroclawWS = null
-  }
 
   activeGroupId.value = groupId
   const allMembers = [group.ownerAgent, ...group.members]
@@ -1746,13 +1743,21 @@ const createGroupChatMessageHandler = (groupId, agentName) => {
       }
 
       // Broadcast this agent's reply to all other agents in the group (skip if NO_REPLY)
+      // Only broadcast user-originated messages, not agent-to-agent broadcasts, to prevent message storms.
+      // We track this via conn._isBroadcastPending flag set when sending a broadcast message.
       if (replyText && !isNoReply) {
         const groupName = group.groupName || '群聊'
-        const injectedReply = `在群聊"${groupName}"里，${agentName} 说："${replyText}"，如果不需要你回复，请只回复 NO_REPLY。`
         const connections = activeGroupWsMap.get(groupId)
-        if (connections) {
+        // Find this agent's own connection to check if it was triggered by a broadcast
+        const ownConn = connections ? connections.find(c => c.agentName === agentName) : null
+        const wasTriggeredByBroadcast = ownConn && ownConn._isBroadcastPending
+        if (ownConn) ownConn._isBroadcastPending = false
+
+        if (!wasTriggeredByBroadcast && connections) {
+          const injectedReply = `在群聊"${groupName}"里，${agentName} 说："${replyText}"，如果不需要你回复，请只回复 NO_REPLY。`
           for (const conn of connections) {
             if (conn.agentName !== agentName && conn.ws && conn.ws.isConnected()) {
+              conn._isBroadcastPending = true
               conn.ws.sendMessage(injectedReply)
             }
           }
@@ -1806,6 +1811,14 @@ const sendMessage = async () => {
   if (!newMessage.value.trim() || sending.value) return
   const text = newMessage.value
   sending.value = true
+
+  // Safety timeout: reset sending state after 30 seconds to prevent permanent UI freeze
+  const sendingTimeout = setTimeout(() => {
+    if (sending.value) {
+      console.warn('[sendMessage] Timeout: resetting sending state')
+      sending.value = false
+    }
+  }, 30000)
 
   // Local group chat sending via WebSocket
   if (activeGroupId.value) {
@@ -1869,6 +1882,7 @@ const sendMessage = async () => {
         }
       }
       newMessage.value = ''
+      clearTimeout(sendingTimeout)
       sending.value = false
       return
     }
