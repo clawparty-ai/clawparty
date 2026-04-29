@@ -2544,6 +2544,9 @@ const createGroupChat = async (selectedAgentNames, groupName) => {
       messages: []
     })
 
+    // Refresh zAgents to include the newly created owner agent
+    await fetchZAgents()
+
     // Switch to this new group
     await enterGroupChat(result.group_id)
   } catch (error) {
