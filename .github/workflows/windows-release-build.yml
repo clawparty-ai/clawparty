@@ -63,12 +63,8 @@ jobs:
           cd ..
           COPY zeroclaw\target\release\zeroclaw.exe bin\zeroclaw.exe
 
-      - name: Build ClawParty (TUI)
-        run: |
-          cd tui
-          cargo build --release
-          cd ..
-          COPY tui\target\release\clawparty.exe bin\clawparty.exe
+      # Note: ClawParty (TUI) is Unix-only (uses libc::kill, process_group(), etc.)
+      # It is NOT built for Windows. Only ztm and zeroclaw are available on Windows.
 
       - name: Install GUI dependencies
         working-directory: ./chat-gui
@@ -92,16 +88,12 @@ jobs:
             Write-Error "Missing binary: bin\zeroclaw.exe"
             $fail = $true
           }
-          if (-Not (Test-Path "bin\clawparty.exe")) {
-            Write-Error "Missing binary: bin\clawparty.exe"
-            $fail = $true
-          }
           if (-Not (Test-Path "agent\gui\index.html")) {
             Write-Error "GUI build failed: agent\gui\index.html not found"
             $fail = $true
           }
           if ($fail) { exit 1 }
-          Write-Host "All binaries and GUI verified OK"
+          Write-Host "All Windows binaries and GUI verified OK (clawparty TUI is Unix-only)"
 
       - name: Package release (ZIP)
         shell: powershell
@@ -109,7 +101,6 @@ jobs:
           New-Item -ItemType Directory -Force -Path "dist"
           Copy-Item "bin\ztm.exe" "dist\ztm.exe"
           Copy-Item "bin\zeroclaw.exe" "dist\zeroclaw.exe"
-          Copy-Item "bin\clawparty.exe" "dist\clawparty.exe"
           Copy-Item -Recurse -Force "agent\gui" "dist\gui"
           $tag = "${{ github.event.inputs.tag }}"
           Compress-Archive -Path "dist\*" -DestinationPath "clawparty-$tag-win-x86_64.zip"
