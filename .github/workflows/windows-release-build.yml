@@ -86,6 +86,12 @@ jobs:
       - name: Verify binaries
         shell: powershell
         run: |
+          Write-Host "=== File sizes ==="
+          Get-ChildItem -Path "bin\" | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,2)}}
+          if (Test-Path "agent\gui\index.html") {
+            Write-Host "GUI files:"
+            Get-ChildItem -Recurse -Path "agent\gui" | Measure-Object -Property Length -Sum | Select-Object @{N='SizeMB';E={[math]::Round($_.Sum/1MB,2)}}
+          }
           $fail = $false
           if (-Not (Test-Path "bin\ztm.exe")) {
             Write-Error "Missing binary: bin\ztm.exe"
@@ -109,8 +115,12 @@ jobs:
           Copy-Item "bin\ztm.exe" "dist\ztm.exe"
           Copy-Item "bin\zeroclaw.exe" "dist\zeroclaw.exe"
           Copy-Item -Recurse -Force "agent\gui" "dist\gui"
+          Write-Host "=== dist directory contents ==="
+          Get-ChildItem -Recurse -Path "dist" | Select-Object FullName, @{N='SizeMB';E={[math]::Round($_.Length/1MB,2)}}
           $tag = "${{ github.event.inputs.tag }}"
           Compress-Archive -Path "dist\*" -DestinationPath "clawparty-$tag-win-x86_64.zip"
+          Write-Host "=== ZIP file size ==="
+          Get-Item "clawparty-$tag-win-x86_64.zip" | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,2)}}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
