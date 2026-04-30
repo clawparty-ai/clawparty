@@ -2869,6 +2869,34 @@ provide('createSession', createSession)
 provide('fetchZeroClawSessions', fetchZeroClawSessions)
 provide('localOpenclawAvailable', localOpenclawAvailable)
 
+// --- beforeunload: cleanly close WebSocket connections to prevent zeroclaw hang on refresh ---
+function handleBeforeUnload() {
+  if (zeroclawWS) {
+    try { zeroclawWS.close() } catch (e) {}
+    zeroclawWS = null
+  }
+  // Close all cached zAgent connections
+  var agentNames = Object.keys(wsConnections)
+  for (var k = 0; k < agentNames.length; k++) {
+    var conn = wsConnections[agentNames[k]]
+    if (conn && conn.zeroclawWS) {
+      try { conn.zeroclawWS.close() } catch (e) {}
+    }
+  }
+  // Close all group connections
+  activeGroupWsMap.forEach(function(connections) {
+    if (connections) {
+      for (var k = 0; k < connections.length; k++) {
+        var c = connections[k]
+        if (c && c.ws) {
+          try { c.ws.close() } catch (e) {}
+        }
+      }
+    }
+  })
+}
+window.addEventListener('beforeunload', handleBeforeUnload)
+
 const resolveEpDisplayName = (username) => {
   if (!username) return username
   // 优先从 openclawAgents 获取 identityName（人可读的名字）

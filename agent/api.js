@@ -10,6 +10,10 @@ var pqcSettings = null
 var p2pConfig = null
 var meshes = {}
 
+// Agent status cache: microsecond-level process checks instead of slow lsof
+var AGENT_STATUS_CACHE_TTL = 1000  // 1 second
+var _agentStatusCache = { ts: 0, data: {} }
+
 function findMesh(name) {
   var m = meshes[name]
   if (m) return m
@@ -682,11 +686,22 @@ function startAgent(agentName) {
     throw 'Agent not found: ' + agentName
   }
   
-  var currentPid = findZeroclawPid(agent.port)
-  if (currentPid) {
+  // Fast check: use recorded pid + kill -0 (microsecond)
+  // Fallback to lsof only if no pid recorded
+  var currentPid = agent.pid
+  if (currentPid && isProcessAlive(currentPid)) {
     console.log('[AGENT] Start skipped: agent already running with PID: ' + currentPid)
     db.updateAgentStatus(agentName, 'running', currentPid, null)
     throw 'Agent already running: ' + agentName
+  }
+  // Fallback to slow lsof if no pid or fast check failed but process might exist
+  if (!currentPid) {
+    currentPid = findZeroclawPid(agent.port)
+    if (currentPid) {
+      console.log('[AGENT] Start skipped: agent already running (found via lsof) PID: ' + currentPid)
+      db.updateAgentStatus(agentName, 'running', currentPid, null)
+      throw 'Agent already running: ' + agentName
+    }
   }
   
   if (agent.status === 'starting' || agent.status === 'running') {
@@ -760,8 +775,22 @@ function startAgent(agentName) {
   }
 }
 
+function isProcessAlive(pid) {
+  // Microsecond-level check: kill -0 does not send signal, just checks existence
+  // This is ~100x faster than lsof which scans all file descriptors
+  if (!pid || pid <= 0) return false
+  try {
+    pipy.exec('kill -0 ' + pid)
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
 function findZeroclawPid(port) {
-  // Try to find zeroclaw process by port using lsof
+  // Fallback: find zeroclaw process by port using lsof
+  // WARNING: lsof is expensive (scans all FDs) and blocks Pipy's single-threaded event loop
+  // Only used when pid is not recorded or when isProcessAlive fails unexpectedly
   try {
     var execResult = pipy.exec('lsof -ti:' + port)
     if (execResult) {
@@ -783,7 +812,7 @@ function findZeroclawPid(port) {
   } catch (e) {
     // lsof failed
   }
-  
+
   return null
 }
 
@@ -953,31 +982,54 @@ function createGroupOwnerAgent(groupId, groupName, memberAgents) {
   }
 }
 
+function _refreshAgentStatus(agent) {
+  if (!agent) return null
+  if (agent.status !== 'starting' && agent.status !== 'running') return agent
+  
+  // Fast path: use recorded pid + kill -0 (microsecond check)
+  var pid = agent.pid
+  if (pid && isProcessAlive(pid)) {
+    agent.status = 'running'
+    agent.error_msg = null
+    return agent
+  }
+  
+  // Medium path: try lsof to find the process by port
+  // (only if pid was missing or isProcessAlive returned false, but zeroclaw might actually be running)
+  var foundPid = findZeroclawPid(agent.port)
+  if (foundPid) {
+    agent.status = 'running'
+    agent.pid = foundPid
+    agent.error_msg = null
+    db.updateAgentStatus(agent.agent_name, 'running', foundPid, null)
+  } else if (agent.status === 'starting') {
+    // Still starting, keep waiting
+    agent.status = 'starting'
+  } else {
+    // Process disappeared
+    agent.status = 'stopped'
+    agent.pid = null
+    db.updateAgentStatus(agent.agent_name, 'stopped', null, null)
+  }
+  return agent
+}
+
 function getAgentStatus(agentName) {
+  var now = Date.now()
+  var cached = _agentStatusCache.data[agentName]
+  if (cached && (now - cached._ts) < AGENT_STATUS_CACHE_TTL) {
+    return cached
+  }
+  
   var agent = db.getAgent(agentName)
   if (!agent) {
     throw 'Agent not found: ' + agentName
   }
   
-  // Update status based on current process state
-  if (agent.status === 'starting' || agent.status === 'running') {
-    var currentPid = findZeroclawPid(agent.port)
-    if (currentPid) {
-      agent.status = 'running'
-      agent.pid = currentPid
-      agent.error_msg = null
-      db.updateAgentStatus(agentName, 'running', currentPid, null)
-    } else if (agent.status === 'starting') {
-      // Still starting, keep waiting
-      agent.status = 'starting'
-    } else {
-      // Process disappeared
-      agent.status = 'stopped'
-      agent.pid = null
-      db.updateAgentStatus(agentName, 'stopped', null, null)
-    }
-  }
-  
+  agent = _refreshAgentStatus(agent)
+  agent._ts = now
+  _agentStatusCache.data[agentName] = agent
+  _agentStatusCache.ts = now
   return agent
 }
 
@@ -996,30 +1048,23 @@ function checkGatewayHealth(port, timeoutMs) {
 }
 
 function allAgentStatuses() {
+  var now = Date.now()
   var agents = db.allAgents()
 
-  // Update status for starting/running agents
+  // Refresh each running/starting agent using fast pid checks
   for (var i = 0; i < agents.length; i++) {
     var agent = agents[i]
-    if (agent.status === 'starting' || agent.status === 'running') {
-      var currentPid = findZeroclawPid(agent.port)
-      if (currentPid) {
-        agent.status = 'running'
-        agent.pid = currentPid
-        agent.error_msg = null
-        db.updateAgentStatus(agent.agent_name, 'running', currentPid, null)
-      } else if (agent.status === 'starting') {
-        // Still starting
-        agent.status = 'starting'
-      } else {
-        // Process stopped
-        agent.status = 'stopped'
-        agent.pid = null
-        db.updateAgentStatus(agent.agent_name, 'stopped', null, null)
-      }
+    var cached = _agentStatusCache.data[agent.agent_name]
+    if (cached && (now - cached._ts) < AGENT_STATUS_CACHE_TTL) {
+      agents[i] = cached
+    } else {
+      agent = _refreshAgentStatus(agent)
+      agent._ts = now
+      _agentStatusCache.data[agent.agent_name] = agent
     }
   }
-
+  
+  _agentStatusCache.ts = now
   return agents
 }
 
