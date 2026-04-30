@@ -49,23 +49,7 @@ jobs:
         shell: bash
         run: git fetch --force --tags
 
-      - name: Build ztm (Pipy)
-        run: |
-          CALL build\deps.cmd
-          CALL build\pipy.cmd
-          IF NOT EXIST bin (MD bin)
-          COPY pipy\bin\Release\pipy.exe bin\ztm.exe
-
-      - name: Build ZeroClaw
-        run: |
-          cd zeroclaw
-          cargo build --release --features gateway
-          cd ..
-          COPY zeroclaw\target\release\zeroclaw.exe bin\zeroclaw.exe
-
-      # Note: ClawParty (TUI) is Unix-only (uses libc::kill, process_group(), etc.)
-      # It is NOT built for Windows. Only ztm and zeroclaw are available on Windows.
-
+      # Step A: Build GUI FIRST (makes files available for Pipy to embed)
       - name: Install GUI dependencies
         working-directory: ./chat-gui
         env:
@@ -75,6 +59,29 @@ jobs:
       - name: Build Web GUI
         working-directory: ./chat-gui
         run: npm run build
+
+      # Clear Pipy codebase cache so it re-packs agent/gui into ztm binary
+      - name: Clear Pipy codebase cache
+        run: IF EXIST pipy\build\deps\codebases.tar.gz.h DEL pipy\build\deps\codebases.tar.gz.h
+
+      # Step B: Build ztm (Pipy) — must happen AFTER GUI is in agent/gui/
+      - name: Build ztm (Pipy)
+        run: |
+          CALL build\deps.cmd
+          CALL build\pipy.cmd
+          IF NOT EXIST bin (MD bin)
+          COPY pipy\bin\Release\pipy.exe bin\ztm.exe
+
+      # Step C: Build ZeroClaw
+      - name: Build ZeroClaw
+        run: |
+          cd zeroclaw
+          cargo build --release --features gateway
+          cd ..
+          COPY zeroclaw\target\release\zeroclaw.exe bin\zeroclaw.exe
+
+      # Note: ClawParty (TUI) is Unix-only (uses libc::kill, process_group(), etc.)
+      # It is NOT built for Windows. Only ztm and zeroclaw are available on Windows.
 
       - name: Verify binaries
         shell: powershell
