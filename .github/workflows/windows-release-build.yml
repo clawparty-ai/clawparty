@@ -63,6 +63,13 @@ jobs:
           cd ..
           COPY zeroclaw\target\release\zeroclaw.exe bin\zeroclaw.exe
 
+      - name: Build ClawParty (TUI)
+        run: |
+          cd tui
+          cargo build --release
+          cd ..
+          COPY tui\target\release\clawparty.exe bin\clawparty.exe
+
       - name: Install GUI dependencies
         working-directory: ./chat-gui
         env:
@@ -73,14 +80,28 @@ jobs:
         working-directory: ./chat-gui
         run: npm run build
 
-      - name: Verify GUI output
+      - name: Verify binaries
         shell: powershell
         run: |
+          $fail = $false
+          if (-Not (Test-Path "bin\ztm.exe")) {
+            Write-Error "Missing binary: bin\ztm.exe"
+            $fail = $true
+          }
+          if (-Not (Test-Path "bin\zeroclaw.exe")) {
+            Write-Error "Missing binary: bin\zeroclaw.exe"
+            $fail = $true
+          }
+          if (-Not (Test-Path "bin\clawparty.exe")) {
+            Write-Error "Missing binary: bin\clawparty.exe"
+            $fail = $true
+          }
           if (-Not (Test-Path "agent\gui\index.html")) {
             Write-Error "GUI build failed: agent\gui\index.html not found"
-            exit 1
+            $fail = $true
           }
-          Write-Host "GUI build OK: agent\gui\index.html found"
+          if ($fail) { exit 1 }
+          Write-Host "All binaries and GUI verified OK"
 
       - name: Package release (ZIP)
         shell: powershell
@@ -88,6 +109,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path "dist"
           Copy-Item "bin\ztm.exe" "dist\ztm.exe"
           Copy-Item "bin\zeroclaw.exe" "dist\zeroclaw.exe"
+          Copy-Item "bin\clawparty.exe" "dist\clawparty.exe"
           Copy-Item -Recurse -Force "agent\gui" "dist\gui"
           $tag = "${{ github.event.inputs.tag }}"
           Compress-Archive -Path "dist\*" -DestinationPath "clawparty-$tag-win-x86_64.zip"
