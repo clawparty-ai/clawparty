@@ -105,6 +105,26 @@ jobs:
             Write-Error "GUI build failed: agent\gui\index.html not found"
             $fail = $true
           }
+          # CRITICAL: verify GUI is actually embedded inside ztm.exe binary
+          $ztmBytes = [System.IO.File]::ReadAllBytes("bin\ztm.exe")
+          $ztmText = [System.Text.Encoding]::UTF8.GetString($ztmBytes)
+          if ($ztmText.Contains("gui/index.html")) {
+            Write-Host "VERIFIED: gui/index.html IS embedded in ztm.exe"
+          } elseif ($ztmText.Contains("gui\\index.html")) {
+            Write-Host "VERIFIED: gui\index.html IS embedded in ztm.exe"
+          } else {
+            # Also check for other known GUI file paths
+            $foundGui = $false
+            @("assets/index-","favicon.ico","index.html") | ForEach-Object {
+              if ($ztmText.Contains($_)) { $foundGui = $true }
+            }
+            if ($foundGui) {
+              Write-Host "VERIFIED: GUI content detected inside ztm.exe"
+            } else {
+              Write-Error "CRITICAL: ztm.exe does NOT contain GUI content! Pipy codebase packing failed."
+              $fail = $true
+            }
+          }
           if ($fail) { exit 1 }
           Write-Host "All Windows binaries and GUI verified OK (clawparty TUI is Unix-only)"
 
