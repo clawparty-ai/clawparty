@@ -640,24 +640,35 @@ function createZeroAgentFromConfig(configTomlContent) {
 
 // Auto-discover existing ZeroClaw instance (e.g. started via start.bat)
 // Returns true if a running ZeroClaw was discovered and registered as 0#Agent
+// Try to register a pre-existing ZeroClaw daemon (started externally, e.g.
+// via Windows start.bat) as 0#Agent.  This is called lazily from
+// allAgentStatuses() / getAgentStatus() so it never blocks startup.
 function discoverExistingZeroClaw() {
   var agentName = '0#Agent'
   var DEFAULT_PORT = 42617
 
   // Skip if already in database
   if (db.getAgent(agentName)) {
-    console.log('[AGENT] 0#Agent already in database, skipping discovery')
     return false
   }
 
-  // Check if there's a zeroclaw process listening on the default port
-  var foundPid = findZeroclawPid(DEFAULT_PORT)
-  if (!foundPid) {
-    console.log('[AGENT] No running ZeroClaw found on port ' + DEFAULT_PORT)
+  // Fast non-blocking check: issue an HTTP health check.
+  // If the external zeroclaw is listening, the port is alive.
+  var portAlive = false
+  try {
+    var res = http.get('http://127.0.0.1:' + DEFAULT_PORT + '/health')
+    if (res && res.head && res.head.status === 200) {
+      portAlive = true
+    }
+  } catch (e) {
+    portAlive = false
+  }
+
+  if (!portAlive) {
     return false
   }
 
-  console.log('[AGENT] Found running ZeroClaw with PID: ' + foundPid)
+  console.log('[AGENT] Found running ZeroClaw on port ' + DEFAULT_PORT)
 
   try {
     // Create directory structure
@@ -728,7 +739,7 @@ function discoverExistingZeroClaw() {
       workspace_dir: workspaceDir,
       port: DEFAULT_PORT
     })
-    db.updateAgentStatus(agentName, 'running', foundPid, null)
+    db.updateAgentStatus(agentName, 'running', null, null)
 
     console.info('[AGENT] 0#Agent discovered and registered successfully')
     return true
@@ -811,7 +822,8 @@ function startAgent(agentName) {
   
   // Build command - use array format for pipeline.exec
   var zeroclawBase = os.path.join(os.path.dirname(pipy.argv[0]), 'zeroclaw')
-  var zeroclawPath = isWindows() ? zeroclawBase + '.exe' : zeroclawBase
+  // Append .exe on Windows (harmless on Unix since path.concat just adds chars)
+  var zeroclawPath = (os.platform && os.platform === 'win32') ? zeroclawBase + '.exe' : zeroclawBase
   var cmd = [zeroclawPath, 'daemon', '--config-dir', agent.directory, '-p', agent.port.toString()]
   console.log('[AGENT] Command: ' + cmd.join(' '))
   
@@ -840,12 +852,7 @@ function startAgent(agentName) {
     })
     .replaceStreamStart(function(evt) {
       // Try to get PID when process starts
-      if (isWindows()) {
-        // On Windows, pipeline.exec doesn't give us pid directly; defer PID discovery
-        $zcPid = findZeroclawPid(agent.port)
-      } else {
-        $zcPid = findZeroclawPid(agent.port)
-      }
+      $zcPid = findZeroclawPid(agent.port)
       console.log('[AGENT] ZeroClaw started, PID: ' + $zcPid)
       if ($zcPid) {
         db.updateAgentStatus(agentName, 'starting', $zcPid, null)
@@ -881,110 +888,117 @@ function startAgent(agentName) {
   }
 }
 
-function isWindows() {
-  return os.platform === 'win32'
+function _parsePidFromString(str) {
+  var num = 0
+  for (var k = 0; k < str.length; k++) {
+    var digit = str.charCodeAt(k) - 48  // '0' = 48
+    if (digit >= 0 && digit <= 9) {
+      num = num * 10 + digit
+    }
+  }
+  return num
+}
+
+function _manualSplitBySpace(line) {
+  // PipyJS does not support .split(/\s+/) — split manually
+  var parts = []
+  var part = ''
+  for (var j = 0; j < line.length; j++) {
+    var c = line.charAt(j)
+    if (c === ' ' || c === '\t') {
+      if (part.length > 0) {
+        parts.push(part)
+        part = ''
+      }
+    } else {
+      part = part + c
+    }
+  }
+  if (part.length > 0) parts.push(part)
+  return parts
 }
 
 function isProcessAlive(pid) {
-  if (!pid || pid <= 0) return false
-  if (isWindows()) {
-    // Windows: use tasklist to check if PID exists
-    try {
-      pipy.exec('tasklist /FI "PID eq ' + pid + '"')
-      return true
-    } catch (e) {
-      return false
-    }
-  }
-  // Unix: kill -0 does not send signal, just checks existence
+  // Microsecond-level check: kill -0 does not send signal, just checks existence
   // This is ~100x faster than lsof which scans all file descriptors
+  if (!pid || pid <= 0) return false
   try {
     pipy.exec('kill -0 ' + pid)
     return true
   } catch (e) {
-    return false
+    // kill may not exist on Windows; fallback to tasklist
+    try {
+      pipy.exec('tasklist /FI "PID eq ' + pid + '"')
+      return true
+    } catch (e2) {
+      return false
+    }
   }
 }
 
 function findZeroclawPid(port) {
-  // Fallback: find zeroclaw process by port using lsof or netstat
-  // WARNING: lsof is expensive (scans all FDs) and blocks Pipy's single-threaded event loop
-  // Only used when pid is not recorded or when isProcessAlive fails unexpectedly
-  if (isWindows()) {
-    // Windows: use netstat -ano to find the PID listening on the port
-    try {
-      var execResult = pipy.exec('netstat -ano')
-      if (!execResult) return null
-      var lines = execResult.toString().split('\n')
-      for (var i = 0; i < lines.length; i++) {
-        var line = lines[i]
-        // Match lines like "  TCP    127.0.0.1:42617    0.0.0.0:0    LISTENING    12345"
-        if (line.indexOf('LISTENING') >= 0) {
-          var idx = line.indexOf(':' + port)
-          if (idx >= 0) {
-            // Parse the last number (PID) from the line
-            var parts = line.split(/\s+/)
-            for (var j = parts.length - 1; j >= 0; j--) {
-              var maybePid = parts[j].trim()
-              if (maybePid.length > 0) {
-                var num = 0
-                for (var k = 0; k < maybePid.length; k++) {
-                  var digit = maybePid.charCodeAt(k) - 48  // '0' = 48
-                  if (digit >= 0 && digit <= 9) {
-                    num = num * 10 + digit
-                  }
-                }
-                if (num > 0) {
-                  return num
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {}
-    return null
-  }
-
+  // Fallback: find zeroclaw process by port using lsof (Unix) or netstat (Windows)
+  // WARNING: lsof/netstat scans system state and blocks Pipy's single-threaded event loop
+  // Only used when pid is not recorded or when startAgent needs to verify process
   try {
+    // Fast path: Unix lsof
     var execResult = pipy.exec('lsof -ti:' + port)
     if (execResult) {
       var result = execResult.toString().trim()
       if (result && result.length > 0) {
-        // Parse number manually (avoid Number.parseInt)
-        var num = 0
-        for (var k = 0; k < result.length; k++) {
-          var digit = result.charCodeAt(k) - 48  // '0' = 48
-          if (digit >= 0 && digit <= 9) {
-            num = num * 10 + digit
-          }
-        }
-        if (num > 0) {
-          return num
-        }
+        var num = _parsePidFromString(result)
+        if (num > 0) return num
       }
     }
   } catch (e) {
-    // lsof failed
+    // lsof not available (Windows), try netstat
   }
+
+  try {
+    var execResult2 = pipy.exec('netstat -ano')
+    if (!execResult2) return null
+    var lines = execResult2.toString().split('\n')
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i]
+      // Match lines like "  TCP    127.0.0.1:42617    0.0.0.0:0    LISTENING    12345"
+      if (line.indexOf('LISTENING') >= 0 && line.indexOf(':' + port) >= 0) {
+        var parts = _manualSplitBySpace(line)
+        for (var j = parts.length - 1; j >= 0; j--) {
+          var maybePid = parts[j].trim()
+          if (maybePid.length > 0) {
+            var num = _parsePidFromString(maybePid)
+            if (num > 0) return num
+          }
+        }
+      }
+    }
+  } catch (e) {}
 
   return null
 }
 
 function stopAgent(agentName) {
   console.log('[AGENT] Stopping agent: ' + agentName)
-  
+
+  if (agentName === '0#Agent') {
+    // 0#Agent is a managed system agent: only mark as stopped in DB,
+    // do NOT kill the global zeroclaw daemon process.
+    console.log('[AGENT] 0#Agent stop: only updating DB state (not killing process)')
+    db.updateAgentStatus(agentName, 'stopped', null, null)
+    return { status: 'stopped', agent_name: agentName }
+  }
+
   var agent = db.getAgent(agentName)
   if (!agent) {
     console.log('[AGENT] Stop failed: agent not found: ' + agentName)
     throw 'Agent not found: ' + agentName
   }
-  
+
   if (agent.status !== 'running' && agent.status !== 'starting') {
     console.log('[AGENT] Stop skipped: agent not running: ' + agentName)
     throw 'Agent not running: ' + agentName
   }
-  
+
   var pid = agent.pid
   if (!pid) {
     // Try to find PID by port
@@ -995,27 +1009,26 @@ function stopAgent(agentName) {
       return { status: 'stopped', agent_name: agentName }
     }
   }
-  
+
   try {
-    // Send SIGTERM using kill command (Unix) or taskkill (Windows)
-    console.log('[AGENT] Sending SIGTERM to pid=' + pid)
-    if (isWindows()) {
-      pipy.exec('taskkill /PID ' + pid + ' /F')
-    } else {
-      pipy.exec('kill -TERM ' + pid)
-    }
-    
-    // Update status immediately
-    db.updateAgentStatus(agentName, 'stopped', null, null)
-    
-    console.log('[AGENT] Agent stop signal sent: ' + agentName)
-    return { status: 'stopped', agent_name: agentName }
-    
+    // Unix: send SIGTERM
+    pipy.exec('kill -TERM ' + pid)
   } catch (e) {
-    console.log('[AGENT] Stop failed: ' + e)
-    db.updateAgentStatus(agentName, 'error', null, e.message || e)
-    throw 'Failed to stop agent: ' + e
+    // Fallback: try taskkill on Windows
+    try {
+      pipy.exec('taskkill /PID ' + pid + ' /F')
+    } catch (e2) {
+      console.log('[AGENT] Stop failed: ' + e)
+      db.updateAgentStatus(agentName, 'error', null, e.message || e)
+      throw 'Failed to stop agent: ' + e
+    }
   }
+
+  // Update status immediately
+  db.updateAgentStatus(agentName, 'stopped', null, null)
+
+  console.log('[AGENT] Agent stop signal sent: ' + agentName)
+  return { status: 'stopped', agent_name: agentName }
 }
 
 // Sanitize group name to valid agent name
@@ -1174,6 +1187,12 @@ function _refreshAgentStatus(agent) {
 }
 
 function getAgentStatus(agentName) {
+  // Lazy discovery: if ZERO agent is requested but not yet registered,
+  // try to register the external zeroclaw daemon first.
+  if (agentName === '0#Agent' && !db.getAgent(agentName)) {
+    discoverExistingZeroClaw()
+  }
+
   var now = Date.now()
   var cached = _agentStatusCache.data[agentName]
   if (cached && (now - cached._ts) < AGENT_STATUS_CACHE_TTL) {
@@ -1207,6 +1226,12 @@ function checkGatewayHealth(port, timeoutMs) {
 }
 
 function allAgentStatuses() {
+  // Lazy discovery: if there is no 0#Agent try to register the
+  // external zeroclaw daemon that may have been started via start.bat.
+  if (!db.getAgent('0#Agent')) {
+    discoverExistingZeroClaw()
+  }
+
   var now = Date.now()
   var agents = db.allAgents()
 
