@@ -89,6 +89,14 @@ try {
         db.open(os.path.join(dbPath, 'ztm.db'))
         api.init(dbPath, listen, args['--proxy'], pqc, p2pConfig)
 
+        // Auto-discover running ZeroClaw daemon and register as 0#Agent
+        // This enables the Windows start.bat workflow where zeroclaw is started before ztm
+        try {
+          api.discoverExistingZeroClaw()
+        } catch (e) {
+          console.error('[MAIN] Failed to discover existing ZeroClaw:', e)
+        }
+
         // Pre-populate local agent id cache synchronously so chat app can use it immediately
         try {
           var agentsDir = os.path.join(os.home(), '.openclaw', 'agents')

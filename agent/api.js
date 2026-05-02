@@ -638,6 +638,106 @@ function createZeroAgentFromConfig(configTomlContent) {
   }
 }
 
+// Auto-discover existing ZeroClaw instance (e.g. started via start.bat)
+// Returns true if a running ZeroClaw was discovered and registered as 0#Agent
+function discoverExistingZeroClaw() {
+  var agentName = '0#Agent'
+  var DEFAULT_PORT = 42617
+
+  // Skip if already in database
+  if (db.getAgent(agentName)) {
+    console.log('[AGENT] 0#Agent already in database, skipping discovery')
+    return false
+  }
+
+  // Check if there's a zeroclaw process listening on the default port
+  var foundPid = findZeroclawPid(DEFAULT_PORT)
+  if (!foundPid) {
+    console.log('[AGENT] No running ZeroClaw found on port ' + DEFAULT_PORT)
+    return false
+  }
+
+  console.log('[AGENT] Found running ZeroClaw with PID: ' + foundPid)
+
+  try {
+    // Create directory structure
+    var agentsDir = os.path.join(rootDir, 'agents')
+    try {
+      os.mkdir(agentsDir)
+    } catch {}
+
+    var baseName = '0#Agent'
+    var agentDir = os.path.join(agentsDir, baseName)
+    var workspaceDir = os.path.join(agentDir, 'workspace')
+
+    // If dir already exists from a previous partial discovery, reuse it
+    try {
+      os.mkdir(agentDir)
+      console.log('[AGENT] Created 0#Agent directory: ' + agentDir)
+    } catch (e) {
+      console.log('[AGENT] 0#Agent directory already exists, reusing: ' + agentDir)
+    }
+
+    try {
+      os.mkdir(workspaceDir, { recursive: true })
+    } catch {}
+
+    // Try to copy config from the global zeroclaw location
+    var configContent
+    var globalConfigPath = os.path.join(os.home(), '.zeroclaw', 'config.toml')
+    try {
+      configContent = os.read(globalConfigPath).toString()
+      console.log('[AGENT] Found global zeroclaw config: ' + globalConfigPath)
+    } catch (e) {
+      // Fall back to using locally-saved hub template
+      var hubTemplatePath = os.path.join(rootDir, 'zeroclaw-template.toml')
+      try {
+        configContent = os.read(hubTemplatePath).toString()
+        console.log('[AGENT] Found hub template: ' + hubTemplatePath)
+      } catch (e2) {
+        // Last resort: minimal config
+        configContent = '[general]\nmodel = "gpt-4o-mini"\nrequire_pairing = false\n\n[gateway]\nport = 42617\n'
+        console.log('[AGENT] Using minimal fallback config')
+      }
+    }
+
+    // Patch config to disable pairing
+    var patchedConfig = configContent.replaceAll('require_pairing = true', 'require_pairing = false')
+
+    var configPath = os.path.join(agentDir, 'config.toml')
+    os.write(configPath, patchedConfig)
+    console.log('[AGENT] Wrote config.toml: ' + configPath)
+
+    // Write a minimal SOUL.md if missing
+    var soulPath = os.path.join(workspaceDir, 'SOUL.md')
+    try {
+      os.read(soulPath)
+      console.log('[AGENT] SOUL.md already exists')
+    } catch (e) {
+      os.write(soulPath, '# 0#Agent\n\nA system agent for ZeroClaw integration.\n')
+      console.log('[AGENT] Wrote initial SOUL.md')
+    }
+
+    // Record in database — mark as running since it's already alive
+    db.createAgent({
+      agent_name: agentName,
+      display_name: '0#Agent',
+      description: 'System agent discovered from running ZeroClaw instance',
+      directory: agentDir,
+      config_path: configPath,
+      workspace_dir: workspaceDir,
+      port: DEFAULT_PORT
+    })
+    db.updateAgentStatus(agentName, 'running', foundPid, null)
+
+    console.info('[AGENT] 0#Agent discovered and registered successfully')
+    return true
+  } catch (e) {
+    console.error('[AGENT] Failed to discover/register 0#Agent:', e)
+    return false
+  }
+}
+
 function deleteAgent(agentName) {
   if (agentName === '0#Agent') {
     console.log('[AGENT] Delete rejected: 0#Agent is a system agent and cannot be deleted')
@@ -710,7 +810,8 @@ function startAgent(agentName) {
   }
   
   // Build command - use array format for pipeline.exec
-  var zeroclawPath = os.path.join(os.path.dirname(pipy.argv[0]), 'zeroclaw')
+  var zeroclawBase = os.path.join(os.path.dirname(pipy.argv[0]), 'zeroclaw')
+  var zeroclawPath = isWindows() ? zeroclawBase + '.exe' : zeroclawBase
   var cmd = [zeroclawPath, 'daemon', '--config-dir', agent.directory, '-p', agent.port.toString()]
   console.log('[AGENT] Command: ' + cmd.join(' '))
   
@@ -739,7 +840,12 @@ function startAgent(agentName) {
     })
     .replaceStreamStart(function(evt) {
       // Try to get PID when process starts
-      $zcPid = findZeroclawPid(agent.port)
+      if (isWindows()) {
+        // On Windows, pipeline.exec doesn't give us pid directly; defer PID discovery
+        $zcPid = findZeroclawPid(agent.port)
+      } else {
+        $zcPid = findZeroclawPid(agent.port)
+      }
       console.log('[AGENT] ZeroClaw started, PID: ' + $zcPid)
       if ($zcPid) {
         db.updateAgentStatus(agentName, 'starting', $zcPid, null)
@@ -775,10 +881,23 @@ function startAgent(agentName) {
   }
 }
 
+function isWindows() {
+  return os.platform === 'win32'
+}
+
 function isProcessAlive(pid) {
-  // Microsecond-level check: kill -0 does not send signal, just checks existence
-  // This is ~100x faster than lsof which scans all file descriptors
   if (!pid || pid <= 0) return false
+  if (isWindows()) {
+    // Windows: use tasklist to check if PID exists
+    try {
+      pipy.exec('tasklist /FI "PID eq ' + pid + '"')
+      return true
+    } catch (e) {
+      return false
+    }
+  }
+  // Unix: kill -0 does not send signal, just checks existence
+  // This is ~100x faster than lsof which scans all file descriptors
   try {
     pipy.exec('kill -0 ' + pid)
     return true
@@ -788,9 +907,45 @@ function isProcessAlive(pid) {
 }
 
 function findZeroclawPid(port) {
-  // Fallback: find zeroclaw process by port using lsof
+  // Fallback: find zeroclaw process by port using lsof or netstat
   // WARNING: lsof is expensive (scans all FDs) and blocks Pipy's single-threaded event loop
   // Only used when pid is not recorded or when isProcessAlive fails unexpectedly
+  if (isWindows()) {
+    // Windows: use netstat -ano to find the PID listening on the port
+    try {
+      var execResult = pipy.exec('netstat -ano')
+      if (!execResult) return null
+      var lines = execResult.toString().split('\n')
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i]
+        // Match lines like "  TCP    127.0.0.1:42617    0.0.0.0:0    LISTENING    12345"
+        if (line.indexOf('LISTENING') >= 0) {
+          var idx = line.indexOf(':' + port)
+          if (idx >= 0) {
+            // Parse the last number (PID) from the line
+            var parts = line.split(/\s+/)
+            for (var j = parts.length - 1; j >= 0; j--) {
+              var maybePid = parts[j].trim()
+              if (maybePid.length > 0) {
+                var num = 0
+                for (var k = 0; k < maybePid.length; k++) {
+                  var digit = maybePid.charCodeAt(k) - 48  // '0' = 48
+                  if (digit >= 0 && digit <= 9) {
+                    num = num * 10 + digit
+                  }
+                }
+                if (num > 0) {
+                  return num
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {}
+    return null
+  }
+
   try {
     var execResult = pipy.exec('lsof -ti:' + port)
     if (execResult) {
@@ -842,9 +997,13 @@ function stopAgent(agentName) {
   }
   
   try {
-    // Send SIGTERM using kill command
+    // Send SIGTERM using kill command (Unix) or taskkill (Windows)
     console.log('[AGENT] Sending SIGTERM to pid=' + pid)
-    pipy.exec('kill -TERM ' + pid)
+    if (isWindows()) {
+      pipy.exec('taskkill /PID ' + pid + ' /F')
+    } else {
+      pipy.exec('kill -TERM ' + pid)
+    }
     
     // Update status immediately
     db.updateAgentStatus(agentName, 'stopped', null, null)
@@ -1107,6 +1266,7 @@ export default {
   // AI-Agent management
   createAgent,
   createZeroAgentFromConfig,
+  discoverExistingZeroClaw,
   deleteAgent,
   startAgent,
   stopAgent,
