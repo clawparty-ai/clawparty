@@ -644,109 +644,64 @@ function createZeroAgentFromConfig(configTomlContent) {
 // via Windows start.bat) as 0#Agent.  This is called lazily from
 // allAgentStatuses() / getAgentStatus() so it never blocks startup.
 function discoverExistingZeroClaw() {
+  // Register the external ZeroClaw daemon (started by start.bat) as 0#Agent
+  // so that the zAgents sidebar panel shows it.  Called lazily by
+  // allAgentStatuses().
   var agentName = '0#Agent'
   var DEFAULT_PORT = 42617
 
-  // Skip if already in database
-  if (db.getAgent(agentName)) {
-    return false
-  }
+  if (db.getAgent(agentName)) return false
 
-  // Fast non-blocking check: issue an HTTP health check.
-  // If the external zeroclaw is listening, the port is alive.
-  var portAlive = false
+  console.log('[AGENT] Registering discovered 0#Agent on port ' + DEFAULT_PORT)
+
+  // Ensure the per-agent directory tree exists under ~/.clawparty/agents/
+  var agentsDir = os.path.join(rootDir, 'agents')
+  try { os.mkdir(agentsDir) } catch {}
+
+  var agentDir = os.path.join(agentsDir, '0#Agent')
+  var workspaceDir = os.path.join(agentDir, 'workspace')
+  try { os.mkdir(agentDir) } catch {}
+  try { os.mkdir(workspaceDir, { recursive: true }) } catch {}
+
+  // Try to pull in the real config that start.bat created.
+  // If the file is missing we simply write a minimal stub.
+  var configPath = os.path.join(agentDir, 'config.toml')
+  var configContent = ''
+  var globalConfigPath = os.path.join(os.home(), '.zeroclaw', 'config.toml')
   try {
-    var res = http.get('http://127.0.0.1:' + DEFAULT_PORT + '/health')
-    if (res && res.head && res.head.status === 200) {
-      portAlive = true
-    }
-  } catch (e) {
-    portAlive = false
-  }
-
-  if (!portAlive) {
-    return false
-  }
-
-  console.log('[AGENT] Found running ZeroClaw on port ' + DEFAULT_PORT)
-
-  try {
-    // Create directory structure
-    var agentsDir = os.path.join(rootDir, 'agents')
+    configContent = os.read(globalConfigPath).toString()
+  } catch {
     try {
-      os.mkdir(agentsDir)
-    } catch {}
-
-    var baseName = '0#Agent'
-    var agentDir = os.path.join(agentsDir, baseName)
-    var workspaceDir = os.path.join(agentDir, 'workspace')
-
-    // If dir already exists from a previous partial discovery, reuse it
-    try {
-      os.mkdir(agentDir)
-      console.log('[AGENT] Created 0#Agent directory: ' + agentDir)
-    } catch (e) {
-      console.log('[AGENT] 0#Agent directory already exists, reusing: ' + agentDir)
-    }
-
-    try {
-      os.mkdir(workspaceDir, { recursive: true })
-    } catch {}
-
-    // Try to copy config from the global zeroclaw location
-    var configContent
-    var globalConfigPath = os.path.join(os.home(), '.zeroclaw', 'config.toml')
-    try {
-      configContent = os.read(globalConfigPath).toString()
-      console.log('[AGENT] Found global zeroclaw config: ' + globalConfigPath)
-    } catch (e) {
-      // Fall back to using locally-saved hub template
       var hubTemplatePath = os.path.join(rootDir, 'zeroclaw-template.toml')
-      try {
-        configContent = os.read(hubTemplatePath).toString()
-        console.log('[AGENT] Found hub template: ' + hubTemplatePath)
-      } catch (e2) {
-        // Last resort: minimal config
-        configContent = '[general]\nmodel = "gpt-4o-mini"\nrequire_pairing = false\n\n[gateway]\nport = 42617\n'
-        console.log('[AGENT] Using minimal fallback config')
-      }
+      configContent = os.read(hubTemplatePath).toString()
+    } catch {
+      configContent = '[general]\nmodel = "gpt-4o-mini"\nrequire_pairing = false\n'
     }
-
-    // Patch config to disable pairing
-    var patchedConfig = configContent.replaceAll('require_pairing = true', 'require_pairing = false')
-
-    var configPath = os.path.join(agentDir, 'config.toml')
-    os.write(configPath, patchedConfig)
-    console.log('[AGENT] Wrote config.toml: ' + configPath)
-
-    // Write a minimal SOUL.md if missing
-    var soulPath = os.path.join(workspaceDir, 'SOUL.md')
-    try {
-      os.read(soulPath)
-      console.log('[AGENT] SOUL.md already exists')
-    } catch (e) {
-      os.write(soulPath, '# 0#Agent\n\nA system agent for ZeroClaw integration.\n')
-      console.log('[AGENT] Wrote initial SOUL.md')
-    }
-
-    // Record in database — mark as running since it's already alive
-    db.createAgent({
-      agent_name: agentName,
-      display_name: '0#Agent',
-      description: 'System agent discovered from running ZeroClaw instance',
-      directory: agentDir,
-      config_path: configPath,
-      workspace_dir: workspaceDir,
-      port: DEFAULT_PORT
-    })
-    db.updateAgentStatus(agentName, 'running', null, null)
-
-    console.info('[AGENT] 0#Agent discovered and registered successfully')
-    return true
-  } catch (e) {
-    console.error('[AGENT] Failed to discover/register 0#Agent:', e)
-    return false
   }
+  configContent = configContent.replaceAll('require_pairing = true', 'require_pairing = false')
+  os.write(configPath, configContent)
+
+  // Minimal SOUL.md (so the agent directory looks complete)
+  try {
+    os.write(os.path.join(workspaceDir, 'SOUL.md'),
+             '# 0#Agent\n\nSystem agent for ZeroClaw integration.\n')
+  } catch {}
+
+  // Persist into ztm.db — status is "running" because the external
+  // zeroclaw process was started *before* ztm by start.bat.
+  db.createAgent({
+    agent_name: agentName,
+    display_name: '0#Agent',
+    description: 'System agent discovered from running ZeroClaw instance',
+    directory: agentDir,
+    config_path: configPath,
+    workspace_dir: workspaceDir,
+    port: DEFAULT_PORT
+  })
+  db.updateAgentStatus(agentName, 'running', null, null)
+
+  console.log('[AGENT] 0#Agent registered successfully')
+  return true
 }
 
 function deleteAgent(agentName) {
@@ -1228,6 +1183,8 @@ function checkGatewayHealth(port, timeoutMs) {
 function allAgentStatuses() {
   // Lazy discovery: if there is no 0#Agent try to register the
   // external zeroclaw daemon that may have been started via start.bat.
+  // We must re-fetch db.allAgents() *after* discoverExistingZeroClaw()
+  // runs so the newly created record shows up in the returned list.
   if (!db.getAgent('0#Agent')) {
     discoverExistingZeroClaw()
   }
