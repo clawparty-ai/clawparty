@@ -3,7 +3,7 @@ var sharedTemplateDir = ''
 var dbApi = null
 
 function init(rootDir, db) {
-  var home = os.env['HOME'] || '/tmp'
+  var home = os.home()
   templateDir = os.path.join(home, '.clawparty', '.agent-template')
   sharedTemplateDir = os.path.join(templateDir, '.shared')
   dbApi = db
@@ -27,9 +27,12 @@ function scanDir(dir) {
     return []
   }
   return entries.map(function (name) {
-    var hasTrailingSlash = name.length > 0 && name.charAt(name.length - 1) === '/'
-    if (hasTrailingSlash) {
-      return name.substring(0, name.length - 1)
+    // Strip both Unix '/' and Windows '\' trailing separators
+    if (name.length > 0) {
+      var last = name.charAt(name.length - 1)
+      if (last === '/' || last === '\\') {
+        return name.substring(0, name.length - 1)
+      }
     }
     return name
   }).filter(function (name) {
