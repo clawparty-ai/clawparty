@@ -430,6 +430,16 @@ function makeDisplayDirName(displayName, agentsDir) {
     os.mkdir(dirPath)
     return baseName
   } catch (e) {
+    // Directory already exists — could be a leftover from a previous
+    // failed creation (crash before DB write) or manual cleanup. If it
+    // is actually a directory, reuse it instead of throwing.
+    try {
+      var st = os.stat(dirPath)
+      if (st && st.isDirectory()) {
+        console.log('[AGENT] Reusing existing directory: ' + dirPath)
+        return baseName
+      }
+    } catch (e2) {}
     throw 'Agent "' + baseName + '" 已经存在，请使用其他名称'
   }
 }
