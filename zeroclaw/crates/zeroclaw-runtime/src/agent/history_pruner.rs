@@ -1,5 +1,6 @@
 use zeroclaw_api::provider::ChatMessage;
 
+use super::memory_helpers::infer_context_window;
 pub use zeroclaw_config::scattered_types::HistoryPrunerConfig;
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,48 @@ fn protected_indices(messages: &[ChatMessage], keep_recent: usize) -> Vec<bool> 
 // Public entry point
 // ---------------------------------------------------------------------------
 
+/// Compute the effective token budget from config.
+///
+/// Priority:
+/// 1. If `context_window` > 0: use `context_window * budget_ratio`
+/// 2. If `model_hint` is provided and matches a known model, infer the window
+/// 3. Otherwise: fall back to `max_tokens`
+pub fn effective_budget(config: &HistoryPrunerConfig) -> usize {
+    let window = if config.context_window > 0 {
+        config.context_window
+    } else {
+        config.max_tokens
+    };
+    if config.context_window > 0 {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        {
+            (window as f64 * config.budget_ratio) as usize
+        }
+    } else {
+        window
+    }
+}
+
+/// Same as `effective_budget` but with a model-name hint so that unknown
+/// models still get a model-appropriate default.
+pub fn effective_budget_with_model(config: &HistoryPrunerConfig, model: &str) -> usize {
+    let window = if config.context_window > 0 {
+        config.context_window
+    } else if let Some(inferred) = infer_context_window(model) {
+        inferred
+    } else {
+        config.max_tokens
+    };
+    if config.context_window > 0 || infer_context_window(model).is_some() {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        {
+            (window as f64 * config.budget_ratio) as usize
+        }
+    } else {
+        window
+    }
+}
+
 pub fn prune_history(messages: &mut Vec<ChatMessage>, config: &HistoryPrunerConfig) -> PruneStats {
     let messages_before = messages.len();
     if !config.enabled || messages.is_empty() {
@@ -64,6 +107,8 @@ pub fn prune_history(messages: &mut Vec<ChatMessage>, config: &HistoryPrunerConf
             dropped_messages: 0,
         };
     }
+
+    let budget = effective_budget(config);
 
     let mut collapsed_pairs: usize = 0;
 
@@ -95,7 +140,7 @@ pub fn prune_history(messages: &mut Vec<ChatMessage>, config: &HistoryPrunerConf
 
     // Phase 2 – budget enforcement
     let mut dropped_messages: usize = 0;
-    while estimate_tokens(messages) > config.max_tokens {
+    while estimate_tokens(messages) > budget {
         let protected = protected_indices(messages, config.keep_recent);
         if let Some(idx) = protected
             .iter()
@@ -126,6 +171,7 @@ mod tests {
         ChatMessage {
             role: role.to_string(),
             content: content.to_string(),
+            created_at: None,
         }
     }
 
@@ -160,6 +206,7 @@ mod tests {
             max_tokens: 8192,
             keep_recent: 2,
             collapse_tool_results: false,
+            ..Default::default()
         };
         let stats = prune_history(&mut messages, &config);
         assert_eq!(messages.len(), 3);
@@ -182,6 +229,7 @@ mod tests {
             max_tokens: 100_000,
             keep_recent: 2,
             collapse_tool_results: true,
+            ..Default::default()
         };
         let stats = prune_history(&mut messages, &config);
         assert_eq!(stats.collapsed_pairs, 1);
@@ -205,6 +253,7 @@ mod tests {
             max_tokens: 100,
             keep_recent: 2,
             collapse_tool_results: false,
+            ..Default::default()
         };
         let stats = prune_history(&mut messages, &config);
         assert!(messages.iter().any(|m| m.role == "system"));
@@ -228,6 +277,7 @@ mod tests {
             max_tokens: 150,
             keep_recent: 2,
             collapse_tool_results: false,
+            ..Default::default()
         };
         let stats = prune_history(&mut messages, &config);
         assert!(stats.dropped_messages >= 1);

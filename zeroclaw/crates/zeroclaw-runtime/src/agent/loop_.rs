@@ -658,6 +658,8 @@ pub async fn agent_turn(
     dedup_exempt_tools: &[String],
     activated_tools: Option<&std::sync::Arc<std::sync::Mutex<crate::tools::ActivatedToolSet>>>,
     model_switch_callback: Option<ModelSwitchCallback>,
+    max_tool_result_chars: usize,
+    context_token_budget: usize,
 ) -> Result<String> {
     run_tool_call_loop(
         provider,
@@ -681,8 +683,8 @@ pub async fn agent_turn(
         activated_tools,
         model_switch_callback,
         &zeroclaw_config::schema::PacingConfig::default(),
-        0,    // max_tool_result_chars: 0 = disabled (legacy callers)
-        0,    // context_token_budget: 0 = disabled (legacy callers)
+        max_tool_result_chars,
+        context_token_budget,
         None, // shared_budget: no shared budget for legacy callers
     )
     .await
@@ -891,6 +893,8 @@ pub async fn run_tool_call_loop(
                             max_tokens: context_token_budget,
                             keep_recent: 4,
                             collapse_tool_results: true,
+                            context_window: 0,
+                            budget_ratio: 0.75,
                         },
                     );
                     if stats.dropped_messages > 0 || stats.collapsed_pairs > 0 {
@@ -990,6 +994,9 @@ pub async fn run_tool_call_loop(
 
         let prepared_messages =
             multimodal::prepare_messages_for_provider(history, multimodal_config).await?;
+
+        // ── Debug: log context size before every LLM call ─────
+        super::history::log_llm_context_stats(&prepared_messages.messages, iteration);
 
         // ── Progress: LLM thinking ────────────────────────────
         if let Some(ref tx) = on_delta {
@@ -3335,6 +3342,8 @@ pub async fn process_message(
         &config.agent.tool_call_dedup_exempt,
         activated_handle_pm.as_ref(),
         None,
+        config.agent.max_tool_result_chars,
+        config.agent.max_context_tokens,
     )
     .await
 }
@@ -5896,6 +5905,8 @@ mod tests {
                 &[],
                 Some(&activated),
                 None,
+                0, // max_tool_result_chars
+                0, // context_token_budget
             )
             .await
             .expect("wrapper path should execute activated tools");

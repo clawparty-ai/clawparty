@@ -1297,7 +1297,7 @@ pub async fn handle_api_sessions_list(
     let all_metadata = backend.list_sessions_with_metadata();
     let gw_sessions: Vec<serde_json::Value> = all_metadata
         .into_iter()
-        .filter_map(|meta| {
+        .map(|meta| {
             let mut entry = serde_json::json!({
                 "session_id": meta.key,
                 "created_at": meta.created_at.to_rfc3339(),
@@ -1307,7 +1307,7 @@ pub async fn handle_api_sessions_list(
             if let Some(name) = meta.name {
                 entry["name"] = serde_json::Value::String(name);
             }
-            Some(entry)
+            entry
         })
         .collect();
 
@@ -1337,11 +1337,13 @@ pub async fn handle_api_session_messages(
     let msgs = backend.load(&session_key);
     let messages: Vec<serde_json::Value> = msgs
         .into_iter()
-        .map(|m| serde_json::json!({
-            "role": m.role,
-            "content": m.content,
-            "created_at": m.created_at,
-        }))
+        .map(|m| {
+            serde_json::json!({
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at,
+            })
+        })
         .collect();
 
     Json(serde_json::json!({

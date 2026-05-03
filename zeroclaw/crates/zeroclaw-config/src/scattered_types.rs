@@ -67,28 +67,48 @@ fn default_keep_recent() -> usize {
 fn default_collapse() -> bool {
     true
 }
+fn default_history_pruning_enabled() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Configurable)]
 #[cfg_attr(feature = "schema-export", derive(schemars::JsonSchema))]
 #[prefix = "agent.history-pruning"]
 pub struct HistoryPrunerConfig {
-    #[serde(default)]
+    #[serde(default = "default_history_pruning_enabled")]
     pub enabled: bool,
+    /// Max estimated tokens to retain in history after pruning.
+    /// When 0, the pruner derives the budget from `context_window` instead.
     #[serde(default = "default_max_tokens")]
     pub max_tokens: usize,
     #[serde(default = "default_keep_recent")]
     pub keep_recent: usize,
     #[serde(default = "default_collapse")]
     pub collapse_tool_results: bool,
+    /// Target context-window size (tokens). When > 0, the pruner uses
+    /// `context_window * budget_ratio` as the effective max_tokens.
+    /// Falls back to `max_tokens` when 0.
+    #[serde(default)]
+    pub context_window: usize,
+    /// Fraction of `context_window` to use as the pruning budget.
+    /// Must be < 1.0 to leave headroom for the current turn + output.
+    #[serde(default = "default_budget_ratio")]
+    pub budget_ratio: f64,
+}
+
+fn default_budget_ratio() -> f64 {
+    0.75
 }
 
 impl Default for HistoryPrunerConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             max_tokens: 8192,
             keep_recent: 4,
             collapse_tool_results: true,
+            context_window: 0,
+            budget_ratio: 0.75,
         }
     }
 }

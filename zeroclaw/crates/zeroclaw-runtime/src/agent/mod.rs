@@ -10,6 +10,7 @@ pub mod history;
 pub mod history_pruner;
 pub mod loop_;
 pub mod loop_detector;
+pub mod memory_helpers;
 pub mod memory_loader;
 pub mod personality;
 pub mod prompt;

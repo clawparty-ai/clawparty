@@ -488,6 +488,7 @@ mod tests {
         ChatMessage {
             role: role.to_string(),
             content: content.to_string(),
+            created_at: None,
         }
     }
 

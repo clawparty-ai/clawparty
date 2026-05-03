@@ -127,6 +127,65 @@ pub fn estimate_history_tokens(history: &[ChatMessage]) -> usize {
         .sum()
 }
 
+/// Log per-message context stats before sending to the LLM.
+///
+/// Includes: total messages, estimated input tokens, system prompt char count,
+/// and a per-message breakdown of `(role, char_length)` so you can spot
+/// which message is consuming the most tokens (e.g. giant tool results).
+pub fn log_llm_context_stats(messages: &[ChatMessage], iteration: usize) {
+    let estimated_tokens = estimate_history_tokens(messages);
+
+    let system_chars = messages
+        .iter()
+        .find(|m| m.role == "system")
+        .map_or(0, |m| m.content.chars().count());
+
+    let per_msg = messages
+        .iter()
+        .map(|m| format!("{}({})", m.role, m.content.chars().count()))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let role_counts = {
+        let mut user = 0usize;
+        let mut assistant = 0usize;
+        let mut tool = 0usize;
+        let mut system = 0usize;
+        for m in messages {
+            match m.role.as_str() {
+                "user" => user += 1,
+                "assistant" => assistant += 1,
+                "tool" => tool += 1,
+                "system" => system += 1,
+                _ => {}
+            }
+        }
+        format!("user={user},assistant={assistant},tool={tool},system={system}")
+    };
+
+    // Fallback eprintln in case tracing subscriber is not initialised or
+    // RUST_LOG filter drops the span.
+    eprintln!(
+        "[ZEROC-LAW-DEBUG] iter={} msgs={} est_tokens={} system_chars={} roles={} per_msg={}",
+        iteration + 1,
+        messages.len(),
+        estimated_tokens,
+        system_chars,
+        role_counts,
+        per_msg,
+    );
+
+    tracing::info!(
+        iteration = iteration + 1,
+        messages_count = messages.len(),
+        estimated_input_tokens = estimated_tokens,
+        system_prompt_chars = system_chars,
+        role_counts = %role_counts,
+        per_msg = %per_msg,
+        "LLM context prepared"
+    );
+}
+
 /// Trim conversation history to prevent unbounded growth.
 /// Preserves the system prompt (first message if role=system) and the most recent messages.
 pub fn trim_history(history: &mut Vec<ChatMessage>, max_history: usize) {

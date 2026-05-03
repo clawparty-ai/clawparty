@@ -99,7 +99,7 @@ schemars = "1.2"
 
 # Logging - minimal
 tracing = { version = "0.1", default-features = false }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "std"] }
 
 # Base64 encoding (screenshots, image data)
 base64 = "0.22"

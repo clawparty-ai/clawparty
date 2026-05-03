@@ -2,6 +2,7 @@ use crate::agent::dispatcher::{
     NativeToolDispatcher, ParsedToolCall, ToolDispatcher, ToolExecutionResult, XmlToolDispatcher,
 };
 use crate::agent::eval::AutoClassifyExt;
+use crate::agent::history::truncate_tool_result;
 use crate::agent::memory_loader::{DefaultMemoryLoader, MemoryLoader};
 use crate::agent::prompt::{PromptContext, SystemPromptBuilder};
 use crate::i18n::ToolDescriptions;
@@ -859,25 +860,9 @@ impl Agent {
 
         let effective_model = self.classify_model(user_message);
 
-        for _ in 0..self.config.max_tool_iterations {
+        for iteration in 0..self.config.max_tool_iterations {
             let messages = self.tool_dispatcher.to_provider_messages(&self.history);
-
-            // ── Debug: log context composition ───────────────────────
-            let system_chars = messages.iter().find(|m| m.role == "system").map(|m| m.content.len()).unwrap_or(0);
-            let history_msgs = messages.iter().filter(|m| m.role != "system").collect::<Vec<_>>();
-            let history_count = history_msgs.len();
-            let history_chars = history_msgs.iter().map(|m| m.content.len()).sum::<usize>();
-            let tool_schema_chars = if self.tool_dispatcher.should_send_tool_specs() {
-                serde_json::to_string(&self.tool_specs).unwrap_or_default().len()
-            } else {
-                0
-            };
-            let total_chars = system_chars + history_chars + tool_schema_chars;
-            tracing::debug!(
-                system_chars, history_count, history_chars, tool_schema_chars, total_chars,
-                estimated_tokens = total_chars / 4,
-                "LLM request context composition"
-            );
+            crate::agent::history::log_llm_context_stats(&messages, iteration);
 
             // Response cache: check before LLM call (only for deterministic, text-only prompts)
             let cache_key = if self.temperature == 0.0 {
@@ -983,7 +968,15 @@ impl Agent {
             });
 
             let results = self.execute_tools(&calls).await;
-            let formatted = self.tool_dispatcher.format_results(&results);
+            let max_tool_result_chars = self.config.max_tool_result_chars;
+            let truncated_results: Vec<ToolExecutionResult> = results
+                .into_iter()
+                .map(|mut r| {
+                    r.output = truncate_tool_result(&r.output, max_tool_result_chars);
+                    r
+                })
+                .collect();
+            let formatted = self.tool_dispatcher.format_results(&truncated_results);
             self.history.push(formatted);
             self.trim_history();
         }
@@ -1051,25 +1044,9 @@ impl Agent {
         let effective_model = self.classify_model(user_message);
 
         // ── Turn loop ──────────────────────────────────────────────────
-        for _ in 0..self.config.max_tool_iterations {
+        for iteration in 0..self.config.max_tool_iterations {
             let messages = self.tool_dispatcher.to_provider_messages(&self.history);
-
-            // ── Debug: log context composition ───────────────────────
-            let system_chars = messages.iter().find(|m| m.role == "system").map(|m| m.content.len()).unwrap_or(0);
-            let history_msgs = messages.iter().filter(|m| m.role != "system").collect::<Vec<_>>();
-            let history_count = history_msgs.len();
-            let history_chars = history_msgs.iter().map(|m| m.content.len()).sum::<usize>();
-            let tool_schema_chars = if self.tool_dispatcher.should_send_tool_specs() {
-                serde_json::to_string(&self.tool_specs).unwrap_or_default().len()
-            } else {
-                0
-            };
-            let total_chars = system_chars + history_chars + tool_schema_chars;
-            tracing::debug!(
-                system_chars, history_count, history_chars, tool_schema_chars, total_chars,
-                estimated_tokens = total_chars / 4,
-                "LLM request context composition"
-            );
+            crate::agent::history::log_llm_context_stats(&messages, iteration);
 
             // Response cache check (same as turn)
             let cache_key = if self.temperature == 0.0 {
@@ -1284,9 +1261,17 @@ impl Agent {
             }
 
             let results = self.execute_tools(&calls).await;
+            let max_tool_result_chars = self.config.max_tool_result_chars;
+            let truncated_results: Vec<ToolExecutionResult> = results
+                .into_iter()
+                .map(|mut r| {
+                    r.output = truncate_tool_result(&r.output, max_tool_result_chars);
+                    r
+                })
+                .collect();
 
             // Notify about each tool result
-            for result in &results {
+            for result in &truncated_results {
                 let _ = event_tx
                     .send(TurnEvent::ToolResult {
                         name: result.name.clone(),
@@ -1295,7 +1280,7 @@ impl Agent {
                     .await;
             }
 
-            let formatted = self.tool_dispatcher.format_results(&results);
+            let formatted = self.tool_dispatcher.format_results(&truncated_results);
             self.history.push(formatted);
             self.trim_history();
         }

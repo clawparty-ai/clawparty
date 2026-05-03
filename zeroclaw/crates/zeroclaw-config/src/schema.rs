@@ -1536,7 +1536,7 @@ pub struct AgentConfig {
 
     /// Maximum characters for a single tool result before truncation.
     /// Head (2/3) and tail (1/3) are preserved with a truncation marker in the
-    /// middle. Set to `0` to disable truncation. Default: `50000`.
+    /// middle. Set to `0` to disable truncation. Default: `1000`.
     #[serde(default = "default_max_tool_result_chars")]
     pub max_tool_result_chars: usize,
 
@@ -1549,7 +1549,7 @@ pub struct AgentConfig {
 }
 
 fn default_max_tool_result_chars() -> usize {
-    50_000
+    1_000
 }
 
 fn default_keep_tool_context_turns() -> usize {

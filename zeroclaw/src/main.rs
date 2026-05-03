@@ -41,8 +41,9 @@ use dialoguer::{Password, Select};
 use serde::{Deserialize, Serialize};
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tracing::{info, warn};
-use tracing_subscriber::{EnvFilter, fmt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 fn parse_temperature(s: &str) -> std::result::Result<f64, String> {
     let t: f64 = s.parse().map_err(|e| format!("{e}"))?;
@@ -960,14 +961,54 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Initialize logging - respects RUST_LOG env var, defaults to INFO
-    let subscriber = fmt::Subscriber::builder()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .finish();
+    // Resolve log directory.
+    let log_dir = {
+        let base = if let Some(ref d) = cli.config_dir {
+            PathBuf::from(d)
+        } else if let Ok(d) = std::env::var("ZEROCLAW_CONFIG_DIR") {
+            PathBuf::from(d)
+        } else {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| std::env::temp_dir().join("zeroclaw"))
+                .join(".zeroclaw")
+        };
+        base.join("logs")
+    };
 
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    let stderr_layer = fmt::layer().with_writer(std::io::stderr).with_ansi(true);
+
+    let log_file_result = (|| -> Result<_, std::io::Error> {
+        std::fs::create_dir_all(&log_dir)?;
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_dir.join("zeroclaw.log"))?;
+        Ok(Arc::new(file))
+    })();
+
+    match log_file_result {
+        Ok(file) => {
+            let file_layer = fmt::layer().with_writer(file).with_ansi(false);
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(stderr_layer)
+                .with(file_layer)
+                .init();
+        }
+        Err(e) => {
+            eprintln!(
+                "Warning: Could not open log file at {}: {e}",
+                log_dir.display()
+            );
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(stderr_layer)
+                .init();
+        }
+    }
 
     // Onboard auto-detects the environment: if stdin/stdout are a TTY and no
     // provider flags were given, it runs the full interactive wizard; otherwise

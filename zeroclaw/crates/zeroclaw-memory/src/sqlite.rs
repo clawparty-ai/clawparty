@@ -156,7 +156,7 @@ impl SqliteMemory {
         Ok(conn)
     }
 
-    /// Initialize all tables: memories, FTS5, `embedding_cache`
+    /// Initialize all tables: memories, FTS5, embedding_cache, session_memory, tool_results
     fn init_schema(conn: &Connection) -> anyhow::Result<()> {
         conn.execute_batch(
             "-- Core memories table
@@ -200,7 +200,46 @@ impl SqliteMemory {
                 created_at   TEXT NOT NULL,
                 accessed_at  TEXT NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_cache_accessed ON embedding_cache(accessed_at);",
+            CREATE INDEX IF NOT EXISTS idx_cache_accessed ON embedding_cache(accessed_at);
+
+            -- Session-level structured memory (session_memory tier)
+            -- Updated in real-time as conversation progresses; injected as a
+            -- zero-cost summary before expensive LLM compression is triggered.
+            CREATE TABLE IF NOT EXISTS session_memory (
+                session_id    TEXT PRIMARY KEY,
+                summary       TEXT NOT NULL DEFAULT '',
+                key_facts     TEXT NOT NULL DEFAULT '[]',
+                last_turn_idx INTEGER NOT NULL DEFAULT 0,
+                updated_at    TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_session_memory_updated ON session_memory(updated_at);
+
+            -- Tool-result offloading (L1: store oversized results outside context)
+            -- When a tool result exceeds a token threshold in the message history,
+            -- its full content is written here and replaced by a retrieval key.
+            CREATE TABLE IF NOT EXISTS tool_results (
+                id           TEXT PRIMARY KEY,
+                session_id   TEXT,
+                tool_name    TEXT NOT NULL,
+                arguments    TEXT,
+                full_result  TEXT NOT NULL,
+                preview      TEXT NOT NULL,
+                created_at   TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_tool_results_session ON tool_results(session_id);
+            CREATE INDEX IF NOT EXISTS idx_tool_results_name ON tool_results(tool_name);
+
+            -- Long-term memory index (L4: cross-session knowledge extracted at
+            -- session end and surfaced in system prompt via MEMORY.md)
+            CREATE TABLE IF NOT EXISTS long_term_index (
+                entry_key     TEXT PRIMARY KEY,
+                content       TEXT NOT NULL,
+                category      TEXT NOT NULL DEFAULT 'user_preference',
+                first_seen    TEXT NOT NULL,
+                last_updated  TEXT NOT NULL,
+                access_count  INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_lti_category ON long_term_index(category);",
         )?;
 
         // Migration: add session_id column if not present (safe to run repeatedly)
@@ -231,6 +270,68 @@ impl SqliteMemory {
         // Migration: add superseded_by column
         if !schema_sql.contains("superseded_by") {
             conn.execute_batch("ALTER TABLE memories ADD COLUMN superseded_by TEXT;")?;
+        }
+
+        // Migration: add session_memory, tool_results, long_term_index if they
+        // do not yet exist (tables added in v0.7.0). SQLite does not have
+        // CREATE TABLE IF NOT EXISTS ... when the same statement is inside a
+        // batch that also alters existing tables, so check individually.
+        let table_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='session_memory'",
+            [],
+            |row| row.get(0),
+        )?;
+        if table_count == 0 {
+            conn.execute_batch(
+                "CREATE TABLE session_memory (
+                    session_id    TEXT PRIMARY KEY,
+                    summary       TEXT NOT NULL DEFAULT '',
+                    key_facts     TEXT NOT NULL DEFAULT '[]',
+                    last_turn_idx INTEGER NOT NULL DEFAULT 0,
+                    updated_at    TEXT NOT NULL
+                );
+                CREATE INDEX idx_session_memory_updated ON session_memory(updated_at);",
+            )?;
+        }
+
+        let table_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='tool_results'",
+            [],
+            |row| row.get(0),
+        )?;
+        if table_count == 0 {
+            conn.execute_batch(
+                "CREATE TABLE tool_results (
+                    id           TEXT PRIMARY KEY,
+                    session_id   TEXT,
+                    tool_name    TEXT NOT NULL,
+                    arguments    TEXT,
+                    full_result  TEXT NOT NULL,
+                    preview      TEXT NOT NULL,
+                    created_at   TEXT NOT NULL
+                );
+                CREATE INDEX idx_tool_results_session ON tool_results(session_id);
+                CREATE INDEX idx_tool_results_name ON tool_results(tool_name);",
+            )?;
+        }
+
+        let table_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='long_term_index'",
+            [],
+            |row| row.get(0),
+        )?;
+        if table_count == 0 {
+            conn.execute_batch(
+                "CREATE TABLE long_term_index (
+                    entry_key     TEXT PRIMARY KEY,
+                    content       TEXT NOT NULL,
+                    category      TEXT NOT NULL DEFAULT 'user_preference',
+                    first_seen    TEXT NOT NULL,
+                    last_updated  TEXT NOT NULL,
+                    access_count  INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX idx_lti_category ON long_term_index(category);",
+            )?;
         }
 
         Ok(())
@@ -544,6 +645,271 @@ impl SqliteMemory {
                     importance: row.get(7)?,
                     superseded_by: row.get(8)?,
                 })
+            })?;
+
+            let mut results = Vec::new();
+            for row in rows {
+                results.push(row?);
+            }
+            Ok(results)
+        })
+        .await?
+    }
+
+    // ── Tool-result offloading (L1) ─────────────────────────────────
+
+    /// Store a large tool result and return its storage key.
+    /// Callers replace the original `result` with `[tool_result:{key}]`
+    /// and can later retrieve the full content via `retrieve_tool_result`.
+    pub async fn store_tool_result(
+        &self,
+        session_id: Option<&str>,
+        tool_name: &str,
+        arguments: Option<&str>,
+        full_result: &str,
+        preview: &str,
+    ) -> anyhow::Result<String> {
+        let id = Uuid::new_v4().to_string();
+        let conn = self.conn.clone();
+        let sid = session_id.map(String::from);
+        let tool_name = tool_name.to_string();
+        let arguments = arguments.map(String::from);
+        let full_result = full_result.to_string();
+        let preview = if preview.is_empty() {
+            full_result.chars().take(200).collect::<String>() + "..."
+        } else {
+            preview.to_string()
+        };
+
+        tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
+            let conn = conn.lock();
+            let now = Local::now().to_rfc3339();
+            conn.execute(
+                "INSERT INTO tool_results (id, session_id, tool_name, arguments, full_result, preview, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![&id, sid, &tool_name, arguments, &full_result, &preview, &now],
+            )?;
+            Ok(id)
+        })
+        .await?
+    }
+
+    /// Retrieve a previously stored tool result by its storage key.
+    pub async fn retrieve_tool_result(
+        &self,
+        id: &str,
+    ) -> anyhow::Result<Option<(String, String, String)>> {
+        // Returns (tool_name, full_result, preview)
+        let conn = self.conn.clone();
+        let id = id.to_string();
+
+        tokio::task::spawn_blocking(
+            move || -> anyhow::Result<Option<(String, String, String)>> {
+                let conn = conn.lock();
+                let mut stmt = conn.prepare(
+                    "SELECT tool_name, full_result, preview FROM tool_results WHERE id = ?1",
+                )?;
+                let row = stmt.query_row(params![id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                });
+                match row {
+                    Ok(triple) => Ok(Some(triple)),
+                    Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                    Err(e) => Err(e.into()),
+                }
+            },
+        )
+        .await?
+    }
+
+    /// Purge tool results for a session (e.g. on /clear).
+    pub async fn purge_tool_results(&self, session_id: &str) -> anyhow::Result<usize> {
+        let conn = self.conn.clone();
+        let session_id = session_id.to_string();
+
+        tokio::task::spawn_blocking(move || -> anyhow::Result<usize> {
+            let conn = conn.lock();
+            let affected = conn.execute(
+                "DELETE FROM tool_results WHERE session_id = ?1",
+                params![session_id],
+            )?;
+            Ok(affected)
+        })
+        .await?
+    }
+
+    // ── Session memory (L2) ─────────────────────────────────────────
+
+    /// Upsert a session-level summary note.
+    pub async fn store_session_memory(
+        &self,
+        session_id: &str,
+        summary: &str,
+        key_facts: &str,
+        last_turn_idx: usize,
+    ) -> anyhow::Result<()> {
+        let conn = self.conn.clone();
+        let session_id = session_id.to_string();
+        let summary = summary.to_string();
+        let key_facts = key_facts.to_string();
+
+        tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            let conn = conn.lock();
+            let now = Local::now().to_rfc3339();
+            conn.execute(
+                "INSERT INTO session_memory (session_id, summary, key_facts, last_turn_idx, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(session_id) DO UPDATE SET
+                    summary = excluded.summary,
+                    key_facts = excluded.key_facts,
+                    last_turn_idx = excluded.last_turn_idx,
+                    updated_at = excluded.updated_at",
+                params![&session_id, &summary, &key_facts, last_turn_idx as i64, &now],
+            )?;
+            Ok(())
+        })
+        .await?
+    }
+
+    /// Retrieve session memory for injection into context.
+    pub async fn get_session_memory(
+        &self,
+        session_id: &str,
+    ) -> anyhow::Result<Option<(String, String, usize)>> {
+        let conn = self.conn.clone();
+        let session_id = session_id.to_string();
+
+        tokio::task::spawn_blocking(move || -> anyhow::Result<Option<(String, String, usize)>> {
+            let conn = conn.lock();
+            let mut stmt = conn.prepare(
+                "SELECT summary, key_facts, last_turn_idx FROM session_memory WHERE session_id = ?1",
+            )?;
+            let row = stmt.query_row(params![session_id], |row| {
+                let summary: String = row.get(0)?;
+                let key_facts: String = row.get(1)?;
+                let last_turn: i64 = row.get(2)?;
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                Ok((summary, key_facts, last_turn as usize))
+            });
+            match row {
+                Ok(triple) => Ok(Some(triple)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(e.into()),
+            }
+        })
+        .await?
+    }
+
+    /// Delete session memory for a session.
+    pub async fn delete_session_memory(&self, session_id: &str) -> anyhow::Result<usize> {
+        let conn = self.conn.clone();
+        let session_id = session_id.to_string();
+
+        tokio::task::spawn_blocking(move || -> anyhow::Result<usize> {
+            let conn = conn.lock();
+            let affected = conn.execute(
+                "DELETE FROM session_memory WHERE session_id = ?1",
+                params![session_id],
+            )?;
+            Ok(affected)
+        })
+        .await?
+    }
+
+    // ── Long-term index (L4) ────────────────────────────────────────
+
+    /// Store an extracted long-term memory fact.
+    pub async fn store_long_term(
+        &self,
+        entry_key: &str,
+        content: &str,
+        category: &str,
+    ) -> anyhow::Result<()> {
+        let conn = self.conn.clone();
+        let entry_key = entry_key.to_string();
+        let content = content.to_string();
+        let category = category.to_string();
+
+        tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            let conn = conn.lock();
+            let now = Local::now().to_rfc3339();
+            conn.execute(
+                "INSERT INTO long_term_index (entry_key, content, category, first_seen, last_updated, access_count)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 1)
+                 ON CONFLICT(entry_key) DO UPDATE SET
+                    content = excluded.content,
+                    category = excluded.category,
+                    last_updated = excluded.last_updated,
+                    access_count = access_count + 1",
+                params![entry_key, content, category, &now, &now],
+            )?;
+            Ok(())
+        })
+        .await?
+    }
+
+    /// Retrieve a long-term memory fact by key.
+    pub async fn get_long_term(&self, entry_key: &str) -> anyhow::Result<Option<(String, usize)>> {
+        let conn = self.conn.clone();
+        let entry_key = entry_key.to_string();
+
+        tokio::task::spawn_blocking(move || -> anyhow::Result<Option<(String, usize)>> {
+            let conn = conn.lock();
+            let mut stmt = conn.prepare(
+                "SELECT content, access_count FROM long_term_index WHERE entry_key = ?1",
+            )?;
+            let row = stmt.query_row(params![entry_key], |row| {
+                let content: String = row.get(0)?;
+                let count: i64 = row.get(1)?;
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                Ok((content, count as usize))
+            });
+            match row {
+                Ok(pair) => Ok(Some(pair)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(e.into()),
+            }
+        })
+        .await?
+    }
+
+    /// Search long-term facts by keyword (simple LIKE).
+    pub async fn search_long_term(
+        &self,
+        query: &str,
+        category: Option<&str>,
+        limit: usize,
+    ) -> anyhow::Result<Vec<(String, String)>> {
+        let conn = self.conn.clone();
+        let query = query.to_string();
+        let category = category.map(String::from);
+
+        tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<(String, String)>> {
+            let conn = conn.lock();
+            let mut sql = String::from(
+                "SELECT entry_key, content FROM long_term_index WHERE (entry_key LIKE ?1 OR content LIKE ?1)",
+            );
+            let kw = format!("%{}%", query);
+            let mut params_v: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            params_v.push(Box::new(kw.clone()));
+
+            if let Some(cat) = category {
+                let _ = write!(sql, " AND category = ?2");
+                params_v.push(Box::new(cat));
+            }
+            sql.push_str(" ORDER BY access_count DESC LIMIT ?");
+            #[allow(clippy::cast_possible_wrap)]
+            params_v.push(Box::new(limit as i64));
+
+            let mut stmt = conn.prepare(&sql)?;
+            let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                params_v.iter().map(AsRef::as_ref).collect();
+            let rows = stmt.query_map(params_ref.as_slice(), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?;
 
             let mut results = Vec::new();

@@ -10864,7 +10864,7 @@ This is an example JSON object for profile settings."#;
             activated_tools: None,
             cost_tracking: None,
             pacing: zeroclaw_config::schema::PacingConfig::default(),
-            max_tool_result_chars: 50000,
+            max_tool_result_chars: 1000,
             context_token_budget: 128_000,
             debouncer: Arc::new(zeroclaw_infra::debounce::MessageDebouncer::new(
                 std::time::Duration::ZERO,
