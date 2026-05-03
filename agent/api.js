@@ -470,9 +470,10 @@ function createAgent(agentName, displayName, modelConfig, description, workspace
   var port = allocatePort()
   console.log('[AGENT] Allocated port: ' + port)
 
-  // Create directory structure using display_name (or agent_name as fallback)
+  // Create directory structure using agent_name (English, safe for Windows FS).
+  // display_name (Chinese or localized) is stored in the DB for UI only.
   var agentsDir = os.path.join(rootDir, 'agents')
-  var dirName = makeDisplayDirName(displayName || agentName, agentsDir)
+  var dirName = makeDisplayDirName(agentName, agentsDir)
   var agentDir = os.path.join(agentsDir, dirName)
   var workspaceDir = os.path.join(agentDir, 'workspace')
 
