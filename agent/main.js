@@ -459,6 +459,18 @@ function main(listen, apiToken, noAuth) {
       },
     },
 
+    '/api/agents/reconcile': {
+      'POST': function () {
+        console.log('[API] POST /api/agents/reconcile')
+        try {
+          var result = api.reconcileAgentStatuses()
+          return response(200, result)
+        } catch (e) {
+          return response(500, { error: e.message || String(e) })
+        }
+      },
+    },
+
     '/api/agents/{name}': {
       'GET': function ({ name }) {
         name = URL.decodeComponent(name)
@@ -511,18 +523,6 @@ function main(listen, apiToken, noAuth) {
         var agent = api.getAgentStatus(name)
         if (!agent) return response(404, { error: 'Agent not found' })
         return response(200, agent)
-      },
-    },
-
-    '/api/agents/reconcile': {
-      'POST': function () {
-        console.log('[API] POST /api/agents/reconcile')
-        try {
-          var result = api.reconcileAgentStatuses()
-          return response(200, result)
-        } catch (e) {
-          return response(500, { error: e.message || String(e) })
-        }
       },
     },
 

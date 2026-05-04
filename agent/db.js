@@ -240,7 +240,8 @@ function open(pathname) {
       created_at      REAL NOT NULL,
       updated_at      REAL NOT NULL,
       config_json     TEXT,
-      error_msg       TEXT
+      error_msg       TEXT,
+      deleted         INTEGER NOT NULL DEFAULT 0
     )
   `)
 
@@ -251,6 +252,11 @@ function open(pathname) {
   // Migration: add description column if not exists
   try {
     db.exec(`ALTER TABLE agents ADD COLUMN description TEXT`)
+  } catch {}
+
+  // Migration: add deleted column for soft-delete
+  try {
+    db.exec(`ALTER TABLE agents ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`)
   } catch {}
 
   // Group chats for local ZeroClaw agent group chat
@@ -1015,7 +1021,7 @@ function createAgent(agent) {
 }
 
 function allAgents() {
-  return db.sql('SELECT * FROM agents ORDER BY created_at DESC').exec()
+  return db.sql('SELECT * FROM agents WHERE deleted = 0 ORDER BY created_at DESC').exec()
     .map(r => ({
       agent_name: r.agent_name,
       display_name: r.display_name || null,
@@ -1034,7 +1040,7 @@ function allAgents() {
 }
 
 function getAgent(name) {
-  var row = db.sql('SELECT * FROM agents WHERE agent_name = ?').bind(1, name).exec()[0]
+  var row = db.sql('SELECT * FROM agents WHERE agent_name = ? AND deleted = 0').bind(1, name).exec()[0]
   if (!row) return null
   return {
     agent_name: row.agent_name,
@@ -1068,12 +1074,23 @@ function updateAgentStatus(name, status, pid, errorMsg) {
     .exec()
 }
 
+// Check if an agent exists in DB (including soft-deleted ones)
+function agentExists(name) {
+  var row = db.sql('SELECT 1 FROM agents WHERE agent_name = ?').bind(1, name).exec()[0]
+  return !!row
+}
+
 function deleteAgent(name) {
-  db.sql('DELETE FROM agents WHERE agent_name = ?').bind(1, name).exec()
+  var t = Date.now() / 1000
+  db.sql('UPDATE agents SET deleted = 1, status = ?, updated_at = ? WHERE agent_name = ?')
+    .bind(1, 'deleted')
+    .bind(2, t)
+    .bind(3, name)
+    .exec()
 }
 
 function isPortUsed(port) {
-  var row = db.sql('SELECT 1 FROM agents WHERE port = ?').bind(1, port).exec()[0]
+  var row = db.sql('SELECT 1 FROM agents WHERE port = ? AND deleted = 0').bind(1, port).exec()[0]
   return !!row
 }
 
@@ -1402,6 +1419,7 @@ export default {
   updateAgentStatus,
   deleteAgent,
   isPortUsed,
+  agentExists,
   adjustCredit,
   getBlockedKeywords,
   addBlockedKeyword,

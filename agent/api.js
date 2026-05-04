@@ -726,31 +726,23 @@ function deleteAgent(agentName) {
   }
 
   console.log('[AGENT] Deleting agent: ' + agentName)
-  
+
   var agent = db.getAgent(agentName)
   if (!agent) {
     console.log('[AGENT] Delete failed: agent not found: ' + agentName)
     throw 'Agent not found: ' + agentName
   }
-  
+
   // Stop if running
   if (agent.status === 'running' || agent.status === 'starting') {
     console.log('[AGENT] Stopping agent before delete: ' + agentName)
     stopAgent(agentName)
   }
-  
-  // Delete directory
-  try {
-    os.remove(agent.directory, { recursive: true })
-    console.log('[AGENT] Deleted directory: ' + agent.directory)
-  } catch (e) {
-    console.log('[AGENT] Warning: failed to delete directory: ' + e.message)
-  }
-  
-  // Delete from database
+
+  // Soft-delete in database (directory is kept for potential recovery)
   db.deleteAgent(agentName)
-  console.log('[AGENT] Agent deleted: ' + agentName)
-  
+  console.log('[AGENT] Agent soft-deleted: ' + agentName)
+
   return { status: 'deleted', agent_name: agentName }
 }
 
@@ -1220,8 +1212,71 @@ function allAgentStatuses() {
   return agents
 }
 
+// Scan ~/.clawparty/agents for directories that look like valid agent
+// installations but are missing from the DB.  Add them back so the UI
+// can see and manage them.
+function _scanOrphanAgents() {
+  var agentsDir = os.path.join(rootDir, 'agents')
+  var entries = []
+  try { entries = os.readDir(agentsDir) } catch (e) { entries = [] }
+
+  var added = 0
+  for (var i = 0; i < entries.length; i++) {
+    var dirName = entries[i]
+    var agentDir = os.path.join(agentsDir, dirName)
+
+    var isDir = false
+    try {
+      var st = os.stat(agentDir)
+      if (st && st.isDirectory()) isDir = true
+    } catch (e) {}
+
+    if (isDir) {
+      var hasConfig = false
+      var hasWorkspace = false
+      try {
+        os.stat(os.path.join(agentDir, 'config.toml'))
+        hasConfig = true
+      } catch (e) {}
+      try {
+        var wsStat = os.stat(os.path.join(agentDir, 'workspace'))
+        if (wsStat && wsStat.isDirectory()) hasWorkspace = true
+      } catch (e) {}
+
+      if (hasConfig && hasWorkspace) {
+        if (db.agentExists(dirName)) {
+          console.log('[AGENT] Skipping orphan scan for ' + dirName + ': already in DB (possibly soft-deleted)')
+        } else {
+          try {
+            var port = allocatePort()
+            db.createAgent({
+              agent_name: dirName,
+              display_name: dirName,
+              description: null,
+              directory: agentDir,
+              config_path: os.path.join(agentDir, 'config.toml'),
+              workspace_dir: os.path.join(agentDir, 'workspace'),
+              port: port
+            })
+            added++
+            console.log('[AGENT] Reconciled orphan agent directory: ' + dirName + ', port=' + port)
+          } catch (e) {
+            console.log('[AGENT] Failed to reconcile orphan agent ' + dirName + ': ' + e)
+          }
+        }
+      }
+    }
+  }
+
+  if (added > 0) {
+    console.log('[AGENT] Reconciled ' + added + ' orphan agent(s) from filesystem')
+  }
+}
+
 // Force reconcile: clear caches and verify every agent against actual OS process state
 function reconcileAgentStatuses() {
+  _scanOrphanAgents()
+
   var agents = db.allAgents()
   var reconciled = []
 
