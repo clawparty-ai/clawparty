@@ -135,6 +135,12 @@ jobs:
           Copy-Item "bin\ztm.exe" "dist\ztm.exe"
           Copy-Item "bin\zeroclaw.exe" "dist\zeroclaw.exe"
           Copy-Item -Recurse -Force "agent\gui" "dist\gui"
+          if (Test-Path "windows\start.bat") {
+            Copy-Item "windows\start.bat" "dist\start.bat"
+          }
+          if (Test-Path "windows\stop.bat") {
+            Copy-Item "windows\stop.bat" "dist\stop.bat"
+          }
           Write-Host "=== dist directory contents ==="
           Get-ChildItem -Recurse -Path "dist" | Select-Object FullName, @{N='SizeMB';E={[math]::Round($_.Length/1MB,2)}}
           $tag = "${{ github.event.inputs.tag }}"
