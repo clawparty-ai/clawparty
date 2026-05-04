@@ -1080,6 +1080,12 @@ function agentExists(name) {
   return !!row
 }
 
+// Check if an agent directory is already owned by an active (non-deleted) agent
+function directoryHasAgent(directory) {
+  var row = db.sql('SELECT 1 FROM agents WHERE directory = ? AND deleted = 0').bind(1, directory).exec()[0]
+  return !!row
+}
+
 function deleteAgent(name) {
   var t = Date.now() / 1000
   db.sql('UPDATE agents SET deleted = 1, status = ?, updated_at = ? WHERE agent_name = ?')
@@ -1420,6 +1426,7 @@ export default {
   deleteAgent,
   isPortUsed,
   agentExists,
+  directoryHasAgent,
   adjustCredit,
   getBlockedKeywords,
   addBlockedKeyword,

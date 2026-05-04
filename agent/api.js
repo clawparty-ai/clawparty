@@ -1248,6 +1248,8 @@ function _scanOrphanAgents() {
       if (hasConfig && hasWorkspace) {
         if (db.agentExists(dirName)) {
           console.log('[AGENT] Skipping orphan scan for ' + dirName + ': already in DB (possibly soft-deleted)')
+        } else if (db.directoryHasAgent(agentDir)) {
+          console.log('[AGENT] Skipping orphan scan for ' + dirName + ': directory already owned by an active agent')
         } else {
           try {
             var port = allocatePort()
