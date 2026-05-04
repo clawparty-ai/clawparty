@@ -73,6 +73,17 @@
         >
           <span style="font-size: 13px; font-weight: 600;">🎯</span>
         </button>
+        <button
+          v-if="showRefreshButton"
+          class="header-btn"
+          :class="{ spinning: refreshing }"
+          title="Refresh zAgent status"
+          @click="emit('refreshAgentStatus')"
+        >
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
+          </svg>
+        </button>
         <button class="header-btn" title="Settings">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
             <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z"/>
@@ -121,10 +132,18 @@ const props = defineProps({
   taskPanelVisible: {
     type: Boolean,
     default: true
+  },
+  showRefreshButton: {
+    type: Boolean,
+    default: false
+  },
+  refreshing: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload', 'toggleTaskPanel'])
+const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload', 'toggleTaskPanel', 'refreshAgentStatus'])
 </script>
 
 <style scoped>
@@ -252,6 +271,15 @@ const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 
 .header-btn.active {
   background: rgba(64, 149, 254, 0.15);
   color: #4095fe;
+}
+
+.header-btn.spinning svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .header-btn-danger:hover {
