@@ -1223,6 +1223,8 @@ function _scanOrphanAgents() {
   var added = 0
   for (var i = 0; i < entries.length; i++) {
     var dirName = entries[i]
+    // os.readDir may return trailing slashes for directories
+    if (dirName.endsWith('/')) dirName = dirName.substring(0, dirName.length - 1)
     var agentDir = os.path.join(agentsDir, dirName)
 
     var isDir = false
