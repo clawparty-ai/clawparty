@@ -9,7 +9,13 @@
         <span class="stat pending" v-if="taskStats.pending > 0">{{ taskStats.pending }} 待办</span>
         <span class="stat pending" v-else-if="taskStats.total === 0">0 待办</span>
         <span class="stat failed" v-if="taskStats.failed > 0">{{ taskStats.failed }} 失败</span>
+        <span class="stat confirm" v-if="taskStats.pendingConfirm > 0">{{ taskStats.pendingConfirm }} 待确认</span>
       </span>
+      <button class="refresh-btn" :class="{ spinning: refreshing }" @click.stop="onRefresh" title="刷新任务">
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
+        </svg>
+      </button>
     </div>
     <div v-show="expanded" class="task-panel-body">
       <div v-if="tasks.length === 0" class="task-empty">
@@ -21,7 +27,7 @@
         :key="task.task_id"
         v-else
         class="task-row"
-        :class="['indent-' + Math.min(task.depth, 3), 'status-' + task.status]"
+        :class="['indent-' + Math.min(task.depth, 3), 'status-' + task.status, { 'pending-confirm': task._pendingChange, 'pending-create': task._isPendingCreate }]"
       >
         <div class="task-indent-guide">
           <div v-for="d in task.depth" :key="d" class="indent-line"></div>
@@ -34,7 +40,10 @@
         </div>
         <div class="task-content">
           <div class="task-line">
-            <span class="task-title" :title="task.ai_description || task.description">{{ task.short_title || task.title }}</span>
+            <span class="task-title" :title="task.ai_description || task.description">
+              <span v-if="task._isPendingCreate" class="new-badge">新</span>
+              {{ task.short_title || task.title }}
+            </span>
             <span class="task-priority" v-if="task.priority !== 'normal'" :class="'priority-' + task.priority">{{ formatPriority(task.priority) }}</span>
           </div>
           <div class="task-meta">
@@ -42,6 +51,10 @@
               <div class="task-progress-fill" :class="'fill-' + task.status" :style="{ width: task.progress + '%' }"></div>
             </div>
             <span class="task-progress-text">{{ task.progress }}%</span>
+          </div>
+          <div v-if="task._pendingChange" class="pending-reason">
+            <span class="reason-text">{{ task._pendingChange.reason }}</span>
+            <button class="confirm-btn" @click.stop="confirmChange(task._pendingChange)">✓ 确认</button>
           </div>
         </div>
       </div>
@@ -74,13 +87,36 @@ const props = defineProps({
   initialHeight: {
     type: Number,
     default: 180
+  },
+  refreshing: {
+    type: Boolean,
+    default: false
+  },
+  pendingChanges: {
+    type: Array,
+    default: () => []
   }
 })
 
-const emit = defineEmits(['toggle'])
+const emit = defineEmits(['toggle', 'refresh', 'confirmChange'])
 
 const toggleExpanded = () => {
   emit('toggle')
+}
+
+const onRefresh = () => {
+  emit('refresh')
+}
+
+const isPendingConfirm = (taskId) => {
+  for (const c of props.pendingChanges) {
+    if (c.taskId === taskId || (c.data && c.taskId === taskId)) return c
+  }
+  return null
+}
+
+const confirmChange = (change) => {
+  emit('confirmChange', change)
 }
 
 const formatPriority = (priority) => {
@@ -136,6 +172,24 @@ const stopResize = () => {
 }
 
 const flattenedTasks = computed(() => {
+  // Build a mutation-safe copy of tasks and attach pendingChange markers
+  function cloneWithPending(taskList) {
+    const list = []
+    for (let i = 0; i < taskList.length; i++) {
+      const task = { ...taskList[i] }
+      const pendingChange = isPendingConfirm(task.task_id)
+      if (pendingChange) {
+        task._pendingChange = pendingChange
+      }
+      if (task.subtasks && task.subtasks.length > 0) {
+        task.subtasks = cloneWithPending(task.subtasks)
+      }
+      list.push(task)
+    }
+    return list
+  }
+
+  const cloned = cloneWithPending(props.tasks)
   const result = []
   function flatten(taskList, depth) {
     for (let i = 0; i < taskList.length; i++) {
@@ -146,7 +200,26 @@ const flattenedTasks = computed(() => {
       }
     }
   }
-  flatten(props.tasks, 0)
+  flatten(cloned, 0)
+
+  // Append pending-create items at the bottom as virtual rows
+  for (const c of props.pendingChanges) {
+    if (c.type === 'create') {
+      result.push({
+        task_id: c.taskId,
+        title: c.data.title,
+        short_title: null,
+        description: c.data.description,
+        status: c.data.status || 'pending',
+        progress: c.data.progress !== undefined ? c.data.progress : 0,
+        priority: 'normal',
+        depth: 0,
+        _isPendingCreate: true,
+        _pendingChange: c,
+      })
+    }
+  }
+
   return result
 })
 
@@ -172,7 +245,7 @@ const taskStats = computed(() => {
     }
   }
   count(props.tasks)
-  return { total, pending, running, completed, failed }
+  return { total, pending, running, completed, failed, pendingConfirm: props.pendingChanges.length }
 })
 </script>
 
@@ -432,6 +505,116 @@ const taskStats = computed(() => {
   font-size: 12px;
   color: var(--text-dim, #797979);
   line-height: 1.5;
+}
+
+/* Refresh button */
+.refresh-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim, #797979);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.refresh-btn:hover {
+  background: rgba(64, 149, 254, 0.1);
+  color: #4095fe;
+}
+
+.refresh-btn.spinning svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Pending confirm stat badge */
+.stat.confirm {
+  background: rgba(255, 152, 0, 0.15);
+  color: #f57c00;
+}
+
+/* Pending confirm flashing highlight */
+.task-row.pending-confirm {
+  animation: flashBorder 1.5s ease-in-out infinite;
+  border-radius: 4px;
+  padding: 4px 6px;
+  margin: 0 -6px;
+}
+
+@keyframes flashBorder {
+  0%, 100% {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px transparent;
+  }
+  50% {
+    background: rgba(64, 149, 254, 0.06);
+    box-shadow: inset 0 0 0 1px rgba(64, 149, 254, 0.3);
+  }
+}
+
+/* Pending create (new task) */
+.task-row.pending-create {
+  animation: flashBorder 1.5s ease-in-out infinite;
+  border-radius: 4px;
+  padding: 4px 6px;
+  margin: 0 -6px;
+}
+
+.new-badge {
+  display: inline-block;
+  font-size: 9px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(64, 149, 254, 0.2);
+  color: #4095fe;
+  margin-right: 4px;
+  font-weight: 600;
+}
+
+/* Pending reason + confirm button */
+.pending-reason {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.reason-text {
+  font-size: 10px;
+  color: #f57c00;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.confirm-btn {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: none;
+  background: rgba(46, 182, 125, 0.15);
+  color: #2eb67d;
+  cursor: pointer;
+  font-weight: 600;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.confirm-btn:hover {
+  background: #2eb67d;
+  color: #fff;
 }
 
 </style>

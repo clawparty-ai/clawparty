@@ -23,7 +23,11 @@
       :tasks="tasks"
       :expanded="taskPanelBodyExpanded"
       :initialHeight="taskPanelInitialHeight"
+      :refreshing="isTaskRefreshing"
+      :pendingChanges="pendingTaskChanges"
       @toggle="taskPanelBodyExpanded = !taskPanelBodyExpanded"
+      @refresh="handleTaskRefresh"
+      @confirmChange="handleConfirmTaskChange"
     />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
@@ -155,7 +159,7 @@ import MessageInput from './MessageInput.vue'
 import HalfAutomationInput from './HalfAutomationInput.vue'
 import ConfigTable from './ConfigTable.vue'
 import TaskPanel from './TaskPanel.vue'
-import { chatService, taskService } from '../services/chatService'
+import { chatService, taskService, ZeroClawWS, zagentService } from '../services/chatService'
 import { getAvatarColor } from '../utils/avatar'
 
 marked.setOptions({
@@ -234,21 +238,20 @@ const currentSessionId = ref('')
 // Quote feature
 const quotedMessage = ref(null)
 
-// Task management (zAgent only)
+// Task management (zAgent / Group Chat)
 const tasks = ref([])
-const showTaskPanel = ref(false)          // 默认关闭，有任务时自动打开
-const taskPanelBodyExpanded = ref(true)  // 由 TaskPanel header 点击控制 body 展开/折叠
-const taskPanelInitialHeight = ref(180)  // 初始高度 = message panel 可用空间的 50%
-let taskPollTimer = null
+const showTaskPanel = ref(false)
+const taskPanelBodyExpanded = ref(true)
+const taskPanelInitialHeight = ref(180)
+const isTaskRefreshing = ref(false)
+const pendingTaskChanges = ref([])
 
 const calcTaskPanelHeight = async () => {
   if (!chatMainEl.value) return
   await nextTick()
   await nextTick()
-  // Measure ChatMain total and subtract header -> message panel remaining space
   const totalH = chatMainEl.value.clientHeight
   if (totalH === 0) {
-    // DOM 刚显示，布局尚未完成，延迟重试
     setTimeout(calcTaskPanelHeight, 100)
     return
   }
@@ -272,16 +275,182 @@ const loadTasks = async () => {
   }
 }
 
-const startTaskPolling = () => {
-  stopTaskPolling()
-  taskPollTimer = setInterval(loadTasks, 30000)
+const handleTaskRefresh = async () => {
+  if (isTaskRefreshing.value) return
+  isTaskRefreshing.value = true
+
+  await loadTasks()
+
+  const msgs = props.chat.messages || []
+  const lastAnalyzed = props.chat.lastTaskAnalyzedAt || 0
+  const newMessages = msgs.filter(m => m.timestamp && m.timestamp > lastAnalyzed)
+
+  if (newMessages.length === 0) {
+    // No new messages: just record current timestamp and finish
+    const latestTs = msgs.length > 0 ? msgs[msgs.length - 1].timestamp : Date.now()
+    props.chat.lastTaskAnalyzedAt = Math.max(lastAnalyzed, latestTs)
+    isTaskRefreshing.value = false
+    return
+  }
+
+  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
+  const groupId = props.chat.isGroupChat ? props.chat.groupId : null
+  if (!agentName) {
+    props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
+    isTaskRefreshing.value = false
+    return
+  }
+
+  try {
+    const agentsRes = await zagentService.getAgents()
+    const zeroAgent = agentsRes.data.find(function(a) { return a.agent_name === '0#Agent' })
+    if (!zeroAgent || !zeroAgent.port) {
+      console.warn('[TaskRefresh] 0#Agent not found')
+      props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
+      isTaskRefreshing.value = false
+      return
+    }
+
+    const existingTasks = tasks.value
+    const msgText = newMessages.map(m => {
+      const role = m.isSent ? 'user' : 'assistant'
+      return `[${role}] ${m.sender || 'unknown'}: ${m.text || ''}`
+    }).join('\n\n')
+
+    const prompt = `[系统指令] 你是 Task Analyst，请分析以下聊天记录，识别新任务和已有任务的状态变更。
+
+## 当前已有任务
+${existingTasks.map(t => `- ID: ${t.task_id} | 标题: ${t.title} | 状态: ${t.status} | 进度: ${t.progress}%`).join('\n')}
+
+## 新聊天记录（按时间排序，user=用户，assistant=AI）
+${msgText}
+
+## 分析要求
+1. **新任务**：用户或 AI 提到的新待办事项、计划、工作目标
+2. **状态变更**：现有任务在聊天中被提到已完成、失败、取消或进度变化
+
+## 输出格式（纯 JSON，不要 markdown 代码块，不要解释）
+{
+  "newTasks": [
+    {"title": "...", "description": "...", "status": "pending|running|completed|failed", "progress": 0}
+  ],
+  "statusChanges": [
+    {"taskId": "现有任务ID", "newStatus": "...", "newProgress": 100, "reason": "变化原因"}
+  ]
+}`
+
+    const sessionId = 'sys-task-refresh-' + Date.now()
+    let fullResponse = ''
+    let hasResponded = false
+
+    const ws = new ZeroClawWS(
+      '0#Agent',
+      sessionId,
+      function(data) {
+        if (data.type === 'chunk') fullResponse += data.content
+        else if (data.type === 'done') {
+          hasResponded = true
+          ws.close()
+          try {
+            // Extract JSON from response (handle possible markdown code block)
+            let jsonText = fullResponse.trim()
+            if (jsonText.indexOf('```json') >= 0) {
+              const start = jsonText.indexOf('```json') + 7
+              const end = jsonText.lastIndexOf('```')
+              jsonText = jsonText.slice(start, end > start ? end : undefined).trim()
+            } else if (jsonText.indexOf('```') >= 0) {
+              const start = jsonText.indexOf('```') + 3
+              const end = jsonText.lastIndexOf('```')
+              jsonText = jsonText.slice(start, end > start ? end : undefined).trim()
+            }
+            const result = JSON.parse(jsonText)
+            const changes = []
+            if (result.newTasks && result.newTasks.length > 0) {
+              for (const t of result.newTasks) {
+                changes.push({
+                  type: 'create',
+                  taskId: 'ai-task-' + Date.now() + '-' + Math.floor(Math.random() * 10000),
+                  data: t,
+                  reason: 'AI 检测到新任务：' + t.title
+                })
+              }
+            }
+            if (result.statusChanges && result.statusChanges.length > 0) {
+              for (const c of result.statusChanges) {
+                changes.push({
+                  type: 'update',
+                  taskId: c.taskId,
+                  newStatus: c.newStatus,
+                  newProgress: c.newProgress,
+                  reason: c.reason || 'AI 检测到状态变更'
+                })
+              }
+            }
+            pendingTaskChanges.value = changes
+            console.log('[TaskRefresh] AI analysis complete, pending changes:', changes.length)
+          } catch (e) {
+            console.warn('[TaskRefresh] Failed to parse AI response:', e, fullResponse)
+          }
+          props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
+          isTaskRefreshing.value = false
+        }
+      },
+      function() {
+        ws.sendMessage(prompt)
+      },
+      function() {},
+      function() {},
+      zeroAgent.port
+    )
+    ws.connect()
+
+    setTimeout(function() {
+      if (!hasResponded) {
+        ws.close()
+        console.warn('[TaskRefresh] Timeout waiting for 0#Agent')
+        props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
+        isTaskRefreshing.value = false
+      }
+    }, 20000)
+  } catch (e) {
+    console.error('[TaskRefresh] AI analysis failed:', e)
+    props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
+    isTaskRefreshing.value = false
+  }
 }
 
-const stopTaskPolling = () => {
-  if (taskPollTimer) {
-    clearInterval(taskPollTimer)
-    taskPollTimer = null
+const handleConfirmTaskChange = async (change) => {
+  if (!change) return
+  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
+  const groupId = props.chat.isGroupChat ? props.chat.groupId : null
+  try {
+    if (change.type === 'create') {
+      await taskService.createTask({
+        task_id: change.taskId,
+        agent_name: agentName,
+        group_id: groupId || null,
+        title: change.data.title,
+        description: change.data.description || change.data.title,
+        status: change.data.status || 'pending',
+        progress: change.data.progress !== undefined ? change.data.progress : 0,
+        priority: 'normal'
+      })
+      console.log('[TaskRefresh] Created task:', change.taskId)
+    } else if (change.type === 'update') {
+      await taskService.updateTask(change.taskId, {
+        status: change.newStatus,
+        progress: change.newProgress,
+        message: change.reason
+      })
+      console.log('[TaskRefresh] Updated task:', change.taskId)
+    }
+    await loadTasks()
+  } catch (e) {
+    console.error('[TaskRefresh] Confirm change failed:', e)
   }
+  pendingTaskChanges.value = pendingTaskChanges.value.filter(c =>
+    !(c.type === change.type && c.taskId === change.taskId)
+  )
 }
 
 // Quote function
@@ -1409,7 +1578,6 @@ watch(
     if (!name || !isActive) {
       if (prev && prev[1]) {
         stopPolling()
-        stopTaskPolling()
       }
       return
     }
@@ -1427,7 +1595,6 @@ watch(
           calcTaskPanelHeight()
         })
       }
-      startTaskPolling()
     }
   },
   { immediate: true }
@@ -1437,22 +1604,18 @@ watch(() => props.chat.messages?.length, () => {
   scrollToBottom()
 }, { immediate: true })
 
-// Bug fix: when Task button toggles showTaskPanel back on, immediately load
+// When Task button toggles showTaskPanel back on, immediately load
 watch(showTaskPanel, async (visible) => {
   if (visible && props.chat.isZeroClaw) {
     requestAnimationFrame(() => {
       calcTaskPanelHeight()
     })
     await loadTasks()
-    startTaskPolling()
-  } else if (!visible) {
-    stopTaskPolling()
   }
 })
 
 onUnmounted(() => {
   stopPolling()
-  stopTaskPolling()
 })
 </script>
 
