@@ -269,6 +269,10 @@ export const zagentService = {
   },
   getGlobalConfig() {
     return api.get('/global-config')
+  },
+
+  reconcileAgents() {
+    return api.post('/agents/reconcile')
   }
 }
 

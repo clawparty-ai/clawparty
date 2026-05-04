@@ -96,6 +96,16 @@
           </button>
         </div>
         <div v-if="activeOrg === 'zagents'" class="panel-header-actions">
+          <button
+            class="reconcile-btn"
+            :class="{ spinning: isReconciling }"
+            title="刷新 zAgent 状态"
+            @click="handleReconcile"
+          >
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
+            </svg>
+          </button>
           <button class="add-agent-btn" @click="showZAgentTemplates = true" title="从模板添加 zAgent">#A</button>
           <button class="add-agent-btn plain" @click="showCreateZAgentDialog = true" title="创建 Agent">+A</button>
         </div>
@@ -711,6 +721,27 @@ const activeGroupId = inject('activeGroupId')
 const handleDeleteLocalGroup = inject('handleDeleteLocalGroup')
 const deleteZAgent = inject('deleteZAgent')
 const fetchZAgents = inject('fetchZAgents')
+
+// Agent status reconcile (force refresh)
+const isReconciling = ref(false)
+
+const handleReconcile = async () => {
+  if (isReconciling.value) return
+  isReconciling.value = true
+  try {
+    const { zagentService } = await import('../services/chatService')
+    const res = await zagentService.reconcileAgents()
+    if (res.data && Array.isArray(res.data)) {
+      zAgents.value = res.data
+    } else {
+      await fetchZAgents()
+    }
+  } catch (e) {
+    console.error('[ChatSidebar] Reconcile failed:', e)
+    await fetchZAgents()
+  }
+  isReconciling.value = false
+}
 
 // Agent status polling — global timer to avoid one request per starting agent
 var sidebarPollingTimer = null
@@ -1448,6 +1479,35 @@ const getStatusText = (agent) => {
 
 .add-agent-btn.plain:hover {
   background: rgba(1, 178, 75, 0.1);
+}
+
+.reconcile-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: var(--text-dim, #797979);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.reconcile-btn:hover {
+  background: rgba(64, 149, 254, 0.1);
+  color: #4095fe;
+}
+
+.reconcile-btn.spinning svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .shared-btn {

@@ -7,8 +7,6 @@
       :showBackButton="showBackButton"
       :showTaskButton="chat.isZeroClaw || chat.isGroupChat"
       :taskPanelVisible="showTaskPanel"
-      :showRefreshButton="chat.isZeroClaw"
-      :refreshing="isAgentRefreshing"
       @switchSession="$emit('switchSession', $event)"
       @deleteGroup="$emit('deleteGroup', $event)"
       @leaveGroup="$emit('leaveGroup', $event)"
@@ -18,7 +16,6 @@
       @download-pdf="handleDownloadPdf"
       @reload="fetchMessages"
       @toggleTaskPanel="showTaskPanel = !showTaskPanel"
-      @refreshAgentStatus="handleRefreshAgentStatus"
     />
     <TaskPanel
       v-if="(chat.isZeroClaw || chat.isGroupChat) && showTaskPanel"
@@ -249,10 +246,6 @@ const taskPanelInitialHeight = ref(180)
 const isTaskRefreshing = ref(false)
 const pendingTaskChanges = ref([])
 
-// Agent status refresh
-const isAgentRefreshing = ref(false)
-const fetchZAgents = inject('fetchZAgents', () => {})
-
 const calcTaskPanelHeight = async () => {
   if (!chatMainEl.value) return
   await nextTick()
@@ -458,17 +451,6 @@ const handleConfirmTaskChange = async (change) => {
   pendingTaskChanges.value = pendingTaskChanges.value.filter(c =>
     !(c.type === change.type && c.taskId === change.taskId)
   )
-}
-
-const handleRefreshAgentStatus = async () => {
-  if (isAgentRefreshing.value) return
-  isAgentRefreshing.value = true
-  try {
-    await fetchZAgents()
-  } catch (e) {
-    console.error('[ChatMain] Failed to refresh agent status:', e)
-  }
-  isAgentRefreshing.value = false
 }
 
 // Quote function

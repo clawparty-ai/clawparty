@@ -1220,6 +1220,25 @@ function allAgentStatuses() {
   return agents
 }
 
+// Force reconcile: clear caches and verify every agent against actual OS process state
+function reconcileAgentStatuses() {
+  var agents = db.allAgents()
+  var reconciled = []
+
+  for (var i = 0; i < agents.length; i++) {
+    var agent = agents[i]
+    // Always force a fresh check (bypass cache)
+    delete _agentStatusCache.data[agent.agent_name]
+    agent = _refreshAgentStatus(agent)
+    agent._ts = Date.now()
+    _agentStatusCache.data[agent.agent_name] = agent
+    reconciled.push(agent)
+  }
+
+  _agentStatusCache.ts = Date.now()
+  return reconciled
+}
+
 export default {
   init,
   setIdentity,
@@ -1265,6 +1284,7 @@ export default {
   stopAgent,
   getAgentStatus,
   allAgentStatuses,
+  reconcileAgentStatuses,
   // Group chat
   createGroupOwnerAgent,
   sanitizeAgentName,

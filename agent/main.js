@@ -514,6 +514,18 @@ function main(listen, apiToken, noAuth) {
       },
     },
 
+    '/api/agents/reconcile': {
+      'POST': function () {
+        console.log('[API] POST /api/agents/reconcile')
+        try {
+          var result = api.reconcileAgentStatuses()
+          return response(200, result)
+        } catch (e) {
+          return response(500, { error: e.message || String(e) })
+        }
+      },
+    },
+
     // ── Task Management APIs ──────────────────────────────────────────
 
     '/api/tasks': {
