@@ -1112,18 +1112,37 @@ function createGroupOwnerAgent(groupId, groupName, memberAgents) {
   }
 }
 
+function _sortAgents(agents) {
+  var result = []
+  for (var i = 0; i < agents.length; i++) {
+    result.push(agents[i])
+  }
+  result.sort(function(a, b) {
+    if (a.agent_name === '0#Agent') return -1
+    if (b.agent_name === '0#Agent') return 1
+    if (a.agent_name < b.agent_name) return -1
+    if (a.agent_name > b.agent_name) return 1
+    return 0
+  })
+  return result
+}
+
 function _refreshAgentStatus(agent) {
   if (!agent) return null
   if (agent.status !== 'starting' && agent.status !== 'running') return agent
-  
+
   // Fast path: use recorded pid + kill -0 (microsecond check)
   var pid = agent.pid
   if (pid && isProcessAlive(pid)) {
+    // Process alive: ensure DB reflects running state and pid
+    if (agent.status !== 'running' || agent.error_msg) {
+      db.updateAgentStatus(agent.agent_name, 'running', pid, null)
+    }
     agent.status = 'running'
     agent.error_msg = null
     return agent
   }
-  
+
   // Medium path: try lsof to find the process by port
   // (only if pid was missing or isProcessAlive returned false, but zeroclaw might actually be running)
   var foundPid = findZeroclawPid(agent.port)
@@ -1207,9 +1226,9 @@ function allAgentStatuses() {
       _agentStatusCache.data[agent.agent_name] = agent
     }
   }
-  
+
   _agentStatusCache.ts = now
-  return agents
+  return _sortAgents(agents)
 }
 
 // Scan ~/.clawparty/agents for directories that look like valid agent
@@ -1295,7 +1314,7 @@ function reconcileAgentStatuses() {
   }
 
   _agentStatusCache.ts = Date.now()
-  return reconciled
+  return _sortAgents(reconciled)
 }
 
 export default {
