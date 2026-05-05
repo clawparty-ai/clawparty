@@ -25,9 +25,11 @@
       :initialHeight="taskPanelInitialHeight"
       :refreshing="isTaskRefreshing"
       :pendingChanges="pendingTaskChanges"
+      :refreshLogs="refreshLogs"
       @toggle="taskPanelBodyExpanded = !taskPanelBodyExpanded"
       @refresh="handleTaskRefresh"
       @confirmChange="handleConfirmTaskChange"
+      @refreshTimeoutChange="refreshTimeout = $event"
     />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
@@ -107,6 +109,7 @@
               </div>
             </div>
             <button v-if="!msg.isGroupRequest && !msg.isPeerRequest" class="quote-btn" @click="quoteMessage(msg)" title="引用此消息">↩ 引用</button>
+            <button v-if="!msg.isGroupRequest && !msg.isPeerRequest && msg.text" class="copy-btn" @click="copyMessage(msg)" title="拷贝此消息">📋 拷贝</button>
           </template>
         </div>
       </div>
@@ -245,6 +248,16 @@ const taskPanelBodyExpanded = ref(true)
 const taskPanelInitialHeight = ref(180)
 const isTaskRefreshing = ref(false)
 const pendingTaskChanges = ref([])
+const refreshLogs = ref([])
+const refreshTimeout = ref(120)
+const addRefreshLog = (level, msg) => {
+  const t = new Date()
+  const hh = t.getHours().toString().padStart(2, '0')
+  const mm = t.getMinutes().toString().padStart(2, '0')
+  const ss = t.getSeconds().toString().padStart(2, '0')
+  refreshLogs.value.push({ time: hh + ':' + mm + ':' + ss, level, msg })
+  if (refreshLogs.value.length > 80) refreshLogs.value.shift()
+}
 
 const calcTaskPanelHeight = async () => {
   if (!chatMainEl.value) return
@@ -266,29 +279,38 @@ const loadTasks = async () => {
   const groupId = props.chat.isGroupChat ? props.chat.groupId : null
   if (!agentName) return
   try {
+    addRefreshLog('info', 'Loading tasks for ' + agentName + (groupId ? ' (group=' + groupId + ')' : ''))
     const res = await taskService.getAgentTasks(agentName, groupId)
     if (res.data && res.data.tasks) {
       tasks.value = res.data.tasks
+      addRefreshLog('info', 'Loaded ' + res.data.tasks.length + ' task(s)')
     }
   } catch (e) {
-    console.error('[ChatMain] Failed to load tasks:', e)
+    addRefreshLog('error', 'Failed to load tasks: ' + (e.message || e))
   }
 }
 
 const handleTaskRefresh = async () => {
-  if (isTaskRefreshing.value) return
+  if (isTaskRefreshing.value) {
+    addRefreshLog('warn', 'Already in progress, skipping')
+    return
+  }
   isTaskRefreshing.value = true
+  pendingTaskChanges.value = []
+  refreshLogs.value = [{ time: '', level: 'info', msg: '==== Task Refresh Started ====' }]
 
+  addRefreshLog('info', 'Loading existing tasks...')
   await loadTasks()
 
   const msgs = props.chat.messages || []
   const lastAnalyzed = props.chat.lastTaskAnalyzedAt || 0
-  const newMessages = msgs.filter(m => m.timestamp && m.timestamp > lastAnalyzed)
+  let newMessages = msgs.filter(m => m.timestamp && m.timestamp > lastAnalyzed)
+  addRefreshLog('info', 'Messages total: ' + msgs.length + ' | new since last analysis: ' + newMessages.length)
 
   if (newMessages.length === 0) {
-    // No new messages: just record current timestamp and finish
     const latestTs = msgs.length > 0 ? msgs[msgs.length - 1].timestamp : Date.now()
     props.chat.lastTaskAnalyzedAt = Math.max(lastAnalyzed, latestTs)
+    addRefreshLog('info', 'No new messages. Done.')
     isTaskRefreshing.value = false
     return
   }
@@ -296,63 +318,69 @@ const handleTaskRefresh = async () => {
   const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
   const groupId = props.chat.isGroupChat ? props.chat.groupId : null
   if (!agentName) {
+    addRefreshLog('warn', 'No agentName available. Cannot send to 0#Agent.')
     props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
     isTaskRefreshing.value = false
     return
   }
+  addRefreshLog('info', 'Agent: ' + agentName + (groupId ? ' | group=' + groupId : ''))
 
   try {
+    addRefreshLog('info', 'Fetching 0#Agent info...')
     const agentsRes = await zagentService.getAgents()
     const zeroAgent = agentsRes.data.find(function(a) { return a.agent_name === '0#Agent' })
     if (!zeroAgent || !zeroAgent.port) {
-      console.warn('[TaskRefresh] 0#Agent not found')
+      addRefreshLog('error', '0#Agent not found or port missing. Agents count: ' + (agentsRes.data?.length || 0))
       props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
+      await loadTasks()
       isTaskRefreshing.value = false
       return
     }
+    addRefreshLog('info', '0#Agent found on port ' + zeroAgent.port)
 
-    const existingTasks = tasks.value
-    const msgText = newMessages.map(m => {
+    const MAX_MSG_COUNT = 10
+    const MAX_MSG_LEN = 300
+    const MAX_TASKS_IN_PROMPT = 15
+
+    const recentMsgs = newMessages.slice(-MAX_MSG_COUNT)
+    const msgText = recentMsgs.map(m => {
       const role = m.isSent ? 'user' : 'assistant'
-      return `[${role}] ${m.sender || 'unknown'}: ${m.text || ''}`
+      const text = (m.text || '').substring(0, MAX_MSG_LEN)
+      return `[${role}] ${m.sender || 'unknown'}: ${text}`
     }).join('\n\n')
 
-    const prompt = `[系统指令] 你是 Task Analyst，请分析以下聊天记录，识别新任务和已有任务的状态变更。
+    const existingTasks = tasks.value.slice(0, MAX_TASKS_IN_PROMPT)
 
-## 当前已有任务
-${existingTasks.map(t => `- ID: ${t.task_id} | 标题: ${t.title} | 状态: ${t.status} | 进度: ${t.progress}%`).join('\n')}
+    const prompt = `[系统指令] 你是 Task Analyst，请分析以下聊天记录，识别新任务和已有任务的状态变更。\n\n## 当前已有任务${tasks.value.length > MAX_TASKS_IN_PROMPT ? '（仅显示部分）' : ''}\n${existingTasks.map(t => '- ID: ' + t.task_id + ' | 标题: ' + t.title + ' | 状态: ' + t.status).join('\n') || '无'}\n\n## 新聊天记录（最近 ${recentMsgs.length} 条，user=用户，assistant=AI）\n${msgText}\n\n## 分析要求\n1. **新任务**：用户或 AI 提到的新待办事项、计划、工作目标\n2. **状态变更**：现有任务在聊天中被提到已完成、失败、取消或进度变化\n\n## 输出格式（纯 JSON，不要 markdown 代码块，不要解释）\n{\n  "newTasks": [{"title": "...", "description": "...", "status": "pending|running|completed|failed", "progress": 0}],\n  "statusChanges": [{"taskId": "现有任务ID", "newStatus": "...", "newProgress": 100, "reason": "变化原因"}]\n}`
 
-## 新聊天记录（按时间排序，user=用户，assistant=AI）
-${msgText}
-
-## 分析要求
-1. **新任务**：用户或 AI 提到的新待办事项、计划、工作目标
-2. **状态变更**：现有任务在聊天中被提到已完成、失败、取消或进度变化
-
-## 输出格式（纯 JSON，不要 markdown 代码块，不要解释）
-{
-  "newTasks": [
-    {"title": "...", "description": "...", "status": "pending|running|completed|failed", "progress": 0}
-  ],
-  "statusChanges": [
-    {"taskId": "现有任务ID", "newStatus": "...", "newProgress": 100, "reason": "变化原因"}
-  ]
-}`
+    addRefreshLog('info', 'Building prompt... recentMsgs: ' + recentMsgs.length + ' | existingTasks: ' + existingTasks.length + ' | promptLen: ' + prompt.length)
 
     const sessionId = 'sys-task-refresh-' + Date.now()
     let fullResponse = ''
     let hasResponded = false
+    let isFinished = false
+    addRefreshLog('info', 'Opening WebSocket session...')
+
+    const finishRefresh = async (label) => {
+      if (isFinished) return
+      isFinished = true
+      addRefreshLog('info', 'Finishing (' + label + ')...')
+      await loadTasks()
+      isTaskRefreshing.value = false
+      addRefreshLog('info', '==== Done (' + label + ') ====')
+    }
 
     const ws = new ZeroClawWS(
       '0#Agent',
       sessionId,
       function(data) {
-        if (data.type === 'chunk') fullResponse += data.content
-        else if (data.type === 'done') {
+        if (data.type === 'chunk') {
+          fullResponse += data.content
+        } else if (data.type === 'done') {
           hasResponded = true
+          addRefreshLog('info', 'AI response received, length: ' + fullResponse.length)
           ws.close()
           try {
-            // Extract JSON from response (handle possible markdown code block)
             let jsonText = fullResponse.trim()
             if (jsonText.indexOf('```json') >= 0) {
               const start = jsonText.indexOf('```json') + 7
@@ -366,6 +394,7 @@ ${msgText}
             const result = JSON.parse(jsonText)
             const changes = []
             if (result.newTasks && result.newTasks.length > 0) {
+              addRefreshLog('info', 'AI detected ' + result.newTasks.length + ' new task(s)')
               for (const t of result.newTasks) {
                 changes.push({
                   type: 'create',
@@ -376,6 +405,7 @@ ${msgText}
               }
             }
             if (result.statusChanges && result.statusChanges.length > 0) {
+              addRefreshLog('info', 'AI detected ' + result.statusChanges.length + ' status change(s)')
               for (const c of result.statusChanges) {
                 changes.push({
                   type: 'update',
@@ -387,19 +417,30 @@ ${msgText}
               }
             }
             pendingTaskChanges.value = changes
-            console.log('[TaskRefresh] AI analysis complete, pending changes:', changes.length)
+            if (changes.length === 0) {
+              addRefreshLog('info', 'No changes detected by AI.')
+            } else {
+              addRefreshLog('info', 'Pending changes: ' + changes.length)
+            }
           } catch (e) {
-            console.warn('[TaskRefresh] Failed to parse AI response:', e, fullResponse)
+            addRefreshLog('error', 'Failed to parse AI response: ' + (e.message || e))
           }
           props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
-          isTaskRefreshing.value = false
+          finishRefresh('ws-done')
         }
       },
       function() {
+        addRefreshLog('info', 'WebSocket connected, sending prompt...')
         ws.sendMessage(prompt)
       },
-      function() {},
-      function() {},
+      function() {
+        addRefreshLog('info', 'WebSocket closed.')
+      },
+      function(error) {
+        addRefreshLog('error', 'WebSocket error: ' + (error.message || error))
+        props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
+        finishRefresh('ws-error')
+      },
       zeroAgent.port
     )
     ws.connect()
@@ -407,20 +448,22 @@ ${msgText}
     setTimeout(function() {
       if (!hasResponded) {
         ws.close()
-        console.warn('[TaskRefresh] Timeout waiting for 0#Agent')
+        addRefreshLog('warn', 'Timeout (' + refreshTimeout.value + 's) waiting for 0#Agent response')
         props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
-        isTaskRefreshing.value = false
+        finishRefresh('timeout')
       }
-    }, 20000)
+    }, refreshTimeout.value * 1000)
   } catch (e) {
-    console.error('[TaskRefresh] AI analysis failed:', e)
+    addRefreshLog('error', 'Unexpected error: ' + (e.message || e))
     props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
+    await loadTasks()
     isTaskRefreshing.value = false
   }
 }
 
 const handleConfirmTaskChange = async (change) => {
   if (!change) return
+  addRefreshLog('info', 'Confirming ' + change.type + ': ' + change.taskId)
   const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
   const groupId = props.chat.isGroupChat ? props.chat.groupId : null
   try {
@@ -435,22 +478,32 @@ const handleConfirmTaskChange = async (change) => {
         progress: change.data.progress !== undefined ? change.data.progress : 0,
         priority: 'normal'
       })
-      console.log('[TaskRefresh] Created task:', change.taskId)
+      addRefreshLog('info', 'Created task: ' + change.taskId)
     } else if (change.type === 'update') {
       await taskService.updateTask(change.taskId, {
         status: change.newStatus,
         progress: change.newProgress,
         message: change.reason
       })
-      console.log('[TaskRefresh] Updated task:', change.taskId)
+      addRefreshLog('info', 'Updated task: ' + change.taskId + ' -> ' + change.newStatus)
     }
     await loadTasks()
+    pendingTaskChanges.value = pendingTaskChanges.value.filter(c =>
+      !(c.type === change.type && c.taskId === change.taskId)
+    )
+    addRefreshLog('info', 'Remaining pending: ' + pendingTaskChanges.value.length)
   } catch (e) {
-    console.error('[TaskRefresh] Confirm change failed:', e)
+    addRefreshLog('error', 'Confirm failed: ' + (e.message || e))
   }
-  pendingTaskChanges.value = pendingTaskChanges.value.filter(c =>
-    !(c.type === change.type && c.taskId === change.taskId)
-  )
+}
+
+// Copy function
+const copyMessage = async (msg) => {
+  try {
+    await navigator.clipboard.writeText(msg.text || '')
+  } catch (e) {
+    console.error('拷贝到剪切板失败:', e)
+  }
 }
 
 // Quote function
@@ -986,6 +1039,32 @@ const buildChatHtml = () => {
     .quote-btn:hover {
       background: rgba(0,0,0,0.1);
       color: #666;
+    }
+    .copy-btn {
+      background: none;
+      border: none;
+      color: #999;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 2px 8px;
+      margin-top: 4px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .message:hover .copy-btn {
+      opacity: 1;
+    }
+    .copy-btn:hover {
+      background: rgba(0,0,0,0.1);
+      color: #666;
+    }
+    .message.sent .copy-btn {
+      color: #aaa;
+    }
+    .message.sent .copy-btn:hover {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
     }
     .message.sent .quote-btn {
       color: #aaa;

@@ -11,50 +11,78 @@
         <span class="stat failed" v-if="taskStats.failed > 0">{{ taskStats.failed }} 失败</span>
         <span class="stat confirm" v-if="taskStats.pendingConfirm > 0">{{ taskStats.pendingConfirm }} 待确认</span>
       </span>
+      <span class="timeout-select-wrap">
+        <select v-model="refreshTimeout" class="timeout-select" title="超时时间" :disabled="refreshing">
+          <option :value="30">30s</option>
+          <option :value="60">60s</option>
+          <option :value="120">120s</option>
+          <option :value="180">180s</option>
+          <option :value="300">300s</option>
+        </select>
+      </span>
       <button class="refresh-btn" :class="{ spinning: refreshing }" @click.stop="onRefresh" title="刷新任务">
         <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
           <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
         </svg>
       </button>
     </div>
-    <div v-show="expanded" class="task-panel-body">
-      <div v-if="tasks.length === 0" class="task-empty">
-        <span class="task-empty-icon">✨</span>
-        <span class="task-empty-text">暂无任务，跟我说「帮我做一件事」来开始吧</span>
-      </div>
-      <div
-        v-for="task in flattenedTasks"
-        :key="task.task_id"
-        v-else
-        class="task-row"
-        :class="['indent-' + Math.min(task.depth, 3), 'status-' + task.status, { 'pending-confirm': task._pendingChange, 'pending-create': task._isPendingCreate }]"
-      >
-        <div class="task-indent-guide">
-          <div v-for="d in task.depth" :key="d" class="indent-line"></div>
+    <div v-show="expanded" class="task-panel-container">
+      <!-- Left: Task list -->
+      <div class="task-list-body">
+        <div v-if="flattenedTasks.length === 0" class="task-empty">
+          <span class="task-empty-icon">✨</span>
+          <span class="task-empty-text">暂无任务，跟我说「帮我做一件事」来开始吧</span>
         </div>
-        <div class="task-branch" v-if="task.depth > 0">
-          <div class="branch-line"></div>
-        </div>
-        <div class="task-indicator">
-          <span class="status-dot" :class="'status-' + task.status"></span>
-        </div>
-        <div class="task-content">
-          <div class="task-line">
-            <span class="task-title" :title="task.ai_description || task.description">
-              <span v-if="task._isPendingCreate" class="new-badge">新</span>
-              {{ task.short_title || task.title }}
-            </span>
-            <span class="task-priority" v-if="task.priority !== 'normal'" :class="'priority-' + task.priority">{{ formatPriority(task.priority) }}</span>
+        <div
+          v-for="task in flattenedTasks"
+          :key="task.task_id"
+          v-else
+          class="task-row"
+          :class="['indent-' + Math.min(task.depth, 3), 'status-' + task.status, { 'pending-confirm': task._pendingChange, 'pending-create': task._isPendingCreate }]"
+        >
+          <div class="task-indent-guide">
+            <div v-for="d in task.depth" :key="d" class="indent-line"></div>
           </div>
-          <div class="task-meta">
-            <div class="task-progress-bar">
-              <div class="task-progress-fill" :class="'fill-' + task.status" :style="{ width: task.progress + '%' }"></div>
+          <div class="task-branch" v-if="task.depth > 0">
+            <div class="branch-line"></div>
+          </div>
+          <div class="task-indicator">
+            <span class="status-dot" :class="'status-' + task.status"></span>
+          </div>
+          <div class="task-content">
+            <div class="task-line">
+              <span class="task-title" :title="task.ai_description || task.description">
+                <span v-if="task._isPendingCreate" class="new-badge">新</span>
+                {{ task.short_title || task.title }}
+              </span>
+              <span class="task-priority" v-if="task.priority !== 'normal'" :class="'priority-' + task.priority">{{ formatPriority(task.priority) }}</span>
             </div>
-            <span class="task-progress-text">{{ task.progress }}%</span>
+            <div class="task-meta">
+              <div class="task-progress-bar">
+                <div class="task-progress-fill" :class="'fill-' + task.status" :style="{ width: task.progress + '%' }"></div>
+              </div>
+              <span class="task-progress-text">{{ task.progress }}%</span>
+            </div>
+            <div v-if="task._pendingChange" class="pending-reason">
+              <span class="reason-text">{{ task._pendingChange.reason }}</span>
+              <button class="confirm-btn" @click.stop="confirmChange(task._pendingChange)">✓ 确认</button>
+            </div>
           </div>
-          <div v-if="task._pendingChange" class="pending-reason">
-            <span class="reason-text">{{ task._pendingChange.reason }}</span>
-            <button class="confirm-btn" @click.stop="confirmChange(task._pendingChange)">✓ 确认</button>
+        </div>
+      </div>
+
+      <!-- Right: Refresh log panel -->
+      <div v-if="refreshLogs.length > 0" class="log-panel">
+        <div class="log-header">🪵 任务分析</div>
+        <div class="log-body" ref="logBodyRef">
+          <div
+            v-for="(log, idx) in refreshLogs"
+            :key="idx"
+            class="log-line"
+            :class="'log-' + log.level"
+          >
+            <span v-if="log.time" class="log-time">{{ log.time }}</span>
+            <span class="log-msg">{{ log.msg }}</span>
           </div>
         </div>
       </div>
@@ -69,7 +97,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 
 const props = defineProps({
   agentName: {
@@ -95,10 +123,28 @@ const props = defineProps({
   pendingChanges: {
     type: Array,
     default: () => []
+  },
+  refreshLogs: {
+    type: Array,
+    default: () => []
   }
 })
 
-const emit = defineEmits(['toggle', 'refresh', 'confirmChange'])
+const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutChange'])
+
+const logBodyRef = ref(null)
+const refreshTimeout = ref(120)
+
+watch(() => refreshTimeout.value, (newVal) => {
+  emit('refreshTimeoutChange', newVal)
+})
+
+watch(() => props.refreshLogs.length, () => {
+  nextTick(() => {
+    const el = logBodyRef.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+})
 
 const toggleExpanded = () => {
   emit('toggle')
@@ -110,7 +156,7 @@ const onRefresh = () => {
 
 const isPendingConfirm = (taskId) => {
   for (const c of props.pendingChanges) {
-    if (c.taskId === taskId || (c.data && c.taskId === taskId)) return c
+    if (c.taskId === taskId) return c
   }
   return null
 }
@@ -129,7 +175,6 @@ const MIN_H = 60
 const MAX_H = 500
 const panelHeight = ref(props.initialHeight)
 
-// Sync height when parent recalculates (e.g. first open via Task button)
 watch(() => props.initialHeight, (newH) => {
   panelHeight.value = newH
 })
@@ -172,15 +217,12 @@ const stopResize = () => {
 }
 
 const flattenedTasks = computed(() => {
-  // Build a mutation-safe copy of tasks and attach pendingChange markers
   function cloneWithPending(taskList) {
     const list = []
     for (let i = 0; i < taskList.length; i++) {
       const task = { ...taskList[i] }
       const pendingChange = isPendingConfirm(task.task_id)
-      if (pendingChange) {
-        task._pendingChange = pendingChange
-      }
+      if (pendingChange) task._pendingChange = pendingChange
       if (task.subtasks && task.subtasks.length > 0) {
         task.subtasks = cloneWithPending(task.subtasks)
       }
@@ -202,7 +244,6 @@ const flattenedTasks = computed(() => {
   }
   flatten(cloned, 0)
 
-  // Append pending-create items at the bottom as virtual rows
   for (const c of props.pendingChanges) {
     if (c.type === 'create') {
       result.push({
@@ -311,7 +352,7 @@ const taskStats = computed(() => {
 
 .task-panel-title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--text-primary, #4d4d4d);
 }
 
@@ -322,7 +363,7 @@ const taskStats = computed(() => {
 }
 
 .stat {
-  font-size: 11px;
+  font-size: 12px;
   padding: 1px 6px;
   border-radius: 10px;
   font-weight: 500;
@@ -333,17 +374,85 @@ const taskStats = computed(() => {
 .stat.pending { background: rgba(158, 158, 158, 0.12); color: #757575; }
 .stat.failed { background: rgba(224, 30, 90, 0.12); color: #e01e5a; }
 
-.task-panel-toggle {
-  font-size: 10px;
-  color: var(--text-dim, #797979);
-  margin-left: 4px;
+.task-panel-container {
+  display: flex;
+  flex: 1;
+  flex-direction: row;
+  overflow: hidden;
+  min-height: 0;
 }
 
-.task-panel-body {
+.task-list-body {
   flex: 1;
   overflow-y: auto;
   padding: 4px 16px 10px;
   min-height: 0;
+}
+
+.log-panel {
+  flex: 1; 
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid rgba(0, 0, 0, 0.08);
+  background: #ffffff;
+  max-width: 50%;
+}
+
+.log-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: #757575;
+  padding: 6px 10px;
+  background: #f9fafc;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+}
+
+.log-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.log-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 1px;
+}
+
+.log-time {
+  color: #b0b0b0;
+  margin-right: 6px;
+}
+
+.log-info  { color: #337ab7; }
+.log-warn  { color: #f0ad4e; }
+.log-error { color: #d9534f; }
+.log-debug { color: #888888; }
+
+.task-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 12px;
+  gap: 6px;
+  text-align: center;
+}
+
+.task-empty-icon {
+  font-size: 20px;
+  opacity: 0.7;
+}
+
+.task-empty-text {
+  font-size: 15px;
+  color: var(--text-dim, #797979);
+  line-height: 1.5;
 }
 
 .task-row {
@@ -415,7 +524,7 @@ const taskStats = computed(() => {
 }
 
 .task-title {
-  font-size: 12px;
+  font-size: 15px;
   color: var(--text-primary, #4d4d4d);
   white-space: nowrap;
   overflow: hidden;
@@ -424,7 +533,7 @@ const taskStats = computed(() => {
 }
 
 .task-priority {
-  font-size: 10px;
+  font-size: 12px;
   padding: 0 4px;
   border-radius: 3px;
   font-weight: 500;
@@ -463,10 +572,10 @@ const taskStats = computed(() => {
 .fill-failed { background: #e01e5a; }
 
 .task-progress-text {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-dim, #797979);
   flex-shrink: 0;
-  min-width: 24px;
+  min-width: 28px;
   text-align: right;
 }
 
@@ -474,7 +583,7 @@ const taskStats = computed(() => {
   .task-panel-header {
     padding: 6px 12px;
   }
-  .task-panel-body {
+  .task-list-body {
     padding: 4px 12px 8px;
   }
   .task-stats {
@@ -484,27 +593,6 @@ const taskStats = computed(() => {
     font-size: 10px;
     padding: 1px 4px;
   }
-}
-
-.task-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 16px 12px;
-  gap: 6px;
-  text-align: center;
-}
-
-.task-empty-icon {
-  font-size: 20px;
-  opacity: 0.7;
-}
-
-.task-empty-text {
-  font-size: 12px;
-  color: var(--text-dim, #797979);
-  line-height: 1.5;
 }
 
 /* Refresh button */
@@ -536,6 +624,44 @@ const taskStats = computed(() => {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Timeout select */
+.timeout-select-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.timeout-select {
+  font-size: 10px;
+  padding: 2px 14px 2px 4px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  background: #fff;
+  color: #757575;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.timeout-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.timeout-select-wrap::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-top: 3px solid #999;
+  pointer-events: none;
 }
 
 /* Pending confirm stat badge */
@@ -573,7 +699,7 @@ const taskStats = computed(() => {
 
 .new-badge {
   display: inline-block;
-  font-size: 9px;
+  font-size: 11px;
   padding: 0 4px;
   border-radius: 3px;
   background: rgba(64, 149, 254, 0.2);
@@ -591,7 +717,7 @@ const taskStats = computed(() => {
 }
 
 .reason-text {
-  font-size: 10px;
+  font-size: 12px;
   color: #f57c00;
   flex: 1;
   white-space: nowrap;
@@ -600,7 +726,7 @@ const taskStats = computed(() => {
 }
 
 .confirm-btn {
-  font-size: 10px;
+  font-size: 12px;
   padding: 1px 6px;
   border-radius: 3px;
   border: none;
@@ -616,5 +742,4 @@ const taskStats = computed(() => {
   background: #2eb67d;
   color: #fff;
 }
-
 </style>
