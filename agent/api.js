@@ -755,10 +755,10 @@ function startAgent(agentName) {
     throw 'Agent not found: ' + agentName
   }
   
-  // Fast check: use recorded pid + kill -0 (microsecond)
-  // Fallback to lsof only if no pid recorded
+  // Fast check: verify PID exists AND holds the expected listen port
+  // (prevents false positives from PID reuse)
   var currentPid = agent.pid
-  if (currentPid && isProcessAlive(currentPid)) {
+  if (currentPid && isAgentProcessAlive(currentPid, agent.port)) {
     console.log('[AGENT] Start skipped: agent already running with PID: ' + currentPid)
     db.updateAgentStatus(agentName, 'running', currentPid, null)
     throw 'Agent already running: ' + agentName
@@ -876,22 +876,75 @@ function _manualSplitBySpace(line) {
   return parts
 }
 
-function isProcessAlive(pid) {
-  // Microsecond-level check: kill -0 does not send signal, just checks existence
-  // This is ~100x faster than lsof which scans all file descriptors
-  if (!pid || pid <= 0) return false
+function isAgentProcessAlive(pid, port) {
+  // Combined PID + port verification to avoid false positives from PID reuse.
+  // Steps:
+  //   1) Basic sanity: pid must be positive and within OS plausible range.
+  //   2) kill -0 (Unix) or tasklist (Windows) to confirm PID exists.
+  //   3) lsof (Unix) or netstat (Windows) to confirm the PID is listening on the expected port.
+  // Any step fails => process is dead or not our agent.
+  if (!pid || pid <= 0 || pid > 10000000) return false
+
+  // Step 1: is the PID alive at all?
+  var pidAlive = false
   try {
     pipy.exec('kill -0 ' + pid)
-    return true
+    pidAlive = true
   } catch (e) {
-    // kill may not exist on Windows; fallback to tasklist
     try {
       pipy.exec('tasklist /FI "PID eq ' + pid + '"')
-      return true
+      pidAlive = true
     } catch (e2) {
       return false
     }
   }
+  if (!pidAlive) return false
+
+  // Step 2: is this PID listening on the expected port?
+  // Try Unix lsof first
+  try {
+    var out = pipy.exec('lsof -a -p ' + pid + ' -i:' + port + ' -P -n -sTCP:LISTEN')
+    if (out && out.toString().indexOf('(LISTEN)') >= 0) return true
+  } catch (e) {}
+
+  // Fallback: macOS / older lsof may need different pattern
+  try {
+    var out2 = pipy.exec('lsof -i:' + port + ' -P -n -sTCP:LISTEN')
+    if (out2) {
+      var lines = out2.toString().split('\n')
+      for (var k = 0; k < lines.length; k++) {
+        var line = lines[k]
+        if (line.indexOf('(LISTEN)') >= 0 && line.indexOf(':' + port) >= 0) {
+          var parts = _manualSplitBySpace(line)
+          // lsof format: COMMAND PID USER FD TYPE ... NAME
+          if (parts.length >= 2) {
+            var pidNum = _parsePidFromString(parts[1])
+            if (pidNum === pid) return true
+          }
+        }
+      }
+    }
+  } catch (e2) {}
+
+  // Windows fallback: netstat
+  try {
+    var netResult = pipy.exec('netstat -ano')
+    if (netResult) {
+      var netLines = netResult.toString().split('\n')
+      for (var m = 0; m < netLines.length; m++) {
+        var netLine = netLines[m]
+        if (netLine.indexOf('LISTENING') >= 0 && netLine.indexOf(':' + port) >= 0) {
+          var netParts = _manualSplitBySpace(netLine)
+          if (netParts.length > 0) {
+            var netPid = _parsePidFromString(netParts[netParts.length - 1])
+            if (netPid === pid) return true
+          }
+        }
+      }
+    }
+  } catch (e3) {}
+
+  return false
 }
 
 function findZeroclawPid(port) {
@@ -899,7 +952,7 @@ function findZeroclawPid(port) {
   // WARNING: lsof/netstat scans system state and blocks Pipy's single-threaded event loop
   // Only used when pid is not recorded or when startAgent needs to verify process
   try {
-    // Fast path: Unix lsof
+    // Fast path: Unix lsof (e.g. "lsof -ti:42617" returns PID directly)
     var execResult = pipy.exec('lsof -ti:' + port)
     if (execResult) {
       var result = execResult.toString().trim()
@@ -912,13 +965,32 @@ function findZeroclawPid(port) {
     // lsof not available (Windows), try netstat
   }
 
+  // macOS lsof full output (has (LISTEN), not LISTENING)
+  try {
+    var execResult3 = pipy.exec('lsof -i:' + port + ' -P -n -sTCP:LISTEN')
+    if (execResult3) {
+      var lines3 = execResult3.toString().split('\n')
+      for (var n = 0; n < lines3.length; n++) {
+        var line3 = lines3[n]
+        if (line3.indexOf('(LISTEN)') >= 0 && line3.indexOf(':' + port) >= 0) {
+          var parts3 = _manualSplitBySpace(line3)
+          // lsof format: COMMAND PID USER FD TYPE ... NAME
+          if (parts3.length >= 2) {
+            var pidNum3 = _parsePidFromString(parts3[1])
+            if (pidNum3 > 0) return pidNum3
+          }
+        }
+      }
+    }
+  } catch (e2) {}
+
   try {
     var execResult2 = pipy.exec('netstat -ano')
     if (!execResult2) return null
     var lines = execResult2.toString().split('\n')
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i]
-      // Match lines like "  TCP    127.0.0.1:42617    0.0.0.0:0    LISTENING    12345"
+      // Windows netstat: "TCP  127.0.0.1:42617  0.0.0.0:0  LISTENING  12345"
       if (line.indexOf('LISTENING') >= 0 && line.indexOf(':' + port) >= 0) {
         var parts = _manualSplitBySpace(line)
         for (var j = parts.length - 1; j >= 0; j--) {
@@ -1131,20 +1203,17 @@ function _refreshAgentStatus(agent) {
   if (!agent) return null
   if (agent.status !== 'starting' && agent.status !== 'running') return agent
 
-  // Fast path: use recorded pid + kill -0 (microsecond check)
+  // Fast path: verify PID exists AND holds the listen port (prevents PID-reuse false positives)
   var pid = agent.pid
-  if (pid && isProcessAlive(pid)) {
-    // Process alive: ensure DB reflects running state and pid
-    if (agent.status !== 'running' || agent.error_msg) {
-      db.updateAgentStatus(agent.agent_name, 'running', pid, null)
-    }
+  if (pid && isAgentProcessAlive(pid, agent.port)) {
+    // Confirmed as our agent process — unconditionally sync DB
+    db.updateAgentStatus(agent.agent_name, 'running', pid, null)
     agent.status = 'running'
     agent.error_msg = null
     return agent
   }
 
-  // Medium path: try lsof to find the process by port
-  // (only if pid was missing or isProcessAlive returned false, but zeroclaw might actually be running)
+  // Fallback path: recorded PID is dead/wrong, but zeroclaw may still be running on the port
   var foundPid = findZeroclawPid(agent.port)
   if (foundPid) {
     agent.status = 'running'
@@ -1155,7 +1224,7 @@ function _refreshAgentStatus(agent) {
     // Still starting, keep waiting
     agent.status = 'starting'
   } else {
-    // Process disappeared
+    // Process genuinely disappeared
     agent.status = 'stopped'
     agent.pid = null
     db.updateAgentStatus(agent.agent_name, 'stopped', null, null)
