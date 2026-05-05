@@ -20,6 +20,8 @@ if not exist "%ZC_DIR%\config.toml" (
         echo [SETUP] Copying bundled config.toml to %ZC_DIR% ...
         copy /Y "%~dp0config.toml" "%ZC_DIR%\config.toml" >nul
         echo [SETUP] config.toml copied.
+        :: Replace placeholder username with current Windows username
+        powershell -Command "(Get-Content '%ZC_DIR%\config.toml') -replace 'caishu', '%USERNAME%' | Set-Content '%ZC_DIR%\config.toml' -Encoding UTF8" >nul 2>&1
     ) else (
         echo [SETUP] No bundled config.toml found in script directory.
     )
