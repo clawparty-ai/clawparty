@@ -46,37 +46,37 @@ build/deps.sh
 cd "$ZTM_DIR"
 build/gui.sh
 
+# Build Rust binaries before pipy.sh so its package step can include them.
+# (Skipped in --ztm-only mode.)
+if [ "$ZTM_ONLY" != true ]; then
+  # Build ZeroClaw (Rust)
+  echo "Building ZeroClaw..."
+  cd "$ZTM_DIR/zeroclaw"
+  mkdir -p "$HOME/.clawparty/.zeroclaw"
+  cargo build --release --features gateway
+  mkdir -p "$ZTM_DIR/bin"
+  cp -f "$ZTM_DIR/zeroclaw/target/release/zeroclaw" "$ZTM_DIR/bin/zeroclaw"
+  if [ "$(uname)" = "Darwin" ]; then
+    codesign -s - --force --deep "$ZTM_DIR/bin/zeroclaw" 2>/dev/null || true
+  fi
+  echo "ZeroClaw built: $ZTM_DIR/bin/zeroclaw"
+
+  # Build TUI (Rust)
+  echo "Building TUI..."
+  cd "$ZTM_DIR/tui"
+  cargo build --release
+  mkdir -p "$ZTM_DIR/bin"
+  cp -f "$ZTM_DIR/tui/target/release/clawparty" "$ZTM_DIR/bin/clawparty"
+  if [ "$(uname)" = "Darwin" ]; then
+    codesign -s - --force --deep "$ZTM_DIR/bin/clawparty" 2>/dev/null || true
+  fi
+  echo "TUI built: $ZTM_DIR/bin/clawparty"
+fi
+
 cd "$ZTM_DIR"
 build/pipy.sh
 
 if [ "$ZTM_ONLY" = true ]; then
-  echo "=== ZTM only build complete (skipped tui and zeroclaw) ==="
+  echo "=== ZTM only build complete ==="
   exit 0
 fi
-
-# Build ZeroClaw (Rust)
-echo "Building ZeroClaw..."
-cd "$ZTM_DIR/zeroclaw"
-# Create config directory
-mkdir -p "$HOME/.clawparty/.zeroclaw"
-# Build with gateway feature
-cargo build --release --features gateway
-mkdir -p "$ZTM_DIR/bin"
-cp -f "$ZTM_DIR/zeroclaw/target/release/zeroclaw" "$ZTM_DIR/bin/zeroclaw"
-# Ad-hoc sign the binary on macOS
-if [ "$(uname)" = "Darwin" ]; then
-  codesign -s - --force --deep "$ZTM_DIR/bin/zeroclaw" 2>/dev/null || true
-fi
-echo "ZeroClaw built: $ZTM_DIR/bin/zeroclaw"
-
-# Build TUI (Rust)
-echo "Building TUI..."
-cd "$ZTM_DIR/tui"
-cargo build --release
-mkdir -p "$ZTM_DIR/bin"
-cp -f "$ZTM_DIR/tui/target/release/clawparty" "$ZTM_DIR/bin/clawparty"
-# Ad-hoc sign the binary on macOS to avoid Gatekeeper issues
-if [ "$(uname)" = "Darwin" ]; then
-  codesign -s - --force --deep "$ZTM_DIR/bin/clawparty" 2>/dev/null || true
-fi
-echo "TUI built: $ZTM_DIR/bin/clawparty"
