@@ -616,6 +616,36 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
+    '/api/task/analysis': {
+      'GET': function (_, req) {
+        var url = new URL(req.head.path, 'http://localhost')
+        var agentName = url.searchParams.get('agent')
+        var groupId = url.searchParams.get('group')
+        if (!agentName) return response(400, { error: 'agent parameter required' })
+        var log = db.getTaskAnalysisLog(agentName, groupId || null)
+        return response(200, {
+          agent_name: agentName,
+          group_id: groupId || null,
+          last_analyzed_at: log ? log.last_analyzed_at : 0,
+        })
+      },
+      'PUT': function (_, req) {
+        var body
+        try {
+          body = JSON.decode(req.body)
+        } catch {
+          return response(400, { error: 'invalid request body' })
+        }
+        if (!body || !body.agent_name) return response(400, { error: 'agent_name is required' })
+        db.setTaskAnalysisLog(body.agent_name, body.group_id || null, body.last_analyzed_at || 0)
+        return response(200, {
+          agent_name: body.agent_name,
+          group_id: body.group_id || null,
+          last_analyzed_at: body.last_analyzed_at || 0,
+        })
+      }
+    },
+
     '/api/global-config': {
       'GET': function () {
         var cfg = api.loadGlobalConfig()

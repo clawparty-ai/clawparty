@@ -303,20 +303,47 @@ const handleTaskRefresh = async () => {
   await loadTasks()
 
   const msgs = props.chat.messages || []
-  const lastAnalyzed = props.chat.lastTaskAnalyzedAt || 0
+
+  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
+  const groupId = props.chat.isGroupChat ? props.chat.groupId : null
+
+  // Load persisted lastTaskAnalyzedAt from database
+  var persistedLog = null
+  var lastAnalyzed = 0
+  try {
+    if (agentName) {
+      const logRes = await taskService.getAnalysisLog(agentName, groupId)
+      if (logRes.data) {
+        persistedLog = logRes.data
+        lastAnalyzed = persistedLog.last_analyzed_at || 0
+        addRefreshLog('info', 'Loaded analysis log, lastAnalyzed=' + lastAnalyzed)
+      }
+    }
+  } catch (e) {
+    addRefreshLog('warn', 'Failed to load analysis log: ' + (e.message || e))
+  }
+  if (!lastAnalyzed && props.chat.lastTaskAnalyzedAt) {
+    lastAnalyzed = props.chat.lastTaskAnalyzedAt
+  }
+
   let newMessages = msgs.filter(m => m.timestamp && m.timestamp > lastAnalyzed)
   addRefreshLog('info', 'Messages total: ' + msgs.length + ' | new since last analysis: ' + newMessages.length)
 
   if (newMessages.length === 0) {
     const latestTs = msgs.length > 0 ? msgs[msgs.length - 1].timestamp : Date.now()
-    props.chat.lastTaskAnalyzedAt = Math.max(lastAnalyzed, latestTs)
+    const newLast = Math.max(lastAnalyzed, latestTs)
+    props.chat.lastTaskAnalyzedAt = newLast
+    if (agentName) {
+      try {
+        await taskService.setAnalysisLog(agentName, groupId, newLast)
+        addRefreshLog('info', 'Persisted analysis log (no new messages)')
+      } catch (e) {}
+    }
     addRefreshLog('info', 'No new messages. Done.')
     isTaskRefreshing.value = false
     return
   }
 
-  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
-  const groupId = props.chat.isGroupChat ? props.chat.groupId : null
   if (!agentName) {
     addRefreshLog('warn', 'No agentName available. Cannot send to 0#Agent.')
     props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
@@ -325,13 +352,22 @@ const handleTaskRefresh = async () => {
   }
   addRefreshLog('info', 'Agent: ' + agentName + (groupId ? ' | group=' + groupId : ''))
 
+  const persistLastAnalyzed = function(ts) {
+    props.chat.lastTaskAnalyzedAt = ts
+    if (agentName) {
+      taskService.setAnalysisLog(agentName, groupId, ts).catch(function(e) {
+        addRefreshLog('warn', 'Failed to persist analysis log: ' + (e.message || e))
+      })
+    }
+  }
+
   try {
     addRefreshLog('info', 'Fetching 0#Agent info...')
     const agentsRes = await zagentService.getAgents()
     const zeroAgent = agentsRes.data.find(function(a) { return a.agent_name === '0#Agent' })
     if (!zeroAgent || !zeroAgent.port) {
       addRefreshLog('error', '0#Agent not found or port missing. Agents count: ' + (agentsRes.data?.length || 0))
-      props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
+      persistLastAnalyzed(newMessages[newMessages.length - 1].timestamp)
       await loadTasks()
       isTaskRefreshing.value = false
       return
@@ -425,7 +461,7 @@ const handleTaskRefresh = async () => {
           } catch (e) {
             addRefreshLog('error', 'Failed to parse AI response: ' + (e.message || e))
           }
-          props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
+          persistLastAnalyzed(newMessages[newMessages.length - 1].timestamp)
           finishRefresh('ws-done')
         }
       },
@@ -438,7 +474,7 @@ const handleTaskRefresh = async () => {
       },
       function(error) {
         addRefreshLog('error', 'WebSocket error: ' + (error.message || error))
-        props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
+        persistLastAnalyzed(newMessages[newMessages.length - 1].timestamp)
         finishRefresh('ws-error')
       },
       zeroAgent.port
@@ -449,13 +485,13 @@ const handleTaskRefresh = async () => {
       if (!hasResponded) {
         ws.close()
         addRefreshLog('warn', 'Timeout (' + refreshTimeout.value + 's) waiting for 0#Agent response')
-        props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
+        persistLastAnalyzed(newMessages[newMessages.length - 1].timestamp)
         finishRefresh('timeout')
       }
     }, refreshTimeout.value * 1000)
   } catch (e) {
     addRefreshLog('error', 'Unexpected error: ' + (e.message || e))
-    props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
+    persistLastAnalyzed(newMessages[newMessages.length - 1].timestamp)
     await loadTasks()
     isTaskRefreshing.value = false
   }

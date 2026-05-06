@@ -33,7 +33,9 @@ tests/**/.env.local
 tests/.env.local
 
 # Session notes
-session-add-sse-support.md
+session*.md
+
+*.py
 
 # console logs
 console-log*.log

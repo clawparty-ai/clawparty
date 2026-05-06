@@ -239,7 +239,21 @@ export const taskService = {
 
   getTaskEvents(taskId) {
     return api.get(`/tasks/${encodeURIComponent(taskId)}/events`)
-  }
+  },
+
+  getAnalysisLog(agentName, groupId) {
+    var url = `/task/analysis?agent=${encodeURIComponent(agentName)}`
+    if (groupId) url += `&group=${encodeURIComponent(groupId)}`
+    return api.get(url)
+  },
+
+  setAnalysisLog(agentName, groupId, lastAnalyzedAt) {
+    return api.put('/task/analysis', {
+      agent_name: agentName,
+      group_id: groupId || null,
+      last_analyzed_at: lastAnalyzedAt,
+    })
+  },
 }
 
 export const zagentService = {

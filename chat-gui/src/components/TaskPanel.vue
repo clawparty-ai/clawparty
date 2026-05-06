@@ -51,10 +51,12 @@
           </div>
           <div class="task-content">
             <div class="task-line">
+              <span class="task-created">{{ formatDate(task.created_at) }}</span>
               <span class="task-title" :title="task.ai_description || task.description">
                 <span v-if="task._isPendingCreate" class="new-badge">新</span>
                 {{ task.short_title || task.title }}
               </span>
+              <span class="task-duration" v-if="task.created_at">{{ formatDuration(task) }}</span>
               <span class="task-priority" v-if="task.priority !== 'normal'" :class="'priority-' + task.priority">{{ formatPriority(task.priority) }}</span>
             </div>
             <div class="task-meta">
@@ -168,6 +170,33 @@ const confirmChange = (change) => {
 const formatPriority = (priority) => {
   const map = { low: '低', normal: '中', high: '高', urgent: '紧急' }
   return map[priority] || priority
+}
+
+const formatDate = (ts) => {
+  if (!ts) return ''
+  const d = new Date(ts * 1000)
+  const mm = (d.getMonth() + 1).toString().padStart(2, '0')
+  const dd = d.getDate().toString().padStart(2, '0')
+  const hh = d.getHours().toString().padStart(2, '0')
+  const min = d.getMinutes().toString().padStart(2, '0')
+  return mm + '-' + dd + ' ' + hh + ':' + min
+}
+
+const formatDuration = (task) => {
+  if (!task.created_at) return ''
+  const start = task.started_at ? task.started_at * 1000 : task.created_at * 1000
+  const end = task.completed_at ? task.completed_at * 1000 : (task.status === 'running' ? Date.now() : 0)
+  if (!end) return ''
+  const ms = end - start
+  if (ms < 0) return ''
+  const seconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  if (days > 0) return days + '天' + (hours % 24) + '小时'
+  if (hours > 0) return hours + '小时' + (minutes % 60) + '分'
+  if (minutes > 0) return minutes + '分' + (seconds % 60) + '秒'
+  return seconds + '秒'
 }
 
 // Resizable panel height
@@ -521,6 +550,19 @@ const taskStats = computed(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.task-created {
+  font-size: 12px;
+  color: var(--text-muted, #999);
+  flex-shrink: 0;
+}
+
+.task-duration {
+  font-size: 12px;
+  color: var(--text-muted, #999);
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .task-title {

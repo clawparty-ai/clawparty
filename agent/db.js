@@ -328,6 +328,22 @@ function open(pathname) {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id)`)
     db.exec(`CREATE INDEX IF NOT EXISTS idx_task_events_timestamp ON task_events(timestamp)`)
   } catch {}
+
+  // Task analysis log: tracks per-chat last task-analysis timestamp
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_analysis_log (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_name    TEXT NOT NULL,
+      group_id      TEXT,
+      last_analyzed_at REAL NOT NULL DEFAULT 0,
+      updated_at    REAL NOT NULL,
+      UNIQUE(agent_name, group_id)
+    )
+  `)
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_task_analysis_agent ON task_analysis_log(agent_name)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_task_analysis_group ON task_analysis_log(group_id)`)
+  } catch {}
 }
 
 function allZones() {
@@ -1372,6 +1388,49 @@ function getTaskEvents(taskId) {
   return result
 }
 
+function getTaskAnalysisLog(agentName, groupId) {
+  var sql = 'SELECT last_analyzed_at, updated_at FROM task_analysis_log WHERE agent_name = ?'
+  var stmt = db.sql(sql).bind(1, agentName)
+  if (groupId !== undefined && groupId !== null) {
+    stmt = db.sql(sql + ' AND group_id = ?').bind(1, agentName).bind(2, groupId)
+  } else {
+    stmt = db.sql(sql + ' AND group_id IS NULL').bind(1, agentName)
+  }
+  var rows = stmt.exec()
+  if (rows.length === 0) return null
+  return {
+    last_analyzed_at: rows[0].last_analyzed_at,
+    updated_at: rows[0].updated_at,
+  }
+}
+
+function setTaskAnalysisLog(agentName, groupId, lastAnalyzedAt) {
+  var t = Date.now() / 1000
+  var existing = getTaskAnalysisLog(agentName, groupId)
+  if (existing) {
+    var sql = 'UPDATE task_analysis_log SET last_analyzed_at = ?, updated_at = ? WHERE agent_name = ?'
+    var stmt = db.sql(sql).bind(1, lastAnalyzedAt).bind(2, t).bind(3, agentName)
+    if (groupId !== undefined && groupId !== null) {
+      stmt = db.sql(sql + ' AND group_id = ?')
+        .bind(1, lastAnalyzedAt).bind(2, t).bind(3, agentName).bind(4, groupId)
+    } else {
+      stmt = db.sql(sql + ' AND group_id IS NULL')
+        .bind(1, lastAnalyzedAt).bind(2, t).bind(3, agentName)
+    }
+    stmt.exec()
+  } else {
+    db.sql(`
+      INSERT INTO task_analysis_log(agent_name, group_id, last_analyzed_at, updated_at)
+      VALUES(?, ?, ?, ?)
+    `)
+      .bind(1, agentName)
+      .bind(2, groupId || null)
+      .bind(3, lastAnalyzedAt)
+      .bind(4, t)
+      .exec()
+  }
+}
+
 function getTaskCount(agentName, status) {
   var sql = 'SELECT COUNT(*) as cnt FROM tasks WHERE agent_name = ?'
   var params = [agentName]
@@ -1454,4 +1513,6 @@ export default {
   recordTaskEvent,
   getTaskEvents,
   getTaskCount,
+  getTaskAnalysisLog,
+  setTaskAnalysisLog,
 }
