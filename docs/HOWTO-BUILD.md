@@ -46,8 +46,8 @@ If you are on macOS, the following are required to build ZTM:
 Once you have all these tools installed, clone the project and execute `build.sh`:
 
 ```sh
-git clone https://github.com/flomesh-io/ztm.git
-cd ztm
+git clone https://github.com/clawparty-ai/clawparty.git
+cd clawparty
 ./build.sh
 ```
 
@@ -66,9 +66,9 @@ For Windows users, the following tools need to be installed prior to build:
 Since we are building with *Microsoft Visual C++*, we need to open *Developer Command Prompt for VS 2022* in order to have the build system environment set up propertly. In *Developer Command Prompt for VS 2022*, clone the project and execute `build.cmd`:
 
 ```sh
-git clone https://github.com/flomesh-io/ztm.git
-cd ztm
+git clone https://github.com/clawparty-ai/clawparty.git
+cd clawparty
 build.cmd
 ```
 
-The final output is a single executable file located at `ztm\bin\ztm.exe`.
+The final output is a single executable file located at `clawparty\bin\ztm.exe`.
