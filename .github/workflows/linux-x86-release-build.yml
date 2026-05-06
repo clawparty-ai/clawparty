@@ -7,6 +7,12 @@ on:
         description: 'Release tag (e.g. v0.5.3)'
         required: true
         default: 'v0.5.3'
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.5.3)'
+        required: true
+        type: string
 
 jobs:
   build:
@@ -81,20 +87,20 @@ jobs:
           cp bin/ztm dist/ztm
           cp bin/zeroclaw dist/zeroclaw
           cp -r agent/gui dist/gui
-          tag="${{ github.event.inputs.tag }}"
+          tag="${{ inputs.tag }}"
           tar -czf "clawparty-${tag}-linux-x86_64.tar.gz" -C dist .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: clawparty-${{ github.event.inputs.tag }}-linux-x86_64
-          path: clawparty-${{ github.event.inputs.tag }}-linux-x86_64.tar.gz
+          name: clawparty-${{ inputs.tag }}-linux-x86_64
+          path: clawparty-${{ inputs.tag }}-linux-x86_64.tar.gz
 
       - name: Upload Release Asset
         if: github.event.inputs.tag != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="${{ github.event.inputs.tag }}"
+          tag="${{ inputs.tag }}"
           file="clawparty-${tag}-linux-x86_64.tar.gz"
           gh release upload "$tag" "$file" --clobber

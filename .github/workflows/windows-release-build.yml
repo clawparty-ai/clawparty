@@ -7,6 +7,12 @@ on:
         description: 'Release tag (e.g. v0.5.3)'
         required: true
         default: 'v0.5.3'
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.5.3)'
+        required: true
+        type: string
 
 jobs:
   build:
@@ -143,7 +149,7 @@ jobs:
           }
           Write-Host "=== dist directory contents ==="
           Get-ChildItem -Recurse -Path "dist" | Select-Object FullName, @{N='SizeMB';E={[math]::Round($_.Length/1MB,2)}}
-          $tag = "${{ github.event.inputs.tag }}"
+          $tag = "${{ inputs.tag }}"
           Compress-Archive -Path "dist\*" -DestinationPath "clawparty-$tag-win-x86_64.zip"
           Write-Host "=== ZIP file size ==="
           Get-Item "clawparty-$tag-win-x86_64.zip" | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,2)}}
@@ -151,8 +157,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: clawparty-${{ github.event.inputs.tag }}-win-x86_64
-          path: clawparty-${{ github.event.inputs.tag }}-win-x86_64.zip
+          name: clawparty-${{ inputs.tag }}-win-x86_64
+          path: clawparty-${{ inputs.tag }}-win-x86_64.zip
 
       - name: Upload Release Asset
         if: github.event.inputs.tag != ''
@@ -160,6 +166,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: powershell
         run: |
-          $tag = "${{ github.event.inputs.tag }}"
+          $tag = "${{ inputs.tag }}"
           $file = "clawparty-$tag-win-x86_64.zip"
           gh release upload $tag $file --clobber
