@@ -781,7 +781,15 @@ function startAgent(agentName) {
   // Build command - use array format for pipeline.exec
   var zeroclawBase = os.path.join(os.path.dirname(pipy.argv[0]), 'zeroclaw')
   // Append .exe on Windows (harmless on Unix since path.concat just adds chars)
-  var zeroclawPath = (os.platform && os.platform === 'win32') ? zeroclawBase + '.exe' : zeroclawBase
+  var platform = os.platform || 'unknown'
+  var isWin = (
+    platform === 'win32' ||
+    platform === 'win64' ||
+    platform === 'windows' ||
+    platform === 'win'
+  )
+  console.log('[AGENT] Detected platform: ' + platform + ', isWin=' + isWin)
+  var zeroclawPath = isWin ? zeroclawBase + '.exe' : zeroclawBase
   var cmd = [zeroclawPath, 'daemon', '--config-dir', agent.directory, '-p', agent.port.toString()]
   console.log('[AGENT] Command: ' + cmd.join(' '))
   
@@ -789,6 +797,7 @@ function startAgent(agentName) {
   var $zcPid = null
   var $zcExitCode = 0
   var $zcErrorMessage = ''
+  var $zcOutput = ''
   var $zcStartTime = Date.now()
   
   var zeroclawPipeline = pipeline($=>$
@@ -803,8 +812,10 @@ function startAgent(agentName) {
           console.error('[AGENT] ZeroClaw error:', $zcErrorMessage)
         }
         console.log('[AGENT] ZeroClaw exited with code: ' + code)
-        // Update status when process exits
-        db.updateAgentStatus(agentName, code === 0 ? 'stopped' : 'error', null, $zcErrorMessage)
+        if ($zcOutput) {
+          console.log('[AGENT] ZeroClaw output:\n' + $zcOutput)
+        }
+        db.updateAgentStatus(agentName, code === 0 ? 'stopped' : 'error', null, $zcErrorMessage || $zcOutput)
         return new StreamEnd
       }
     })
@@ -818,10 +829,15 @@ function startAgent(agentName) {
       return [new MessageStart, evt]
     })
     .replaceStreamEnd(function() { return new MessageEnd })
+    .replaceMessage(function(msg) {
+      $zcOutput += msg?.body?.toString?.() || ''
+      return new StreamEnd
+    })
     .onEnd(function() {
       var durationMs = Date.now() - $zcStartTime
       console.log('[AGENT] ZeroClaw ran for ' + durationMs + 'ms')
       $zcErrorMessage = ''
+      $zcOutput = ''
       return 'started'
     })
   )
