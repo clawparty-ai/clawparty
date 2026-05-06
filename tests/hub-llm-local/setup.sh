@@ -170,6 +170,12 @@ join_with_invite_code() {
     exit 1
   fi
   green "  $name joined via invite code"
+
+  # Copy zeroclaw config to user's data directory as global-config.toml
+  if [ -f "$ZEROCLAW_CONFIG" ]; then
+    cp "$ZEROCLAW_CONFIG" "$TMP/$name/global-config.toml"
+    log "  copied zeroclaw config to $name/global-config.toml"
+  fi
 }
 
 verify_agent() {
