@@ -920,7 +920,7 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
     let mut zeroclaw_ready = false;
     for i in 0..40 {
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        if let Ok(resp) = client.get("http://localhost:42617/api/health").send().await {
+        if let Ok(resp) = client.get("http://localhost:42617/health").send().await {
             if resp.status().is_success() {
                 zeroclaw_ready = true;
                 break;
