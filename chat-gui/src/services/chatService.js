@@ -431,11 +431,27 @@ export const groupChatService = {
   getGroupChat(groupId) {
     return api.get(`/groupchats/${encodeURIComponent(groupId)}`)
   },
+  updateGroupChat(groupId, data) {
+    return api.put(`/groupchats/${encodeURIComponent(groupId)}`, data)
+  },
   deleteGroupChat(groupId) {
     return api.del(`/groupchats/${encodeURIComponent(groupId)}`)
   },
+  addMembers(groupId, memberNames) {
+    return api.post(`/groupchats/${encodeURIComponent(groupId)}/members`, { members: memberNames })
+  },
+  removeMember(groupId, agentName) {
+    return api.del(`/groupchats/${encodeURIComponent(groupId)}/members/${encodeURIComponent(agentName)}`)
+  },
   getGroupMessages(groupId) {
     return api.get(`/groupchats/${encodeURIComponent(groupId)}/messages`)
+  },
+  sendGroupMessage(groupId, sender, content, msgType) {
+    return api.post(`/groupchats/${encodeURIComponent(groupId)}/messages`, {
+      sender,
+      content,
+      msg_type: msgType || 'user'
+    })
   }
 }
 

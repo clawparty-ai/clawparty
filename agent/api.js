@@ -831,7 +831,7 @@ function startAgent(agentName) {
     .replaceStreamEnd(function() { return new MessageEnd })
     .replaceMessage(function(msg) {
       $zcOutput += msg?.body?.toString?.() || ''
-      return new StreamEnd
+      return msg
     })
     .onEnd(function() {
       var durationMs = Date.now() - $zcStartTime

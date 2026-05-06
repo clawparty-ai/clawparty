@@ -22,17 +22,19 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-http": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-os": "~2",
     "@tauri-apps/plugin-shell": "2.3.4",
-		"@tauri-apps/plugin-http": "^2",
     "axios": "^1.13.6",
     "marked": "^17.0.3",
     "vue": "^3.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tauri-apps/cli": "^2",
     "@vitejs/plugin-vue": "^5.0.0",
+    "playwright-core": "^1.59.1",
     "vite": "^5.0.0"
   }
 }

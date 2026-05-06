@@ -16,7 +16,10 @@
       @download-pdf="handleDownloadPdf"
       @reload="fetchMessages"
       @toggleTaskPanel="showTaskPanel = !showTaskPanel"
+      @showMembers="showMembersPanel = !showMembersPanel"
     />
+    <div class="chat-body-wrapper">
+      <div class="chat-content" :class="{ 'with-members-panel': showMembersPanel }">
     <TaskPanel
       v-if="(chat.isZeroClaw || chat.isGroupChat) && showTaskPanel"
       :agentName="agentName || chat.display_name || chat.agent_name"
@@ -134,7 +137,7 @@
       :isOpenclaw="chat.isOpenclaw"
       :agentId="chat.agentId"
       :autoFocus="autoFocus"
-      :members="chat.isGroup ? (chat.members || []).filter(m => m !== currentUserName) : []"
+      :members="chat.isGroupChat ? [chat.ownerAgent, ...(chat.members || [])] : []"
       :agentGroups="agentGroupChats"
       :peerMode="peerMode"
       :showPeerMode="!chat.isOpenclaw && !!chat.name"
@@ -151,6 +154,57 @@
       @clear-quote="handleClearQuote"
       @start-agent="$emit('start-agent', $event)"
     />
+      </div>
+      <!-- Members Panel for group chats -->
+      <div class="members-panel" v-if="chat.isGroupChat && showMembersPanel">
+        <div class="members-panel-header">
+          <span class="members-panel-title">成员管理</span>
+          <button class="members-panel-close" @click="showMembersPanel = false">✕</button>
+        </div>
+        <div class="members-owner">
+          <div class="members-label">群主</div>
+          <div class="members-item">
+            <div class="members-avatar" :style="{ background: getAvatarColor(chat.ownerAgent) }">
+              {{ chat.ownerAgent?.[0]?.toUpperCase() || '👑' }}
+            </div>
+            <span class="members-name">{{ chat.ownerAgent }}</span>
+          </div>
+        </div>
+        <div class="members-list">
+          <div class="members-label">群成员</div>
+          <div
+            v-for="member in (chat.members || [])"
+            :key="member"
+            class="members-item"
+          >
+            <div class="members-avatar" :style="{ background: getAvatarColor(member) }">
+              {{ member[0].toUpperCase() }}
+            </div>
+            <span class="members-name">{{ member }}</span>
+            <button class="members-remove-btn" title="移除" @click="handleRemoveMember(member)">✕</button>
+          </div>
+          <div v-if="!(chat.members || []).length" class="members-empty">暂无其他成员</div>
+        </div>
+        <div class="members-add">
+          <div class="members-label">添加成员</div>
+          <div class="members-add-list">
+            <div
+              v-for="agent in availableZAgents"
+              :key="agent.agent_name"
+              class="members-add-item"
+              @click="handleAddMember(agent.agent_name)"
+            >
+              <div class="members-avatar" :style="{ background: getAvatarColor(agent.agent_name) }">
+                {{ agent.agent_name[0].toUpperCase() }}
+              </div>
+              <span class="members-name">{{ agent.agent_name }}</span>
+              <span class="members-add-icon">+</span>
+            </div>
+            <div v-if="!availableZAgents.length" class="members-empty">无可添加的agent</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
@@ -162,7 +216,7 @@ import MessageInput from './MessageInput.vue'
 import HalfAutomationInput from './HalfAutomationInput.vue'
 import ConfigTable from './ConfigTable.vue'
 import TaskPanel from './TaskPanel.vue'
-import { chatService, taskService, ZeroClawWS, zagentService } from '../services/chatService'
+import { chatService, taskService, ZeroClawWS, zagentService, groupChatService } from '../services/chatService'
 import { getAvatarColor } from '../utils/avatar'
 
 marked.setOptions({
@@ -237,6 +291,10 @@ const allPeerConfigs = ref([])  // 存储所有 peer 的配置数据
 const halfInputRef = ref(null)
 const halfDraftText = ref('')
 const currentSessionId = ref('')
+const showMembersPanel = ref(false)
+
+// zAgents list is needed for adding members to group chats
+const zAgents = inject('zAgents', ref([]))
 
 // Quote feature
 const quotedMessage = ref(null)
@@ -269,7 +327,8 @@ const calcTaskPanelHeight = async () => {
     return
   }
   const headerH = chatMainEl.value.querySelector('.chat-header')?.clientHeight || 56
-  const msgAreaH = Math.max(totalH - headerH, 120)
+  const inputH = chatMainEl.value.querySelector('.input-area')?.clientHeight || 0
+  const msgAreaH = Math.max(totalH - headerH - inputH, 120)
   taskPanelInitialHeight.value = Math.round(msgAreaH * 0.5)
 }
 
@@ -561,6 +620,38 @@ const handleSendWithQuote = (text) => {
 // Handle clear quote
 const handleClearQuote = () => {
   quotedMessage.value = null
+}
+
+// Group chat member management
+const availableZAgents = computed(() => {
+  if (!props.chat.isGroupChat || !zAgents.value) return []
+  const currentMembers = [props.chat.ownerAgent, ...(props.chat.members || [])]
+  return zAgents.value.filter(a => currentMembers.indexOf(a.agent_name) === -1 && a.status === 'running')
+})
+
+const handleAddMember = async (agentName) => {
+  if (!props.chat.isGroupChat) return
+  try {
+    await groupChatService.addMembers(props.chat.groupId, [agentName])
+    if (!props.chat.members) props.chat.members = []
+    props.chat.members.push(agentName)
+  } catch (e) {
+    console.error('Failed to add member:', e)
+    alert('添加成员失败: ' + (e.message || e))
+  }
+}
+
+const handleRemoveMember = async (agentName) => {
+  if (!props.chat.isGroupChat) return
+  if (!confirm('确定移除成员 ' + agentName + ' 吗？')) return
+  try {
+    await groupChatService.removeMember(props.chat.groupId, agentName)
+    const idx = props.chat.members.indexOf(agentName)
+    if (idx !== -1) props.chat.members.splice(idx, 1)
+  } catch (e) {
+    console.error('Failed to remove member:', e)
+    alert('移除成员失败: ' + (e.message || e))
+  }
 }
 
 // 我的显示名，带 autoReplyAgent 名称后缀（如 "lord-argyll-8384/龙闺蜜"）
@@ -1702,7 +1793,7 @@ watch(
         startPolling()
       })
     }
-    if (props.chat.isZeroClaw) {
+    if (props.chat.isZeroClaw || props.chat.isGroupChat) {
       await loadTasks()
       if (tasks.value.length > 0) {
         showTaskPanel.value = true
@@ -1710,6 +1801,7 @@ watch(
           calcTaskPanelHeight()
         })
       }
+      showMembersPanel.value = false
     }
   },
   { immediate: true }
@@ -1721,7 +1813,7 @@ watch(() => props.chat.messages?.length, () => {
 
 // When Task button toggles showTaskPanel back on, immediately load
 watch(showTaskPanel, async (visible) => {
-  if (visible && props.chat.isZeroClaw) {
+  if (visible && (props.chat.isZeroClaw || props.chat.isGroupChat)) {
     requestAnimationFrame(() => {
       calcTaskPanelHeight()
     })
@@ -2162,6 +2254,156 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ── Members panel ─────────────────────────────────────────── */
+
+.chat-body-wrapper {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.chat-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.members-panel {
+  width: 240px;
+  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.members-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.members-panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.members-panel-close {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.members-panel-close:hover {
+  background: var(--bg-hover);
+}
+
+.members-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+
+.members-item,
+.members-add-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: default;
+  margin-bottom: 4px;
+}
+
+.members-add-item {
+  cursor: pointer;
+}
+
+.members-add-item:hover {
+  background: var(--bg-hover);
+}
+
+.members-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.members-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.members-remove-btn {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.members-remove-btn:hover {
+  background: rgba(255, 0, 0, 0.1);
+  color: #e22;
+}
+
+.members-add-icon {
+  font-size: 16px;
+  color: var(--slack-green, #2bac76);
+  font-weight: 700;
+}
+
+.members-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 8px;
+  text-align: center;
+}
+
+.members-owner {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.members-list {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 @media (max-width: 768px) {

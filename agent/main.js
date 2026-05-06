@@ -358,11 +358,58 @@ function main(listen, apiToken, noAuth) {
         return response(200, gc)
       },
 
+      'PUT': function ({ groupId }, req) {
+        groupId = URL.decodeComponent(groupId)
+        var body
+        try {
+          body = JSON.decode(req.body)
+        } catch {
+          return response(400, { error: 'invalid request body' })
+        }
+        var ok = db.updateGroupChat(groupId, body)
+        if (!ok) return response(404, { error: 'Group chat not found: ' + groupId })
+        return response(200, db.getGroupChat(groupId))
+      },
+
       'DELETE': function ({ groupId }) {
         groupId = URL.decodeComponent(groupId)
         console.log('[API] DELETE /api/groupchats/' + groupId + ' (soft delete)')
         db.softDeleteGroupChat(groupId)
         return response(204)
+      },
+    },
+
+    '/api/groupchats/{groupId}/members': {
+      'POST': function ({ groupId }, req) {
+        groupId = URL.decodeComponent(groupId)
+        var body = JSON.decode(req.body)
+        var gc = db.getGroupChat(groupId)
+        if (!gc) return response(404, { error: 'Group chat not found: ' + groupId })
+        var members = gc.members || []
+        var newMembers = body.members || []
+        for (var i = 0; i < newMembers.length; i++) {
+          if (members.indexOf(newMembers[i]) === -1) {
+            members.push(newMembers[i])
+          }
+        }
+        db.updateGroupChat(groupId, { members: members })
+        return response(200, db.getGroupChat(groupId))
+      },
+    },
+
+    '/api/groupchats/{groupId}/members/{agentName}': {
+      'DELETE': function ({ groupId, agentName }) {
+        groupId = URL.decodeComponent(groupId)
+        agentName = URL.decodeComponent(agentName)
+        var gc = db.getGroupChat(groupId)
+        if (!gc) return response(404, { error: 'Group chat not found: ' + groupId })
+        var members = gc.members || []
+        var idx = members.indexOf(agentName)
+        if (idx !== -1) {
+          members.splice(idx, 1)
+          db.updateGroupChat(groupId, { members: members })
+        }
+        return response(200, db.getGroupChat(groupId))
       },
     },
 
@@ -372,7 +419,24 @@ function main(listen, apiToken, noAuth) {
         var gc = db.getGroupChat(groupId)
         if (!gc) return response(404, { error: 'Group chat not found: ' + groupId })
 
-        // Aggregate messages from all member agents (owner + members)
+        // Try chat_log first
+        var logs = db.getChatLog('', 'group_local', groupId, 500, ['user', 'response', 'system'])
+        if (logs && logs.length > 0) {
+          var messages = []
+          // getChatLog returns DESC order; iterate backwards for ASC
+          for (var i = logs.length - 1; i >= 0; i--) {
+            var log = logs[i]
+            messages.push({
+              role: log.msgType === 'user' ? 'user' : (log.msgType === 'system' ? 'system' : 'assistant'),
+              content: log.content || '',
+              created_at: log.time ? new Date(log.time * 1000).toISOString() : '',
+              _agentName: log.msgType === 'user' ? null : log.sender
+            })
+          }
+          return response(200, JSON.encode({ messages: messages }))
+        }
+
+        // Fallback: aggregate messages from all member agents via session API
         var allAgentNames = [gc.owner_agent].concat(gc.members || [])
         var allMessages = []
         var seenUserKeys = {}
@@ -412,6 +476,27 @@ function main(listen, apiToken, noAuth) {
           })
           return response(200, JSON.encode({ messages: allMessages }))
         })
+      },
+
+      'POST': function ({ groupId }, req) {
+        groupId = URL.decodeComponent(groupId)
+        var gc = db.getGroupChat(groupId)
+        if (!gc) return response(404, { error: 'Group chat not found: ' + groupId })
+
+        var body
+        try {
+          body = JSON.decode(req.body)
+        } catch {
+          return response(400, { error: 'invalid request body' })
+        }
+
+        var sender = body.sender || ''
+        var content = body.content || ''
+        var msgType = body.msg_type || 'user'
+        var members = [gc.owner_agent].concat(gc.members || [])
+
+        db.logChat('', 'group_local', groupId, gc.group_name, gc.owner_agent, sender, 'message', content, members, groupId, false, msgType)
+        return response(201)
       },
     },
 

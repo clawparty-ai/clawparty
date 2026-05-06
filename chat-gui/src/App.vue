@@ -564,15 +564,17 @@ const fetchLocalGroupChats = async () => {
   try {
     const response = await groupChatService.getGroupChats()
     const chats = response.data || []
-    localGroupChats.value = chats.map(c => ({
-      groupId: c.group_id,
-      groupName: c.group_name,
-      ownerAgent: c.owner_agent,
-      members: c.members,
-      sessionId: c.session_id,
-      messages: [],
-      created_at: c.created_at
-    }))
+      localGroupChats.value = chats.map(c => ({
+        groupId: c.group_id,
+        groupName: c.group_name,
+        ownerAgent: c.owner_agent,
+        members: c.members,
+        sessionId: c.session_id,
+        messages: [],
+        created_at: c.created_at,
+        isGroupChat: true,
+        name: c.group_name
+      }))
   } catch (error) {
     console.error('Failed to fetch local group chats:', error)
   }
@@ -1733,13 +1735,18 @@ const createGroupChatMessageHandler = (groupId, agentName) => {
     switch (data.type) {
     case 'chunk': {
       if (data.content) {
-        // Parse task tags from AI response for group chat (use owner agent)
         parseTaskTags(data.content, agentName)
       }
-      // Find or create a typing message for this agent
-      const lastTyping = group.messages[group.messages.length - 1]
-      if (lastTyping && lastTyping.isTyping && lastTyping.agentName === agentName) {
-        lastTyping.text += data.content || ''
+      // Find the most recent typing message for this agent (from end)
+      var typingMsg = null
+      for (var i = group.messages.length - 1; i >= 0; i--) {
+        if (group.messages[i].isTyping && group.messages[i].agentName === agentName) {
+          typingMsg = group.messages[i]
+          break
+        }
+      }
+      if (typingMsg) {
+        typingMsg.text += data.content || ''
       } else {
         group.messages.push({
           text: data.content || '',
@@ -1759,19 +1766,32 @@ const createGroupChatMessageHandler = (groupId, agentName) => {
         parseTaskTags(data.full_response, agentName)
       }
       const replyText = data.full_response || ''
-      // Check if agent replied with NO_REPLY / 不回复 marker
       const isNoReply = replyText.includes('NO_REPLY') || replyText.includes('不回复')
 
-      // Finalize the typing message
-      const lastTyping = group.messages[group.messages.length - 1]
-      if (lastTyping && lastTyping.isTyping && lastTyping.agentName === agentName) {
+      // Find the most recent typing message for this agent (from end)
+      var lastTyping = null
+      var lastTypingIdx = -1
+      for (var j = group.messages.length - 1; j >= 0; j--) {
+        if (group.messages[j].isTyping && group.messages[j].agentName === agentName) {
+          lastTyping = group.messages[j]
+          lastTypingIdx = j
+          break
+        }
+      }
+      if (lastTyping) {
         if (isNoReply) {
-          // Remove the typing message if agent chose not to reply
-          group.messages.pop()
+          group.messages.splice(lastTypingIdx, 1)
         } else {
           lastTyping.isTyping = false
           lastTyping.text = replyText
         }
+      }
+
+      // Persist agent response to chat_log
+      if (replyText && !isNoReply) {
+        try {
+          groupChatService.sendGroupMessage(groupId, agentName, replyText, 'response')
+        } catch (e) { /* non-blocking */ }
       }
 
       // Broadcast this agent's reply to all other agents in the group (skip if NO_REPLY)
@@ -1872,6 +1892,11 @@ const sendMessage = async () => {
         isSent: true,
         isTemp: true
       })
+
+      // Persist user message to chat_log
+      try {
+        groupChatService.sendGroupMessage(group.groupId, senderName, text, 'user')
+      } catch (e) { /* non-blocking */ }
 
       // Send to all member agents via WS with prompt injection
       const connections = activeGroupWsMap.get(group.groupId)
