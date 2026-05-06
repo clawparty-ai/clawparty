@@ -1781,27 +1781,25 @@ watch(() => props.chat.name, (name) => {
 watch(
   () => [props.chat.name, props.isActive],
   async ([name, isActive], prev) => {
-    if (!name || !isActive) {
+    if (!isActive) {
       if (prev && prev[1]) {
         stopPolling()
       }
       return
     }
     await loadPeerMode()
-    if (!props.chat.isOpenclaw) {
+    if (name && !props.chat.isOpenclaw) {
       fetchMessages().then(() => {
         startPolling()
       })
     }
     if (props.chat.isZeroClaw || props.chat.isGroupChat) {
       await loadTasks()
-      if (tasks.value.length > 0) {
-        showTaskPanel.value = true
-        requestAnimationFrame(() => {
-          calcTaskPanelHeight()
-        })
-      }
-      showMembersPanel.value = false
+      showTaskPanel.value = true
+      requestAnimationFrame(() => {
+        calcTaskPanelHeight()
+      })
+      showMembersPanel.value = !!props.chat.isGroupChat
     }
   },
   { immediate: true }
