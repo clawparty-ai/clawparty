@@ -626,8 +626,10 @@ const handleClearQuote = () => {
 const availableZAgents = computed(() => {
   if (!props.chat.isGroupChat || !zAgents.value) return []
   const currentMembers = [props.chat.ownerAgent, ...(props.chat.members || [])]
-  return zAgents.value.filter(a => currentMembers.indexOf(a.agent_name) === -1 && a.status === 'running')
+  return zAgents.value.filter(a => currentMembers.indexOf(a.agent_name) === -1)
 })
+
+const fetchZAgents = inject('fetchZAgents')
 
 const handleAddMember = async (agentName) => {
   if (!props.chat.isGroupChat) return
@@ -635,6 +637,17 @@ const handleAddMember = async (agentName) => {
     await groupChatService.addMembers(props.chat.groupId, [agentName])
     if (!props.chat.members) props.chat.members = []
     props.chat.members.push(agentName)
+
+    // Auto-start the agent if it's not running
+    const agent = zAgents.value.find(a => a.agent_name === agentName)
+    if (agent && agent.status !== 'running') {
+      try {
+        await zagentService.startAgent(agentName)
+      } catch (err) {
+        console.warn('[GroupChat] Failed to auto-start agent:', agentName, err)
+      }
+      if (fetchZAgents) await fetchZAgents()
+    }
   } catch (e) {
     console.error('Failed to add member:', e)
     alert('添加成员失败: ' + (e.message || e))
