@@ -12,13 +12,43 @@
       </button>
     </div>
     <div v-show="expanded" class="webshare-panel-body">
-      <div v-if="files.length === 0" class="webshare-empty">
-        <span class="webshare-empty-icon">📂</span>
-        <span class="webshare-empty-text">暂无共享文件<br>在 agent workspace/web/ 目录下添加文件</span>
-      </div>
-      <div v-else class="webshare-layout">
-        <!-- Left: File list -->
+      <div class="webshare-layout">
+        <!-- Left: Upload panel -->
+        <div
+          class="webshare-upload-pane"
+          :class="{ dragover: isDragOver }"
+          @dragenter.prevent="onDragEnter"
+          @dragover.prevent="onDragOver"
+          @dragleave.prevent="onDragLeave"
+          @drop.prevent="onDrop"
+          @click="triggerFileSelect"
+        >
+          <div class="upload-content">
+            <span class="upload-icon">📤</span>
+            <span class="upload-text">拖拽文件到此处上传</span>
+            <span class="upload-hint">或点击选择文件</span>
+            <div v-if="uploadStatus === 'uploading'" class="upload-status uploading">
+              <span class="upload-spinner"></span>
+              上传中...
+            </div>
+            <div v-else-if="uploadStatus === 'success'" class="upload-status success">✓ 上传成功</div>
+            <div v-else-if="uploadStatus === 'error'" class="upload-status error">✗ 上传失败</div>
+          </div>
+          <input
+            ref="fileInput"
+            type="file"
+            multiple
+            style="display: none"
+            @change="handleFileChange"
+          />
+        </div>
+        <!-- Middle: File list -->
         <div class="webshare-list-pane">
+          <div v-if="files.length === 0" class="webshare-empty">
+            <span class="webshare-empty-icon">📂</span>
+            <span class="webshare-empty-text">暂无共享文件<br>在 agent workspace/web/ 目录下添加文件</span>
+          </div>
+          <template v-else>
           <div class="breadcrumb-bar">
             <span class="breadcrumb-root" @click="goRoot">web</span>
             <template v-for="(seg, idx) in pathSegments" :key="idx">
@@ -85,13 +115,15 @@
                  <span class="file-type-col">文件</span>
                  <span class="file-size-col">{{ formatSize(file.size) }}</span>
                 <span class="file-time-col">{{ formatTime(file.mtime) }}</span>
-                <span class="file-actions-col">
-                  <button class="action-btn copy-btn" title="复制文件URL" @click.stop="copyFileUrl(file.name)">复制</button>
-                  <button class="action-btn preview-btn" title="预览" @click.stop="previewFile(file.name)">预览</button>
+                 <span class="file-actions-col">
+                   <button class="action-btn copy-btn" title="复制文件URL" @click.stop="copyFileUrl(file.name)">复制</button>
+                   <button class="action-btn preview-btn" title="预览" @click.stop="previewFile(file.name)">预览</button>
+                   <button class="action-btn open-btn" title="在新标签页打开" @click.stop="openFile(file.name)">打开</button>
                 </span>
               </div>
             </div>
           </div>
+          </template>
         </div>
         <!-- Right: Preview panel -->
         <div class="webshare-preview-pane" v-if="previewUrl">
@@ -146,11 +178,76 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['toggle', 'refresh'])
+const emit = defineEmits(['toggle', 'refresh', 'uploaded'])
 
 const currentPath = ref('')
 const previewUrl = ref('')
 const previewName = ref('')
+
+// Upload drag & drop state
+const isDragOver = ref(false)
+const uploadStatus = ref('')
+const fileInput = ref(null)
+let dragCounter = 0
+
+const onDragEnter = (e) => {
+  dragCounter++
+  isDragOver.value = true
+}
+
+const onDragOver = (e) => {
+  isDragOver.value = true
+}
+
+const onDragLeave = (e) => {
+  dragCounter--
+  if (dragCounter <= 0) {
+    isDragOver.value = false
+    dragCounter = 0
+  }
+}
+
+const onDrop = (e) => {
+  dragCounter = 0
+  isDragOver.value = false
+  const files = e.dataTransfer?.files
+  if (files && files.length > 0) {
+    uploadFiles(files)
+  }
+}
+
+const triggerFileSelect = () => {
+  fileInput.value?.click()
+}
+
+const handleFileChange = (e) => {
+  const files = e.target.files
+  if (files && files.length > 0) {
+    uploadFiles(files)
+  }
+  e.target.value = ''
+}
+
+const uploadFiles = async (files) => {
+  uploadStatus.value = 'uploading'
+  let hasError = false
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      const uint8 = new Uint8Array(arrayBuffer)
+      await webshareService.uploadAgentWebshareFile(props.agentName, uint8, file.name, currentPath.value)
+    } catch (err) {
+      console.error('[WebShare] Upload failed:', file.name, err)
+      hasError = true
+    }
+  }
+  uploadStatus.value = hasError ? 'error' : 'success'
+  emit('uploaded')
+  setTimeout(() => {
+    uploadStatus.value = ''
+  }, 2000)
+}
 
 // Sorting state: 'name' | 'type' | 'size' | 'mtime'
 const sortKey = ref('')
@@ -277,6 +374,11 @@ const copyFileUrl = async (filename) => {
 const previewFile = (filename) => {
   previewName.value = filename
   previewUrl.value = fileUrl(filename)
+}
+
+const openFile = (filename) => {
+  const url = fileUrl(filename)
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 const closePreview = () => {
@@ -479,6 +581,91 @@ const stopResize = () => {
   flex-direction: row;
   flex: 1;
   overflow: hidden;
+}
+
+.webshare-upload-pane {
+  width: 160px;
+  min-width: 120px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  padding: 8px;
+}
+
+.webshare-upload-pane:hover {
+  background: rgba(64, 149, 254, 0.06);
+}
+
+.webshare-upload-pane.dragover {
+  background: rgba(64, 149, 254, 0.15);
+  border-color: #4095fe;
+}
+
+.upload-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.upload-icon {
+  font-size: 28px;
+  opacity: 0.7;
+}
+
+.upload-text {
+  font-size: 13px;
+  color: var(--text-secondary, #616061);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.upload-hint {
+  font-size: 11px;
+  color: var(--text-dim, #797979);
+}
+
+.upload-status {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+}
+
+.upload-status.uploading {
+  color: #4095fe;
+  background: rgba(64, 149, 254, 0.1);
+}
+
+.upload-status.success {
+  color: #2eb67d;
+  background: rgba(46, 182, 125, 0.1);
+}
+
+.upload-status.error {
+  color: #e01e5a;
+  background: rgba(224, 30, 90, 0.1);
+}
+
+.upload-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(64, 149, 254, 0.3);
+  border-top-color: #4095fe;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
 .webshare-list-pane {
@@ -729,6 +916,7 @@ const stopResize = () => {
 .file-name-col {
   flex: 1;
   min-width: 0;
+  max-width: 55%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -761,18 +949,18 @@ const stopResize = () => {
 }
 
 .file-actions-col {
-  width: 80px;
+  width: 96px;
   text-align: right;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 3px;
 }
 
 .action-btn {
   font-size: 11px;
-  padding: 1px 6px;
+  padding: 1px 5px;
   border-radius: 3px;
   border: none;
   cursor: pointer;
@@ -797,6 +985,16 @@ const stopResize = () => {
 
 .preview-btn:hover {
   background: #2eb67d;
+  color: #fff;
+}
+
+.open-btn {
+  background: rgba(96, 105, 124, 0.12);
+  color: #60697c;
+}
+
+.open-btn:hover {
+  background: #60697c;
   color: #fff;
 }
 

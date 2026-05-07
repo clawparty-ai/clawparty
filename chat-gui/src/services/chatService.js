@@ -428,6 +428,14 @@ export const webshareService = {
     }
     if (token) url += sep + token
     return url
+  },
+  uploadAgentWebshareFile(agentName, fileData, fileName, path) {
+    var url = `/webshare/${encodeURIComponent(agentName)}/upload?name=${encodeURIComponent(fileName)}`
+    if (path) url += `&path=${encodeURIComponent(path)}`
+    return api.post(url, fileData, {
+      headers: { 'Content-Type': 'application/octet-stream' },
+      transformRequest: [function(data) { return data }]
+    })
   }
 }
 

@@ -32,6 +32,7 @@
       :refreshing="isWebShareRefreshing"
       @toggle="webSharePanelExpanded = !webSharePanelExpanded"
       @refresh="loadWebShareFiles"
+      @uploaded="handleWebShareUploaded"
     />
     <TaskPanel
       v-if="(chat.isZeroClaw || chat.isGroupChat) && showTaskPanel"
@@ -367,6 +368,13 @@ watch(showTaskPanel, (visible) => {
     showWebSharePanel.value = false
   }
 })
+
+const handleWebShareUploaded = () => {
+  // Refresh the file list after successful upload
+  setTimeout(() => {
+    loadWebShareFiles()
+  }, 300)
+}
 
 const calcTaskPanelHeight = async () => {
   if (!chatMainEl.value) return

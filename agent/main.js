@@ -825,6 +825,40 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
+    '/api/webshare/{agent}/upload': {
+      'POST': function ({ agent }, req) {
+        agent = URL.decodeComponent(agent)
+        var row = db.getAgent(agent)
+        if (!row) return response(404, { error: 'Agent not found' })
+        var url = new URL(req.head.path, 'http://localhost')
+        var filename = url.searchParams.get('name') || ''
+        var subPath = url.searchParams.get('path') || ''
+        if (!filename) return response(400, { error: 'name is required' })
+        if (filename.indexOf('..') >= 0 || filename.indexOf('/') >= 0 || filename.indexOf('\\') >= 0 || filename.startsWith('.')) {
+          return response(403, { error: 'Forbidden filename' })
+        }
+        if (subPath.indexOf('..') >= 0) {
+          return response(403, { error: 'Forbidden path' })
+        }
+        var webDir = os.path.join(row.workspace_dir, 'web')
+        if (subPath) {
+          webDir = os.path.join(webDir, subPath)
+        }
+        try {
+          os.mkdir(webDir, { recursive: true })
+        } catch (e) {
+          return response(500, { error: 'Failed to create directory' })
+        }
+        var filepath = os.path.join(webDir, filename)
+        try {
+          os.write(filepath, req.body)
+          return response(200, { status: 200, message: 'File uploaded successfully', path: subPath ? subPath + '/' + filename : filename })
+        } catch (e) {
+          return response(500, { error: 'Failed to write file: ' + (e?.message || e) })
+        }
+      }
+    },
+
     '/api/global-config': {
       'GET': function () {
         var cfg = api.loadGlobalConfig()

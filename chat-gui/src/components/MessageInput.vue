@@ -65,27 +65,6 @@
             </svg>
           </button>
         </div>
-        <button class="toolbar-btn" @click="triggerImagePicker" title="发送图片">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
-            <path d="M2.002 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2h-12zm12 1a1 1 0 0 1 1 1v6.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12V3a1 1 0 0 1 1-1h12z"/>
-          </svg>
-        </button>
-        <input ref="imageInputRef" type="file" accept="image/*" multiple style="display:none" @change="handleImageSelect" />
-        <button class="toolbar-btn" @click="triggerCamera" title="拍照">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M10.5 8.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/>
-            <path d="M2 4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.172a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 9.172 2H6.828a2 2 0 0 0-1.414.586l-.828.828A2 2 0 0 1 3.172 4H2zm.5 2a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1zm9 2.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z"/>
-          </svg>
-        </button>
-        <input ref="cameraInputRef" type="file" accept="image/*" capture="environment" style="display:none" @change="handleCameraCapture" />
-        <button class="toolbar-btn" @click="triggerFilePicker" title="发送文件">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5h-2z"/>
-            <path d="M4.5 8a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zm0-2a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zm0-2a.5.5 0 0 0 0 1h4a.5.5 0 0 0 0-1h-4z"/>
-          </svg>
-        </button>
-        <input ref="fileInputRef" type="file" accept="*/*" multiple style="display:none" @change="handleFileSelect" />
         <span class="toolbar-spacer"></span>
         <div v-if="showPeerMode" class="peer-mode-group">
           <button
