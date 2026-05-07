@@ -323,7 +323,7 @@ const taskStats = computed(() => {
 .task-panel {
   flex-shrink: 0;
   position: relative;
-  background: var(--bg-secondary, #f3f6fc);
+  background: var(--bg-panel, #e8ecf6);
   border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.07));
   display: flex;
   flex-direction: column;
@@ -367,7 +367,7 @@ const taskStats = computed(() => {
   user-select: none;
   position: sticky;
   top: 0;
-  background: var(--bg-secondary, #f3f6fc);
+  background: var(--bg-panel, #e8ecf6);
   z-index: 2;
 }
 
