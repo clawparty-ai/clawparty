@@ -412,6 +412,16 @@ export const chatService = {
   },
 }
 
+export const webshareService = {
+  getAgentWebshareList(agentName) {
+    return api.get(`/webshare/${encodeURIComponent(agentName)}/list`)
+  },
+  getAgentWebshareFileUrl(agentName, filename) {
+    var token = getToken() ? `?token=${encodeURIComponent(getToken())}` : ''
+    return `/api/webshare/${encodeURIComponent(agentName)}/file/${encodeURIComponent(filename)}${token}`
+  }
+}
+
 export const groupChatService = {
   getGroupChats() {
     return api.get('/groupchats')

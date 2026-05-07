@@ -7,6 +7,8 @@
       :showBackButton="showBackButton"
       :showTaskButton="chat.isZeroClaw || chat.isGroupChat"
       :taskPanelVisible="showTaskPanel"
+      :showWebShareButton="chat.isZeroClaw || chat.isGroupChat"
+      :webSharePanelVisible="showWebSharePanel"
       @switchSession="$emit('switchSession', $event)"
       @deleteGroup="$emit('deleteGroup', $event)"
       @leaveGroup="$emit('leaveGroup', $event)"
@@ -16,10 +18,21 @@
       @download-pdf="handleDownloadPdf"
       @reload="fetchMessages"
       @toggleTaskPanel="showTaskPanel = !showTaskPanel"
+      @toggleWebSharePanel="showWebSharePanel = !showWebSharePanel"
       @showMembers="showMembersPanel = !showMembersPanel"
     />
     <div class="chat-body-wrapper">
       <div class="chat-content" :class="{ 'with-members-panel': showMembersPanel }">
+    <WebSharePanel
+      v-if="(chat.isZeroClaw || chat.isGroupChat) && showWebSharePanel"
+      :agentName="agentName || chat.display_name || chat.agent_name || chat.ownerAgent"
+      :files="webShareFiles"
+      :expanded="webSharePanelExpanded"
+      :initialHeight="webSharePanelHeight"
+      :refreshing="isWebShareRefreshing"
+      @toggle="webSharePanelExpanded = !webSharePanelExpanded"
+      @refresh="loadWebShareFiles"
+    />
     <TaskPanel
       v-if="(chat.isZeroClaw || chat.isGroupChat) && showTaskPanel"
       :agentName="agentName || chat.display_name || chat.agent_name"
@@ -216,7 +229,8 @@ import MessageInput from './MessageInput.vue'
 import HalfAutomationInput from './HalfAutomationInput.vue'
 import ConfigTable from './ConfigTable.vue'
 import TaskPanel from './TaskPanel.vue'
-import { chatService, taskService, ZeroClawWS, zagentService, groupChatService } from '../services/chatService'
+import WebSharePanel from './WebSharePanel.vue'
+import { chatService, taskService, ZeroClawWS, zagentService, groupChatService, webshareService } from '../services/chatService'
 import { getAvatarColor } from '../utils/avatar'
 
 marked.setOptions({
@@ -316,6 +330,43 @@ const addRefreshLog = (level, msg) => {
   refreshLogs.value.push({ time: hh + ':' + mm + ':' + ss, level, msg })
   if (refreshLogs.value.length > 80) refreshLogs.value.shift()
 }
+
+// Web Share management
+const showWebSharePanel = ref(false)
+const webSharePanelExpanded = ref(true)
+const webSharePanelHeight = ref(180)
+const webShareFiles = ref([])
+const isWebShareRefreshing = ref(false)
+
+const loadWebShareFiles = async () => {
+  if (!props.chat.isZeroClaw && !props.chat.isGroupChat) return
+  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
+  if (!agentName) return
+  try {
+    isWebShareRefreshing.value = true
+    const res = await webshareService.getAgentWebshareList(agentName)
+    if (res.data && res.data.files) {
+      webShareFiles.value = res.data.files
+    }
+  } catch (e) {
+    console.error('[WebShare] Failed to load files:', e)
+  } finally {
+    isWebShareRefreshing.value = false
+  }
+}
+
+watch(showWebSharePanel, (visible) => {
+  if (visible) {
+    showTaskPanel.value = false
+    loadWebShareFiles()
+  }
+})
+
+watch(showTaskPanel, (visible) => {
+  if (visible) {
+    showWebSharePanel.value = false
+  }
+})
 
 const calcTaskPanelHeight = async () => {
   if (!chatMainEl.value) return

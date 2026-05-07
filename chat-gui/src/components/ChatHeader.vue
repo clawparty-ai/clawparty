@@ -65,6 +65,15 @@
         </button>
 
         <button
+          v-if="showWebShareButton"
+          class="header-btn"
+          :class="{ active: webSharePanelVisible }"
+          title="Web Share"
+          @click="emit('toggleWebSharePanel')"
+        >
+          <span style="font-size: 13px; font-weight: 600;">🌐</span>
+        </button>
+        <button
           v-if="showTaskButton"
           class="header-btn"
           :class="{ active: taskPanelVisible }"
@@ -121,10 +130,18 @@ const props = defineProps({
   taskPanelVisible: {
     type: Boolean,
     default: true
+  },
+  showWebShareButton: {
+    type: Boolean,
+    default: false
+  },
+  webSharePanelVisible: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload', 'toggleTaskPanel', 'showMembers'])
+const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload', 'toggleTaskPanel', 'toggleWebSharePanel', 'showMembers'])
 </script>
 
 <style scoped>

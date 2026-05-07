@@ -731,6 +731,73 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
+    // ── Web Share APIs ────────────────────────────────────────────────
+
+    '/api/webshare/{agent}/list': {
+      'GET': function ({ agent }) {
+        agent = URL.decodeComponent(agent)
+        var row = db.getAgent(agent)
+        if (!row) return response(404, { error: 'Agent not found' })
+        var webDir = os.path.join(row.workspace_dir, 'web')
+        try {
+          var st = os.stat(webDir)
+          if (!st.isDirectory()) {
+            os.mkdir(webDir, { recursive: true })
+          }
+        } catch (e) {
+          os.mkdir(webDir, { recursive: true })
+        }
+        var entries = []
+        try {
+          entries = os.readDir(webDir)
+        } catch (e) {
+          entries = []
+        }
+        var files = []
+        for (var i = 0; i < entries.length; i++) {
+          var name = entries[i]
+          if (name.endsWith('/')) {
+            // skip subdirectories
+          } else {
+            var filePath = os.path.join(webDir, name)
+            try {
+              var stat = os.stat(filePath)
+              if (stat.isFile()) {
+                files.push({
+                  name: name,
+                  size: stat.size,
+                  mtime: stat.mtime,
+                })
+              }
+            } catch (e) {}
+          }
+        }
+        return response(200, { agent: agent, files: files })
+      }
+    },
+
+    '/api/webshare/{agent}/file/{filename}': {
+      'GET': function ({ agent, filename }) {
+        agent = URL.decodeComponent(agent)
+        filename = URL.decodeComponent(filename)
+        var row = db.getAgent(agent)
+        if (!row) return response(404, { error: 'Agent not found' })
+        if (filename.indexOf('..') >= 0 || filename.indexOf('/') >= 0 || filename.indexOf('\\') >= 0) {
+          return response(403, { error: 'Forbidden' })
+        }
+        var webDir = os.path.join(row.workspace_dir, 'web')
+        var filePath = os.path.join(webDir, filename)
+        var data
+        try {
+          data = os.read(filePath)
+        } catch (e) {
+          return response(404, { error: 'File not found' })
+        }
+        var ct = mimeType(filename)
+        return responseCT(200, ct, data)
+      }
+    },
+
     '/api/global-config': {
       'GET': function () {
         var cfg = api.loadGlobalConfig()
@@ -2185,4 +2252,37 @@ function validateName(name, msg) {
       throw msg
     }
   }
+}
+
+function mimeType(filename) {
+  var ext = ''
+  var idx = filename.lastIndexOf('.')
+  if (idx >= 0) ext = filename.substring(idx + 1).toLowerCase()
+  var map = {
+    html: 'text/html',
+    htm: 'text/html',
+    css: 'text/css',
+    js: 'application/javascript',
+    mjs: 'application/javascript',
+    json: 'application/json',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    svg: 'image/svg+xml',
+    webp: 'image/webp',
+    ico: 'image/x-icon',
+    pdf: 'application/pdf',
+    md: 'text/markdown',
+    txt: 'text/plain',
+    xml: 'application/xml',
+    woff: 'font/woff',
+    woff2: 'font/woff2',
+    ttf: 'font/ttf',
+    mp4: 'video/mp4',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    ogg: 'audio/ogg',
+  }
+  return map[ext] || 'application/octet-stream'
 }
