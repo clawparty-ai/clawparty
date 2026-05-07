@@ -949,7 +949,7 @@ const stopResize = () => {
 }
 
 .file-actions-col {
-  width: 96px;
+  width: 144px;
   text-align: right;
   flex-shrink: 0;
   display: flex;

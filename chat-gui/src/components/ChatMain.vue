@@ -125,8 +125,10 @@
                 <button class="approve-btn" @click="approveGroupRequest(msg)">Approve</button>
               </div>
             </div>
-            <button v-if="!msg.isGroupRequest && !msg.isPeerRequest" class="quote-btn" @click="quoteMessage(msg)" title="引用此消息">↩ 引用</button>
-            <button v-if="!msg.isGroupRequest && !msg.isPeerRequest && msg.text" class="copy-btn" @click="copyMessage(msg)" title="拷贝此消息">📋 拷贝</button>
+            <div class="message-actions">
+              <button v-if="!msg.isGroupRequest && !msg.isPeerRequest" class="quote-btn" @click="quoteMessage(msg)" title="引用此消息">↩ 引用</button>
+              <button v-if="!msg.isGroupRequest && !msg.isPeerRequest && msg.text" class="copy-btn" @click="copyMessage(msg)" title="拷贝此消息">📋 拷贝</button>
+            </div>
           </template>
         </div>
       </div>
@@ -1999,6 +2001,13 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+}
+
+.message-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .message-header {
