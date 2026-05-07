@@ -74,6 +74,24 @@ if [ "$ZTM_ONLY" != true ]; then
 fi
 
 cd "$ZTM_DIR"
+
+# Build plain pipy without internal repos
+echo "Building plain pipy..."
+mkdir -p "$ZTM_DIR/pipy/build-plain"
+cd "$ZTM_DIR/pipy/build-plain"
+cmake .. \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=clang \
+  -DCMAKE_CXX_COMPILER=clang++ \
+  -DPIPY_GUI=OFF \
+  -DPIPY_SAMPLE_CODEBASES=OFF
+make -j2
+mkdir -p "$ZTM_DIR/bin"
+cp -f "$ZTM_DIR/pipy/bin/pipy" "$ZTM_DIR/bin/pipy"
+echo "Plain pipy built: $ZTM_DIR/bin/pipy"
+rm -rf "$ZTM_DIR/pipy/build-plain"
+
+cd "$ZTM_DIR"
 build/pipy.sh
 
 if [ "$ZTM_ONLY" = true ]; then

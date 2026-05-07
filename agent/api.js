@@ -1410,6 +1410,70 @@ function reconcileAgentStatuses() {
   }
 
   _agentStatusCache.ts = Date.now()
+
+  // Sync desktop symlinks / shortcuts for each agent
+  var desktopPath = os.path.join(os.home(), 'Desktop')
+  var isWin = (os.platform === 'win32' || os.platform === 'windows')
+
+  try {
+    var desktopEntries = []
+    try { desktopEntries = os.readDir(desktopPath) } catch (e) { desktopEntries = [] }
+
+    for (var j = 0; j < reconciled.length; j++) {
+      var ag = reconciled[j]
+      var linkName = (ag.agent_name === '0#Agent') ? 'zAgent_0' : 'zAgent_' + ag.agent_name
+      var expectedEntry = isWin ? linkName + '.lnk' : linkName
+      var linkPath = os.path.join(desktopPath, linkName)
+
+      // Skip if a file / directory / link with the same name already exists on Desktop
+      var conflict = false
+      for (var k = 0; !conflict && k < desktopEntries.length; k++) {
+        var entry = desktopEntries[k]
+        if (entry.endsWith('/')) entry = entry.substring(0, entry.length - 1)
+        if (entry === expectedEntry) {
+          conflict = true
+        }
+      }
+
+      if (!conflict) {
+        var targetPath = (ag.agent_name === '0#Agent')
+          ? os.path.join(os.home(), '.clawparty', '.zeroclaw')
+          : ag.directory
+
+        // Skip if target directory does not exist
+        var targetExists = false
+        try {
+          os.stat(targetPath)
+          targetExists = true
+        } catch (e) { }
+
+        if (targetExists) {
+          try {
+            if (isWin) {
+              var psPath = os.path.join(os.home(), '.clawparty', 'tmp_create_link.ps1')
+              var psContent = '$ws = New-Object -ComObject WScript.Shell\n'
+              psContent += '$s = $ws.CreateShortcut("' + linkPath.replaceAll('"', '\\"') + '.lnk")\n'
+              psContent += '$s.TargetPath = "' + targetPath.replaceAll('"', '\\"') + '"\n'
+              psContent += '$s.Save()\n'
+              os.write(psPath, psContent)
+              pipy.exec('powershell -ExecutionPolicy Bypass -File "' + psPath.replaceAll('"', '\\"') + '"')
+              try { os.unlink(psPath) } catch (e) {}
+            } else {
+              pipy.exec('ln -s "' + targetPath.replaceAll('"', '\\"') + '" "' + linkPath.replaceAll('"', '\\"') + '"')
+            }
+            console.log('[AGENT] Created desktop link for ' + ag.agent_name + ': ' + linkPath + ' -> ' + targetPath)
+          } catch (e) {
+            console.error('[AGENT] Failed to create desktop link for ' + ag.agent_name + ': ' + e)
+          }
+        } else {
+          console.log('[AGENT] Skipping desktop link for ' + ag.agent_name + ': target missing: ' + targetPath)
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[AGENT] Desktop link sync failed:', e)
+  }
+
   return _sortAgents(reconciled)
 }
 

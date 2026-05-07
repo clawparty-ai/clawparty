@@ -32,9 +32,18 @@
           </div>
           <div class="webshare-file-list">
             <div class="webshare-file-row header-row">
-              <span class="file-name-col">文件名</span>
-              <span class="file-size-col">大小</span>
-              <span class="file-time-col">时间</span>
+              <span class="file-name-col header-sortable" :class="{ active: sortKey === 'name' }" @click="handleSort('name')">
+                文件名<span class="sort-arrow">{{ sortIndicator('name') }}</span>
+              </span>
+              <span class="file-type-col header-sortable" :class="{ active: sortKey === 'type' }" @click="handleSort('type')">
+                类型<span class="sort-arrow">{{ sortIndicator('type') }}</span>
+              </span>
+              <span class="file-size-col header-sortable" :class="{ active: sortKey === 'size' }" @click="handleSort('size')">
+                大小<span class="sort-arrow">{{ sortIndicator('size') }}</span>
+              </span>
+              <span class="file-time-col header-sortable" :class="{ active: sortKey === 'mtime' }" @click="handleSort('mtime')">
+                时间<span class="sort-arrow">{{ sortIndicator('mtime') }}</span>
+              </span>
               <span class="file-actions-col">操作</span>
             </div>
             <div
@@ -48,10 +57,11 @@
                 <span class="parent-dir-text">..</span>
               </span>
               <span class="file-size-col">-</span>
+              <span class="file-type-col">-</span>
               <span class="file-time-col">-</span>
               <span class="file-actions-col"></span>
             </div>
-            <div v-for="file in files" :key="file.name + file.type">
+            <div v-for="file in sortedFiles" :key="file.name + file.type">
               <div
                 v-if="file.type === 'dir'"
                 class="webshare-file-row dir-row"
@@ -62,16 +72,18 @@
                   <span class="file-icon">📁</span>
                   {{ file.name }}
                 </span>
+                <span class="file-type-col">文件夹</span>
                 <span class="file-size-col">-</span>
                 <span class="file-time-col">-</span>
                 <span class="file-actions-col"></span>
               </div>
-              <div v-else class="webshare-file-row">
-                <span class="file-name-col" :title="file.name">
-                  <span class="file-icon">{{ fileIcon(file.name) }}</span>
-                  {{ file.name }}
-                </span>
-                <span class="file-size-col">{{ formatSize(file.size) }}</span>
+               <div v-else class="webshare-file-row">
+                 <span class="file-name-col" :title="file.name">
+                   <span class="file-icon">{{ fileIcon(file.name) }}</span>
+                   {{ file.name }}
+                 </span>
+                 <span class="file-type-col">文件</span>
+                 <span class="file-size-col">{{ formatSize(file.size) }}</span>
                 <span class="file-time-col">{{ formatTime(file.mtime) }}</span>
                 <span class="file-actions-col">
                   <button class="action-btn copy-btn" title="复制文件URL" @click.stop="copyFileUrl(file.name)">复制</button>
@@ -140,6 +152,59 @@ const currentPath = ref('')
 const previewUrl = ref('')
 const previewName = ref('')
 
+// Sorting state: 'name' | 'type' | 'size' | 'mtime'
+const sortKey = ref('')
+const sortDir = ref('asc')
+
+const handleSort = (key) => {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortDir.value = 'asc'
+  }
+}
+
+const sortIndicator = (key) => {
+  if (sortKey.value !== key) return ''
+  return sortDir.value === 'asc' ? ' ▲' : ' ▼'
+}
+
+const sortedFiles = computed(() => {
+  const list = [...props.files]
+  const key = sortKey.value
+  const dir = sortDir.value
+  if (!key) return list
+
+  list.sort((a, b) => {
+    let va, vb
+    if (key === 'name') {
+      va = a.name || ''
+      vb = b.name || ''
+    } else if (key === 'type') {
+      va = a.type || ''
+      vb = b.type || ''
+    } else if (key === 'size') {
+      va = a.size || 0
+      vb = b.size || 0
+    } else if (key === 'mtime') {
+      va = a.mtime || 0
+      vb = b.mtime || 0
+    } else {
+      return 0
+    }
+
+    if (typeof va === 'string' && typeof vb === 'string') {
+      const cmp = va.localeCompare(vb)
+      return dir === 'asc' ? cmp : -cmp
+    }
+    if (va < vb) return dir === 'asc' ? -1 : 1
+    if (va > vb) return dir === 'asc' ? 1 : -1
+    return 0
+  })
+  return list
+})
+
 const pathSegments = computed(() => {
   if (!currentPath.value) return []
   return currentPath.value.split('/').filter(Boolean)
@@ -151,7 +216,13 @@ const isImagePreview = computed(() => {
 })
 
 const toggleExpanded = () => {
-  emit('toggle')
+  if (!props.expanded) {
+    emit('toggle')
+  } else if (currentPath.value) {
+    goRoot()
+  } else {
+    emit('toggle')
+  }
 }
 
 const onRefresh = () => {
@@ -593,7 +664,32 @@ const stopResize = () => {
   padding: 3px 8px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   margin-bottom: 2px;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.webshare-file-row.header-row .header-sortable {
+  cursor: pointer;
+  user-select: none;
+  border-radius: 3px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.webshare-file-row.header-row .header-sortable:hover {
+  background: rgba(64, 149, 254, 0.1);
+  color: #4095fe;
+}
+
+.webshare-file-row.header-row .header-sortable.active {
+  color: #4095fe;
+}
+
+.sort-arrow {
+  font-size: 10px;
+  display: inline-block;
+  margin-left: 2px;
 }
 
 .webshare-file-row.dir-row {
@@ -642,6 +738,14 @@ const stopResize = () => {
 
 .file-size-col {
   width: 58px;
+  text-align: right;
+  flex-shrink: 0;
+  color: var(--text-secondary, #616061);
+  font-size: 11px;
+}
+
+.file-type-col {
+  width: 52px;
   text-align: right;
   flex-shrink: 0;
   color: var(--text-secondary, #616061);

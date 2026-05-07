@@ -27,6 +27,18 @@ if not exist "%ZC_DIR%\config.toml" (
     )
 )
 
+:: -------------------------------------------------------------
+:: 0a) Sync config.toml and .secret_key to each agent directory
+:: -------------------------------------------------------------
+for /d %%D in ("%DATA_DIR%\agents\*") do (
+    if exist "%ZC_DIR%\config.toml" (
+        copy /Y "%ZC_DIR%\config.toml" "%%D\config.toml" >nul 2>&1
+    )
+    if exist "%ZC_DIR%\.secret_key" (
+        copy /Y "%ZC_DIR%\.secret_key" "%%D\.secret_key" >nul 2>&1
+    )
+)
+
 :: ---------------------------------------------------------------
 :: 1) Start ZeroClaw daemon (port 42617)
 :: ---------------------------------------------------------------
