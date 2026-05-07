@@ -28,7 +28,7 @@
       :agentName="agentName || chat.display_name || chat.agent_name || chat.ownerAgent"
       :files="webShareFiles"
       :expanded="webSharePanelExpanded"
-      :initialHeight="webSharePanelHeight"
+      :initialHeight="taskPanelInitialHeight"
       :refreshing="isWebShareRefreshing"
       @toggle="webSharePanelExpanded = !webSharePanelExpanded"
       @refresh="loadWebShareFiles"
@@ -338,13 +338,13 @@ const webSharePanelHeight = ref(180)
 const webShareFiles = ref([])
 const isWebShareRefreshing = ref(false)
 
-const loadWebShareFiles = async () => {
+const loadWebShareFiles = async (path) => {
   if (!props.chat.isZeroClaw && !props.chat.isGroupChat) return
   const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
   if (!agentName) return
   try {
     isWebShareRefreshing.value = true
-    const res = await webshareService.getAgentWebshareList(agentName)
+    const res = await webshareService.getAgentWebshareList(agentName, path)
     if (res.data && res.data.files) {
       webShareFiles.value = res.data.files
     }
