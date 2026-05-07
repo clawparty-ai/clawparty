@@ -327,6 +327,8 @@ const taskStats = computed(() => {
   border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.07));
   display: flex;
   flex-direction: column;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  z-index: 5;
 }
 
 .resize-handle {
