@@ -1853,6 +1853,7 @@ watch(() => props.chat.name, (name) => {
 watch(
   () => [props.chat.name, props.isActive],
   async ([name, isActive], prev) => {
+    if (prev && prev[0] === name && prev[1] === isActive) return
     if (!isActive) {
       if (prev && prev[1]) {
         stopPolling()
