@@ -161,7 +161,7 @@ jobs:
           path: clawparty-${{ inputs.tag }}-win-x86_64.zip
 
       - name: Upload Release Asset
-        if: github.event.inputs.tag != ''
+        if: inputs.tag != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: powershell
