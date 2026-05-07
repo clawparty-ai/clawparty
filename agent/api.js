@@ -388,6 +388,17 @@ function installSharedTemplate(industry, agent, soulContent, agentName) {
 
 var agentProcesses = {}
 
+function ensurePairingDisabled(configContent) {
+  if (configContent.indexOf('[gateway]') < 0) {
+    configContent = configContent + '\n[gateway]\nrequire_pairing = false\n'
+  } else if (configContent.indexOf('require_pairing') < 0) {
+    configContent = configContent.replace('[gateway]', '[gateway]\nrequire_pairing = false')
+  } else {
+    configContent = configContent.replaceAll('require_pairing = true', 'require_pairing = false')
+  }
+  return configContent
+}
+
 function allocatePort() {
   var PORT_START = 42618
   var PORT_END = 42700
@@ -520,7 +531,7 @@ function createAgent(agentName, displayName, modelConfig, description, workspace
   }
 
   // Patch config to disable pairing (all agents managed by ClawParty)
-  var patchedConfig = templateContent.replaceAll('require_pairing = true', 'require_pairing = false')
+  var patchedConfig = ensurePairingDisabled(templateContent)
 
   var configPath = os.path.join(agentDir, 'config.toml')
   os.write(configPath, patchedConfig)
@@ -615,7 +626,7 @@ function createZeroAgentFromConfig(configTomlContent) {
     console.log('[AGENT] Saved hub config as template: ' + templatePath)
 
     // Patch config to disable pairing for 0#Agent (managed by ClawParty)
-    var patchedConfig = configTomlContent.replaceAll('require_pairing = true', 'require_pairing = false')
+    var patchedConfig = ensurePairingDisabled(configTomlContent)
 
     var configPath = os.path.join(agentDir, 'config.toml')
     os.write(configPath, patchedConfig)
@@ -689,7 +700,7 @@ function discoverExistingZeroClaw() {
       configContent = '[general]\nmodel = "gpt-4o-mini"\nrequire_pairing = false\n'
     }
   }
-  configContent = configContent.replaceAll('require_pairing = true', 'require_pairing = false')
+  configContent = ensurePairingDisabled(configContent)
   os.write(configPath, configContent)
 
   // Minimal SOUL.md (so the agent directory looks complete)
@@ -1157,7 +1168,7 @@ function createGroupOwnerAgent(groupId, groupName, memberAgents) {
   }
 
   // Patch config to disable pairing
-  var patchedConfig = templateContent.replaceAll('require_pairing = true', 'require_pairing = false')
+  var patchedConfig = ensurePairingDisabled(templateContent)
 
   var configPath = os.path.join(agentDir, 'config.toml')
   os.write(configPath, patchedConfig)

@@ -5,6 +5,21 @@ var rootDir = ''
 
 function init(dirname) {
   rootDir = dirname
+  var globalConfigPath = os.path.join(rootDir, 'global-config.toml')
+  try {
+    os.read(globalConfigPath)
+  } catch (e) {
+    var defaultContent = 'api_key = ""\n' +
+      'api_url = ""\n' +
+      'default_provider = "openai"\n' +
+      'default_model = "gpt-4o-mini"\n' +
+      'default_temperature = 0.7\n' +
+      'provider_timeout_secs = 120\n\n' +
+      '[gateway]\n' +
+      'require_pairing = false\n'
+    os.write(globalConfigPath, defaultContent)
+    console.log('[AGENT] Created default global-config.toml: ' + globalConfigPath)
+  }
 }
 
 // Parse TOML content into JavaScript object
@@ -54,23 +69,18 @@ function parseToml(content) {
   return result
 }
 
-// Generate TOML content from JavaScript object
 function generateToml(config) {
   var lines = []
+  var llm = config.llm || {}
 
-  // Generate [llm] section
-  if (config.llm) {
-    lines.push('[llm]')
-    if (config.llm.provider) lines.push('provider = "' + config.llm.provider + '"')
-    if (config.llm.api_endpoint) lines.push('api_endpoint = "' + config.llm.api_endpoint + '"')
-    if (config.llm.api_key) lines.push('api_key = "' + config.llm.api_key + '"')
-    if (config.llm.model) lines.push('model = "' + config.llm.model + '"')
-    if (config.llm.temperature !== undefined) lines.push('temperature = ' + config.llm.temperature)
-    if (config.llm.timeout_secs !== undefined) lines.push('timeout_secs = ' + config.llm.timeout_secs)
-    lines.push('')
-  }
+  lines.push('api_key = "' + (llm.api_key || '') + '"')
+  lines.push('api_url = "' + (llm.api_endpoint || llm.api_url || '') + '"')
+  lines.push('default_provider = "' + (llm.provider || 'openai') + '"')
+  lines.push('default_model = "' + (llm.model || 'gpt-4o-mini') + '"')
+  lines.push('default_temperature = ' + (llm.temperature !== undefined ? llm.temperature : 0.7))
+  lines.push('provider_timeout_secs = ' + (llm.timeout_secs !== undefined ? llm.timeout_secs : 120))
+  lines.push('')
 
-  // Generate [metadata] section
   if (config.metadata) {
     lines.push('[metadata]')
     if (config.metadata.source) lines.push('source = "' + config.metadata.source + '"')
@@ -79,7 +89,61 @@ function generateToml(config) {
     lines.push('')
   }
 
+  lines.push('[gateway]')
+  lines.push('require_pairing = false')
+  lines.push('')
+
   return lines.join('\n')
+}
+
+function parseToml(content) {
+  var result = {}
+  var currentSection = result
+  var lines = content.split('\n')
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim()
+
+    if (line && !line.startsWith('#')) {
+      if (line.startsWith('[') && line.endsWith(']')) {
+        var sectionName = line.slice(1, -1)
+        var parts = sectionName.split('.')
+        currentSection = result
+        for (var j = 0; j < parts.length; j++) {
+          var part = parts[j]
+          if (!currentSection[part]) currentSection[part] = {}
+          currentSection = currentSection[part]
+        }
+      } else {
+        var eqIndex = line.indexOf('=')
+        if (eqIndex > 0) {
+          var key = line.slice(0, eqIndex).trim()
+          var value = line.slice(eqIndex + 1).trim()
+
+          if (value.startsWith('"') && value.endsWith('"')) {
+            value = value.slice(1, -1)
+          }
+
+          var num = Number(value)
+          if (!Number.isNaN(num) && value !== '') {
+            value = num
+          }
+
+          currentSection[key] = value
+        }
+      }
+    }
+  }
+
+  if (!result.llm) result.llm = {}
+  if (result.api_key !== undefined) result.llm.api_key = result.api_key
+  if (result.api_url !== undefined) result.llm.api_endpoint = result.api_url
+  if (result.default_provider !== undefined) result.llm.provider = result.default_provider
+  if (result.default_model !== undefined) result.llm.model = result.default_model
+  if (result.default_temperature !== undefined) result.llm.temperature = result.default_temperature
+  if (result.provider_timeout_secs !== undefined) result.llm.timeout_secs = result.provider_timeout_secs
+
+  return result
 }
 
 // Save global configuration to ~/.clawparty/global-config.toml
