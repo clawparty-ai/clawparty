@@ -5,7 +5,7 @@
       :openclawSessions="openclawSessions"
       :currentUserName="currentUserName"
       :showBackButton="showBackButton"
-      :showTaskButton="chat.isZeroClaw || chat.isGroupChat"
+      :showTaskButton="chat.isZeroClaw || isGroupChat || chat.isGroupChat"
       :taskPanelVisible="showTaskPanel"
       @switchSession="$emit('switchSession', $event)"
       @deleteGroup="$emit('deleteGroup', $event)"
@@ -21,7 +21,7 @@
     <div class="chat-body-wrapper">
       <div class="chat-content" :class="{ 'with-members-panel': showMembersPanel }">
     <TaskPanel
-      v-if="(chat.isZeroClaw || chat.isGroupChat) && showTaskPanel"
+      v-if="(chat.isZeroClaw || isGroupChat || chat.isGroupChat) && showTaskPanel"
       :agentName="agentName || chat.display_name || chat.agent_name"
       :tasks="tasks"
       :expanded="taskPanelBodyExpanded"

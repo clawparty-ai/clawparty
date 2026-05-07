@@ -1924,15 +1924,23 @@ const sendMessage = async () => {
 
         for (const conn of connections) {
           if (!conn.ws || !conn.ws.isConnected()) continue
+          const isOwner = conn.agentName === group.ownerAgent
           const isMentioned = hasMentions && mentionedNames.includes(conn.agentName.toLowerCase())
           let injectedText
-          if (isMentioned) {
+
+          if (isOwner) {
+            // Owner gets orchestration-focused prompt with full context
+            const membersList = (group.members || []).join('、')
+            if (hasMentions) {
+              injectedText = `[群聊编排] 群名："${groupName}"，成员：${membersList}。\n用户 ${senderName} @了 ${mentionedNames.join('、')} 并说："${cleanedText}"。\n用户已指定成员，你不需要路由。如果不需要补充，回复 NO_REPLY。`
+            } else {
+              injectedText = `[群聊编排] 群名："${groupName}"，成员：${membersList}。\n用户 ${senderName} 说："${text}"。\n请分析意图，决定路由给哪些成员，用简洁的语言说明安排。`
+            }
+          } else if (isMentioned) {
             injectedText = `在群聊"${groupName}"里，${senderName} @了你并说："${cleanedText}"，请回复。`
           } else if (hasMentions) {
-            // Someone else was @-mentioned — agent just observes
             injectedText = `在群聊"${groupName}"里，${senderName} 对其他人说："${text}"，如果这条消息不需要你参与，请只回复 NO_REPLY。`
           } else {
-            // No mentions — all agents should consider responding
             injectedText = `在群聊"${groupName}"里，${senderName} 说："${text}"，请根据你的角色参与群聊，如果这条消息完全不需要你回复，请只回复 NO_REPLY。`
           }
           conn.ws.sendMessage(injectedText)
@@ -2612,7 +2620,9 @@ const createGroupChat = async (selectedAgentNames, groupName) => {
       ownerAgent: result.agent_name,
       members: selectedAgentNames,
       sessionId: result.group_id,
-      messages: []
+      messages: [],
+      isGroupChat: true,
+      name: groupName
     })
 
     // Refresh zAgents to include the newly created owner agent
