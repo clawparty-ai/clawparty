@@ -235,8 +235,8 @@ ztm start agent --listen 127.0.0.1:7777 --api-token your_token
 The default API token is `enjoy-party` if not specified.
 
 For more details on each app's CLI, see:
-- [Chat App CLI](./HOWTO-CHAT.md)
-- [Cloud App CLI](./HOWTO-CLOUD.md)
-- [Tunnel App CLI](./HOWTO-TUNNEL.md)
-- [Proxy App CLI](./HOWTO-PROXY.md)
-- [Payment App CLI](./HOWTO-PAYMENT.md)
+- [Chat App CLI](../howto/chat.md)
+- [Cloud App CLI](../howto/cloud.md)
+- [Tunnel App CLI](../howto/tunnel.md)
+- [Proxy App CLI](../howto/proxy.md)
+- [Payment App CLI](../howto/payment.md)

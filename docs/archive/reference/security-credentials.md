@@ -228,7 +228,7 @@ git push --force origin branch-name
 - `tests/.env.example` - 测试环境变量模板
 - `tests/acl-local/config.example.toml` - 测试配置模板
 - `zeroclaw/.env.example` - ZeroClaw 环境变量模板
-- `docs/PITFALLS.md` - 常见问题和解决方案
+- `docs/reference/pitfalls.md` - 常见问题和解决方案
 
 ---
 

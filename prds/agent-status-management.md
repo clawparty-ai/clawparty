@@ -621,7 +621,7 @@ function getHubConnectionHistory(meshName, hubId, startTime, endTime, limit, off
 
 ### 9.1 相关文档
 - [ClawParty Architecture](../docs/ARCHITECTURE.md)
-- [ZTM Agent API](../docs/API-AGENT.md)
+- [ZTM Agent API](../docs/reference/api-agent.md)
 - [Database Schema](../docs/DATABASE.md)
 
 ### 9.2 参考资料
