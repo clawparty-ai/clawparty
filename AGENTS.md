@@ -178,11 +178,8 @@ cd chat-gui && npm run build && echo "Build successful"
 - Existing code often uses `var` and function declarations; preserve local style in touched files.
 - Use Pipy APIs directly where appropriate (`pipy.argv`, `pipy.exit`, `pipy.load`).
 - Use `JSON.decode` / `JSON.encode` in Pipy-side code.
-- **No regex**: PipyJS does not support `RegExp` APIs (`exec`, `match`, `test`, `replace(regex)`, `new RegExp`). Use string operations instead (`split`, `indexOf`, `charAt`, `substring`, `startsWith`, `endsWith`, `includes`).
 - **No locale methods**: PipyJS does not support `toLocaleTimeString()`, `toLocaleDateString()`, or similar locale-dependent Date methods. Format dates manually using `getHours()`, `getMinutes()`, etc. Example: `d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0')`
-- **No continue/break**: PipyJS does not support `continue` or `break` statements in loops. Use `if` blocks to wrap logic instead of `if (!condition) continue`.
-- **No arrow functions**: PipyJS does not fully support arrow functions (`=>`). Use traditional `function` declarations instead. Also avoid methods that rely on arrow functions for callbacks (e.g., `.map(x => x)`, `.filter(x => x)`, `.forEach(x => {})`). Use traditional loops or named function expressions instead.
-- **No .map() / .filter() / .reduce()**: PipyJS does not support these array methods. Use `for` loops instead. Example:
+- **No .map() / .filter() / .reduce() / forEach()**: PipyJS does not support these array methods. Use `for` loops instead. Example:
   ```javascript
   // ❌ Not supported - throws "not a function"
   var ports = agents.map(function(a) { return a.port })
@@ -193,26 +190,7 @@ cd chat-gui && npm run build && echo "Build successful"
     ports.push(agents[i].port)
   }
   ```
-- **No forEach**: PipyJS does not support `Array.prototype.forEach()`. PJS `.forEach()` callback throws `TypeError: not a function`. Use `for` loops instead. Example:
-  ```javascript
-  // ❌ Not supported - throws "not a function"
-  arr.forEach(function(item) { process(item) })
-  
-  // ✅ Use for loop instead
-  for (var i = 0; i < arr.length; i++) {
-    process(arr[i])
-  }
-  ```
-- **No Number.isNaN**: PipyJS does not support `Number.isNaN()`. Use a try-catch with `Number()` cast or compare with `!==` against a known NaN value.
-- **No while loops**: PipyJS does not support `while` statements. Use `for` loops instead. Example:
-  ```javascript
-  // ❌ Not supported
-  while (condition) { ... }
-  
-  // ✅ Use for loop instead
-  for (var i = 0; i < max && condition; i++) { ... }
-  ```
-- **No function hoisting**: PipyJS does not support function hoisting. Functions must be defined before they are called. Always define helper functions at the top of the file or before their first use.
+- **No Number.isNaN**: PipyJS does not support `Number.isNaN()`. Use the global `isNaN()` function or a try-catch with `Number()` cast instead.
 - **os.read() returns Data object**: `os.read(path)` returns a `Data` object, not a string. Always call `.toString()` to convert:
   ```javascript
   // ❌ Wrong - templateContent is Data object
@@ -223,6 +201,8 @@ cd chat-gui && npm run build && echo "Build successful"
   var templateContent = os.read(templatePath).toString()
   var lines = templateContent.split('\n')
   ```
+
+> **Note:** Earlier versions of AGENTS.md listed additional PipyJS limitations (RegExp, arrow functions, `continue`/`break`, `while` loops, function hoisting). These have been verified against the current `pipy/src/pjs/` engine and are **no longer accurate** — the current PipyJS runtime supports all of them. However, the existing Pipy-side codebase (`cli/`, `agent/`, `hub/`, `ca/`) still follows the older patterns, so keep file-local style consistent with surrounding code rather than modernizing for modernization's sake.
 
 ### Comments
 - Keep comments minimal.
