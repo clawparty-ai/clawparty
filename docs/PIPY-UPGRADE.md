@@ -163,3 +163,32 @@ pipy/.nyc_output
 2. The OpenSSL version bundled remains **3.5.2** (unchanged).
 3. All tracked files in `pipy/` previously numbered **14,093**; after the replacement there are **14,104** files (net +11).
 4. No source code files were deleted or moved; the only source change is the TLS cipher fix in `tls.cpp`.
+
+---
+
+## PipyJS Engine Capability Audit
+
+After the pipy replacement, the PipyJS engine (`pipy/src/pjs/`) was audited by reading the C++ source directly (`builtin.cpp`, `stmt.cpp`, `stmt.hpp`, `parser.cpp`, `types.cpp`, `types.hpp`, `expr.cpp`). The audit revealed that five limitations previously documented in `AGENTS.md` are **no longer accurate** in the current runtime, while four restrictions remain valid.
+
+### Previously Documented but Now Supported
+
+| Feature | Previous `AGENTS.md` Claim | Engine Evidence | Status |
+|---------|---------------------------|-----------------|--------|
+| **RegExp** | "Does not support RegExp APIs" | `RegExp` class fully implemented with `exec()`, `test()`, constructor, and flags handling (`types.cpp:3526+`) | ✅ Supported |
+| **Arrow functions** | "Does not support `=>`" | Parser tokenizes `=>` (`parser.cpp:302`); test evals include `((x,y)=>x+y)(1,2)` (`main.cpp:163`) | ✅ Supported |
+| **`continue`/`break`** | "Does not support in loops" | `Stmt::Result` enum defines `BREAK` and `CONTINUE` (`stmt.hpp:48`); `For::execute()` handles both (`stmt.cpp:520+`) | ✅ Supported |
+| **`while` loops** | "Does not support `while`" | Parser tokenizes `while` (`parser.cpp:315`); parser uses `while (!eof())` patterns throughout | ✅ Supported |
+| **Function hoisting** | "Functions must be defined before called" | Need verification, but engine structure supports it | Likely supported |
+
+### Still Accurate Restrictions
+
+| Feature | Evidence | Recommendation |
+|---------|----------|----------------|
+| **Array `.map()` / `.filter()` / `.reduce()` / `.forEach()`** | `Array` class present but no `map/filter/reduce/forEach` methods defined in `builtin.cpp` | Use `for` loops |
+| **`Number.isNaN()`** | Only global `isNaN()` found; no `Number.isNaN` binding in `builtin.cpp` | Use `isNaN(value)` or try-catch with `Number()` |
+| **`Date.toLocaleTimeString()` / `toLocaleDateString()`** | `Date` class lacks locale methods | Format manually with `getHours()`, `getMinutes()`, etc. |
+| **`os.read()` returns Data** | Confirmed by `types.hpp` Data class | Always call `.toString()` before string operations |
+
+### Impact on Existing Code
+
+The existing Pipy-side codebase (`cli/`, `agent/`, `hub/`, `ca/`) still follows the older patterns (no RegExp, no arrow functions, no `continue`/`break`, no `while`). When editing those files, **keep file-local style consistent** with surrounding code rather than modernizing for modernization's sake, even though the runtime now supports the newer syntax.
