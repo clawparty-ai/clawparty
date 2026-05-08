@@ -729,6 +729,7 @@ const createZeroClawMessageHandler = (connectionAgentName) => {
     } else if (data.type === 'done') {
       // For agent voice mode, read the full reply aloud via TTS once fully streamed
       if (voiceCallStore?.isAgentMode?.value && data.full_response) {
+        console.log('[App] zAgent WS done - triggering TTS, length:', data.full_response?.length)
         voiceCallStore.handleAgentResponse(data.full_response)
       }
       let idx = messages.findIndex(m => !!m.isTyping)
@@ -1276,6 +1277,7 @@ const handleZeroClawMessage = (data) => {
   } else if (data.type === 'done') {
     // For agent voice mode, read the full reply aloud via TTS once fully streamed
     if (voiceCallStore?.isAgentMode?.value && data.full_response) {
+      console.log('[App] Triggering TTS for full_response, length:', data.full_response?.length)
       voiceCallStore.handleAgentResponse(data.full_response)
     }
     // Parse full_response for task tags (AI may have sent complete markdown/table in full msg)

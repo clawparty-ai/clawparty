@@ -68,15 +68,23 @@ export function useVoiceCall(sendFn, currentUserName, sendChatFn) {
   }
 
   function handleAgentResponse(text) {
-    if (!isAgentMode.value || !speechService.value) return
-    if (!text || !text.trim()) return
+    console.log('[useVoiceCall] handleAgentResponse called, isAgentMode:', isAgentMode.value, 'text length:', text?.length)
+    if (!isAgentMode.value || !speechService.value) {
+      console.warn('[useVoiceCall] handleAgentResponse skipped — isAgentMode:', isAgentMode.value, 'speechService:', !!speechService.value)
+      return
+    }
+    if (!text || !text.trim()) {
+      console.warn('[useVoiceCall] handleAgentResponse skipped — empty text')
+      return
+    }
 
     // Stop listening while speaking
     speechService.value.stopListening()
     isSpeaking.value = true
 
     // Speak the agent's response
-    speechService.value.speak(text.trim())
+    const ok = speechService.value.speak(text.trim())
+    console.log('[useVoiceCall] TTS speak returned:', ok)
   }
 
   // ── P2P WebRTC mode ──────────────────────────────────────────────────────

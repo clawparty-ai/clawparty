@@ -103,6 +103,26 @@ export class SpeechService {
     this.transcriptCallback = callback
   }
 
+  static getBestVoice(synth, lang = 'zh-CN') {
+    if (!synth) return null
+    const voices = synth.getVoices()
+    if (!voices || voices.length === 0) {
+      console.warn('[SpeechService] No voices available yet')
+      return null
+    }
+    const prefix = lang.toLowerCase().split('-')[0]
+    const exact = voices.find(v => v.lang.toLowerCase() === lang.toLowerCase() && v.localService)
+      || voices.find(v => v.lang.toLowerCase() === lang.toLowerCase())
+    const partial = voices.find(v => v.lang.toLowerCase().startsWith(prefix) && v.localService)
+      || voices.find(v => v.lang.toLowerCase().startsWith(prefix))
+    const fallback = voices[0]
+    const chosen = exact || partial || fallback
+    if (chosen) {
+      console.log('[SpeechService] Selected voice:', chosen.name, chosen.lang, 'local=' + chosen.localService)
+    }
+    return chosen
+  }
+
   speak(text, options = {}) {
     if (!SpeechService.isTTSSupported()) {
       console.warn('[SpeechService] TTS not supported')
@@ -110,21 +130,44 @@ export class SpeechService {
     }
 
     if (!text || !text.trim()) {
+      console.warn('[SpeechService] TTS: empty text')
       return false
     }
 
+    console.log('[SpeechService] TTS speak:', text.substring(0, 80) + (text.length > 80 ? '...' : ''))
+
     this.stopSpeaking()
+
+    // Chrome sometimes pauses the synthesis engine; resume it first
+    if (this.synth) {
+      if (this.synth.paused) {
+        console.log('[SpeechService] Resuming paused synthesis engine')
+        this.synth.resume()
+      }
+      if (this.synth.pending || this.synth.speaking) {
+        this.synth.cancel()
+      }
+    }
 
     const utterance = new SpeechSynthesisUtterance(text)
     utterance.lang = options.language || 'zh-CN'
     utterance.rate = options.rate || 1.0
     utterance.pitch = options.pitch || 1.0
 
+    const voice = SpeechService.getBestVoice(this.synth, utterance.lang)
+    if (voice) {
+      utterance.voice = voice
+    } else {
+      console.warn('[SpeechService] No voice found for', utterance.lang, '— TTS may fail silently')
+    }
+
     utterance.onstart = () => {
+      console.log('[SpeechService] TTS started speaking')
       this.isSpeaking = true
     }
 
     utterance.onend = () => {
+      console.log('[SpeechService] TTS finished speaking')
       this.isSpeaking = false
       if (this.speakingEndCallback) {
         this.speakingEndCallback()
@@ -132,7 +175,7 @@ export class SpeechService {
     }
 
     utterance.onerror = (event) => {
-      console.error('[SpeechService] TTS error:', event.error)
+      console.error('[SpeechService] TTS error:', event.error, event)
       this.isSpeaking = false
     }
 
