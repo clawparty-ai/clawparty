@@ -8,6 +8,23 @@ export class SpeechService {
     this.interimTranscript = ''
     this.transcriptCallback = null
     this.speakingEndCallback = null
+    this._voicesLoaded = false
+    this._preloadVoices()
+  }
+
+  _preloadVoices() {
+    if (!this.synth) return
+    const load = () => {
+      const voices = this.synth.getVoices()
+      if (voices && voices.length > 0) {
+        this._voicesLoaded = true
+        console.log('[SpeechService] Voices loaded:', voices.length)
+      }
+    }
+    load()
+    if (this.synth.onvoiceschanged !== undefined) {
+      this.synth.onvoiceschanged = load
+    }
   }
 
   static isSupported() {
