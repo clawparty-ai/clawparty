@@ -44,21 +44,22 @@ export const meshService = {
 export const openclawService = {
   getAgents() {
     return api.get('/openclaw/agents').then(response => {
-      if (typeof response.data === 'string') {
-        const bracketIndex = response.data.indexOf('[')
+      const data = Array.isArray(response) ? response : response.data
+      if (typeof data === 'string') {
+        const bracketIndex = data.indexOf('[')
         if (bracketIndex !== -1) {
-          const jsonStr = response.data.slice(bracketIndex)
+          const jsonStr = data.slice(bracketIndex)
           try {
-            response.data = JSON.parse(jsonStr)
+            return JSON.parse(jsonStr)
           } catch (e) {
             console.error('解析agents数据失败:', e)
-            response.data = []
+            return []
           }
         } else {
-          response.data = []
+          return []
         }
       }
-      return response
+      return data || []
     })
   },
   
