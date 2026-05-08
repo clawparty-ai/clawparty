@@ -1423,6 +1423,7 @@ const getStatusText = (agent) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: inset -4px 0 8px rgba(0, 0, 0, 0.05);
 }
 
 .panel-header {
