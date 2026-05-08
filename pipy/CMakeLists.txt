@@ -566,24 +566,12 @@ if(PIPY_CUSTOM_CODEBASES)
   set(CODEBASES "${CODEBASES},${PIPY_CUSTOM_CODEBASES}")
 endif()
 
-# Collect all source files from custom codebases as dependencies
-set(CODEBASE_DEPS pack ${CMAKE_SOURCE_DIR}/src/scripts ${CMAKE_SOURCE_DIR}/samples)
-if(PIPY_CUSTOM_CODEBASES)
-  string(REPLACE "," ";" CUSTOM_CODEBASE_LIST "${PIPY_CUSTOM_CODEBASES}")
-  foreach(CB ${CUSTOM_CODEBASE_LIST})
-    string(REPLACE ":" ";" CB_PARTS "${CB}")
-    list(GET CB_PARTS 1 CB_PATH)
-    file(GLOB_RECURSE CB_FILES "${CMAKE_SOURCE_DIR}/${CB_PATH}/*.js" "${CMAKE_SOURCE_DIR}/${CB_PATH}/*.json" "${CMAKE_SOURCE_DIR}/${CB_PATH}/*.html" "${CMAKE_SOURCE_DIR}/${CB_PATH}/*.css" "${CMAKE_SOURCE_DIR}/${CB_PATH}/*.ico")
-    list(APPEND CODEBASE_DEPS ${CB_FILES})
-  endforeach()
-endif()
-
 add_custom_command(
   OUTPUT ${CMAKE_BINARY_DIR}/deps/codebases.br.h
   COMMAND ${CMAKE_BINARY_DIR}/${EXE_PACK}
   ARGS ${CMAKE_BINARY_DIR}/deps/codebases.br.h ${CODEBASES} /samples/nmi/,/samples/bpf/
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  DEPENDS ${CODEBASE_DEPS}
+  DEPENDS pack ${CMAKE_SOURCE_DIR}/src/scripts ${CMAKE_SOURCE_DIR}/samples
 )
 
 if(PIPY_DEFAULT_OPTIONS)

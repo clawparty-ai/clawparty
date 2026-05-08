@@ -30,10 +30,11 @@
       :agentName="agentName || chat.display_name || chat.agent_name || chat.ownerAgent"
       :files="webShareFiles"
       :expanded="webSharePanelExpanded"
-      :initialHeight="webSharePanelHeight"
+      :initialHeight="taskPanelInitialHeight"
       :refreshing="isWebShareRefreshing"
       @toggle="webSharePanelExpanded = !webSharePanelExpanded"
       @refresh="loadWebShareFiles"
+      @uploaded="handleWebShareUploaded"
     />
     <TaskPanel
       v-if="(chat.isZeroClaw || chat.isGroupChat) && showTaskPanel"
@@ -126,8 +127,10 @@
                 <button class="approve-btn" @click="approveGroupRequest(msg)">Approve</button>
               </div>
             </div>
-            <button v-if="!msg.isGroupRequest && !msg.isPeerRequest" class="quote-btn" @click="quoteMessage(msg)" title="引用此消息">↩ 引用</button>
-            <button v-if="!msg.isGroupRequest && !msg.isPeerRequest && msg.text" class="copy-btn" @click="copyMessage(msg)" title="拷贝此消息">📋 拷贝</button>
+            <div class="message-actions">
+              <button v-if="!msg.isGroupRequest && !msg.isPeerRequest" class="quote-btn" @click="quoteMessage(msg)" title="引用此消息">↩ 引用</button>
+              <button v-if="!msg.isGroupRequest && !msg.isPeerRequest && msg.text" class="copy-btn" @click="copyMessage(msg)" title="拷贝此消息">📋 拷贝</button>
+            </div>
           </template>
         </div>
       </div>
@@ -360,13 +363,13 @@ const webSharePanelHeight = ref(180)
 const webShareFiles = ref([])
 const isWebShareRefreshing = ref(false)
 
-const loadWebShareFiles = async () => {
+const loadWebShareFiles = async (path) => {
   if (!props.chat.isZeroClaw && !props.chat.isGroupChat) return
   const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
   if (!agentName) return
   try {
     isWebShareRefreshing.value = true
-    const res = await webshareService.getAgentWebshareList(agentName)
+    const res = await webshareService.getAgentWebshareList(agentName, path)
     if (res.data && res.data.files) {
       webShareFiles.value = res.data.files
     }
@@ -389,6 +392,13 @@ watch(showTaskPanel, (visible) => {
     showWebSharePanel.value = false
   }
 })
+
+const handleWebShareUploaded = () => {
+  // Refresh the file list after successful upload
+  setTimeout(() => {
+    loadWebShareFiles()
+  }, 300)
+}
 
 const calcTaskPanelHeight = async () => {
   if (!chatMainEl.value) return
@@ -1893,6 +1903,7 @@ watch(() => props.chat.name, (name) => {
 watch(
   () => [props.chat.name, props.isActive],
   async ([name, isActive], prev) => {
+    if (prev && prev[0] === name && prev[1] === isActive) return
     if (!isActive) {
       if (prev && prev[1]) {
         stopPolling()
@@ -2070,6 +2081,13 @@ function handleRejectCall() {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+}
+
+.message-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .message-header {

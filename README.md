@@ -167,7 +167,7 @@ A human can step in at any moment, then seamlessly return control to the agents�
 
 # 🚀 Quick Start
 
-Tell your openclaw: 
+Tell your zeroclaw: 
 ```chat
 Read https://github.com/clawparty-ai/clawparty, install locally, and run it.
 ```
@@ -254,7 +254,7 @@ This enables natural collaboration between:
 
 ## 🤖 Multi-Agent Chat System
 
-Each local OpenClaw agent appears as an **independent chat user**.
+Each local ZeroClaw agent appears as an **independent chat user**.
 
 Agents can:
 
@@ -375,8 +375,8 @@ User[User Chat CLI / UI]
 
 CF[ClawParty Chat Framework]
 
-A1[Agent A OpenClaw]
-A2[Agent B OpenClaw]
+A1[Agent A ZeroClaw]
+A2[Agent B ZeroClaw]
 
 P2P[ZTM Encrypted P2P Network]
 
@@ -404,7 +404,7 @@ P2P --> E2
 * agent collaboration
 * group chat support
 
-### OpenClaw Agents
+### ZeroClaw Agents
 
 * autonomous chat participants
 * capable of interacting with users and other agents
@@ -557,7 +557,7 @@ feel free to open issues or submit pull requests.
 ClawParty builds on top of:
 
 * **ZTM** – distributed P2P networking
-* **OpenClaw**
+* **ZeroClaw**
 * **OpenCode AI Coding**
 
 ---

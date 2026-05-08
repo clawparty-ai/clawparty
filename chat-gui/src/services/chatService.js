@@ -448,12 +448,29 @@ export const chatService = {
 }
 
 export const webshareService = {
-  getAgentWebshareList(agentName) {
-    return api.get(`/webshare/${encodeURIComponent(agentName)}/list`)
+  getAgentWebshareList(agentName, path) {
+    var url = `/webshare/${encodeURIComponent(agentName)}/list`
+    if (path) url += `?path=${encodeURIComponent(path)}`
+    return api.get(url)
   },
-  getAgentWebshareFileUrl(agentName, filename) {
-    var token = getToken() ? `?token=${encodeURIComponent(getToken())}` : ''
-    return `/api/webshare/${encodeURIComponent(agentName)}/file/${encodeURIComponent(filename)}${token}`
+  getAgentWebshareFileUrl(agentName, filename, path) {
+    var token = getToken() ? `token=${encodeURIComponent(getToken())}` : ''
+    var url = `/api/webshare/${encodeURIComponent(agentName)}/file/${encodeURIComponent(filename)}`
+    var sep = '?'
+    if (path) {
+      url += `?path=${encodeURIComponent(path)}`
+      sep = '&'
+    }
+    if (token) url += sep + token
+    return url
+  },
+  uploadAgentWebshareFile(agentName, fileData, fileName, path) {
+    var url = `/webshare/${encodeURIComponent(agentName)}/upload?name=${encodeURIComponent(fileName)}`
+    if (path) url += `&path=${encodeURIComponent(path)}`
+    return api.post(url, fileData, {
+      headers: { 'Content-Type': 'application/octet-stream' },
+      transformRequest: [function(data) { return data }]
+    })
   }
 }
 

@@ -54,3 +54,33 @@ tests/zagent-websocket-debug.spec.js
 # Wiki and raw
 wiki/
 raw/
+
+# Pipy subdirectory ignores (from pipy/.gitignore)
+pipy/logs/
+pipy/pids/
+pipy/*.pid
+pipy/*.seed
+pipy/*.pid.lock
+pipy/lib-cov
+pipy/coverage
+pipy/.nyc_output
+pipy/.grunt
+pipy/bower_components/
+pipy/.lock-wscript
+pipy/build/
+pipy/build/Release
+pipy/jspm_packages/
+pipy/typings/
+pipy/.npm
+pipy/.eslintcache
+pipy/.node_repl_history
+pipy/*.tgz
+pipy/.env*
+pipy/.cache/
+pipy/.pnp/
+pipy/.pnp.js
+pipy/.yarn-integrity
+pipy/.*.swp
+pipy/bin/
+pipy/public/
+pipy/rfc-8998.hpp

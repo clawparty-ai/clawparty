@@ -97,7 +97,7 @@ jobs:
           path: clawparty-${{ inputs.tag }}-linux-arm64.tar.gz
 
       - name: Upload Release Asset
-        if: github.event.inputs.tag != ''
+        if: inputs.tag != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

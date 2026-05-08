@@ -323,10 +323,12 @@ const taskStats = computed(() => {
 .task-panel {
   flex-shrink: 0;
   position: relative;
-  background: var(--bg-secondary, #f3f6fc);
+  background: var(--bg-panel, #e8ecf6);
   border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.07));
   display: flex;
   flex-direction: column;
+  box-shadow: -4px 0 8px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.08);
+  z-index: 5;
 }
 
 .resize-handle {
@@ -367,7 +369,7 @@ const taskStats = computed(() => {
   user-select: none;
   position: sticky;
   top: 0;
-  background: var(--bg-secondary, #f3f6fc);
+  background: var(--bg-panel, #e8ecf6);
   z-index: 2;
 }
 

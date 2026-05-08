@@ -236,7 +236,7 @@ ClawParty 运行于 **加密的 P2P 网络** 之上。
 
 ## 🤖 多 Agent 聊天系统
 
-每个本地 OpenClaw Agent 都作为独立聊天用户出现，可以：
+每个本地 Zeroclaw Agent 都作为独立聊天用户出现，可以：
 
 * 与用户聊天
 * 与其他 Agent 聊天
@@ -344,7 +344,7 @@ ClawParty 将：
 # 🌐 相关项目
 
 * **ZTM**
-* **OpenClaw**
+* **Zeroclaw**
 * **OpenCode**
 
 ---

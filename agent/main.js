@@ -734,18 +734,28 @@ function main(listen, apiToken, noAuth) {
     // ── Web Share APIs ────────────────────────────────────────────────
 
     '/api/webshare/{agent}/list': {
-      'GET': function ({ agent }) {
+      'GET': function ({ agent }, req) {
         agent = URL.decodeComponent(agent)
         var row = db.getAgent(agent)
         if (!row) return response(404, { error: 'Agent not found' })
+        var url = new URL(req.head.path, 'http://localhost')
+        var subPath = url.searchParams.get('path') || ''
+        if (subPath.indexOf('..') >= 0) {
+          return response(403, { error: 'Forbidden path' })
+        }
         var webDir = os.path.join(row.workspace_dir, 'web')
+        if (subPath) {
+          webDir = os.path.join(webDir, subPath)
+        }
         try {
           var st = os.stat(webDir)
           if (!st.isDirectory()) {
-            os.mkdir(webDir, { recursive: true })
+            os.mkdir(row.workspace_dir + '/web', { recursive: true })
+            webDir = os.path.join(row.workspace_dir, 'web')
           }
         } catch (e) {
-          os.mkdir(webDir, { recursive: true })
+          os.mkdir(row.workspace_dir + '/web', { recursive: true })
+          webDir = os.path.join(row.workspace_dir, 'web')
         }
         var entries = []
         try {
@@ -757,7 +767,13 @@ function main(listen, apiToken, noAuth) {
         for (var i = 0; i < entries.length; i++) {
           var name = entries[i]
           if (name.endsWith('/')) {
-            // skip subdirectories
+            var dirName = name.substring(0, name.length - 1)
+            files.push({
+              name: dirName,
+              size: 0,
+              mtime: 0,
+              type: 'dir',
+            })
           } else {
             var filePath = os.path.join(webDir, name)
             try {
@@ -767,17 +783,18 @@ function main(listen, apiToken, noAuth) {
                   name: name,
                   size: stat.size,
                   mtime: stat.mtime,
+                  type: 'file',
                 })
               }
             } catch (e) {}
           }
         }
-        return response(200, { agent: agent, files: files })
+        return response(200, { agent: agent, path: subPath, files: files })
       }
     },
 
     '/api/webshare/{agent}/file/{filename}': {
-      'GET': function ({ agent, filename }) {
+      'GET': function ({ agent, filename }, req) {
         agent = URL.decodeComponent(agent)
         filename = URL.decodeComponent(filename)
         var row = db.getAgent(agent)
@@ -785,8 +802,18 @@ function main(listen, apiToken, noAuth) {
         if (filename.indexOf('..') >= 0 || filename.indexOf('/') >= 0 || filename.indexOf('\\') >= 0) {
           return response(403, { error: 'Forbidden' })
         }
+        var url = new URL(req.head.path, 'http://localhost')
+        var subPath = url.searchParams.get('path') || ''
+        if (subPath.indexOf('..') >= 0) {
+          return response(403, { error: 'Forbidden path' })
+        }
         var webDir = os.path.join(row.workspace_dir, 'web')
-        var filePath = os.path.join(webDir, filename)
+        var filePath
+        if (subPath) {
+          filePath = os.path.join(webDir, subPath, filename)
+        } else {
+          filePath = os.path.join(webDir, filename)
+        }
         var data
         try {
           data = os.read(filePath)
@@ -795,6 +822,40 @@ function main(listen, apiToken, noAuth) {
         }
         var ct = mimeType(filename)
         return responseCT(200, ct, data)
+      }
+    },
+
+    '/api/webshare/{agent}/upload': {
+      'POST': function ({ agent }, req) {
+        agent = URL.decodeComponent(agent)
+        var row = db.getAgent(agent)
+        if (!row) return response(404, { error: 'Agent not found' })
+        var url = new URL(req.head.path, 'http://localhost')
+        var filename = url.searchParams.get('name') || ''
+        var subPath = url.searchParams.get('path') || ''
+        if (!filename) return response(400, { error: 'name is required' })
+        if (filename.indexOf('..') >= 0 || filename.indexOf('/') >= 0 || filename.indexOf('\\') >= 0 || filename.startsWith('.')) {
+          return response(403, { error: 'Forbidden filename' })
+        }
+        if (subPath.indexOf('..') >= 0) {
+          return response(403, { error: 'Forbidden path' })
+        }
+        var webDir = os.path.join(row.workspace_dir, 'web')
+        if (subPath) {
+          webDir = os.path.join(webDir, subPath)
+        }
+        try {
+          os.mkdir(webDir, { recursive: true })
+        } catch (e) {
+          return response(500, { error: 'Failed to create directory' })
+        }
+        var filepath = os.path.join(webDir, filename)
+        try {
+          os.write(filepath, req.body)
+          return response(200, { status: 200, message: 'File uploaded successfully', path: subPath ? subPath + '/' + filename : filename })
+        } catch (e) {
+          return response(500, { error: 'Failed to write file: ' + (e?.message || e) })
+        }
       }
     },
 
