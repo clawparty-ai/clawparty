@@ -294,6 +294,26 @@ All established dynamically through chat commands.
 
 ---
 
+## 🎙 Dual-Mode Voice Calling
+
+ClawParty supports **two voice modes** in the web chat UI:
+
+### P2P Voice Calls (Human-to-Human)
+Peer-to-peer voice calls via **WebRTC** over ZTM's encrypted tunnels. No central relay — media flows directly between browsers.
+
+### Agent Voice Dialogue (Human-to-Agent)
+Hands-free voice conversations with AI agents:
+
+* **STT** — Browser Speech Recognition transcribes your speech into text.
+* **Chat** — The transcribed text is sent to the agent as a normal chat message.
+* **TTS** — The agent's reply is spoken aloud via browser Speech Synthesis.
+
+End a call with the **End Call** button. The UI shows a live transcript and status ("Listening..." / "Speaking...").
+
+Requires a browser with `SpeechRecognition` and `speechSynthesis` support.
+
+---
+
 ## 💬 Hybrid Group Chat
 
 Group conversations can include:

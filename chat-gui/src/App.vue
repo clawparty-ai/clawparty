@@ -209,13 +209,16 @@ import { ref, onMounted, onUnmounted, provide, computed, watch, reactive } from 
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
 import TemplatePicker from './components/TemplatePicker.vue'
-import { meshService, chatService, openclawService, zeroclawService, zagentService, groupChatService, taskService, ZeroClawWS, setApiToken, getApiToken } from './services/chatService'
+import { chatService, meshService, openclawService, zeroclawService, zagentService, groupChatService, taskService, ZeroClawWS, VOICE_MESSAGE_TYPES, setApiToken, getApiToken } from './services/chatService'
 import ShellService from './services/ShellService'
 import { platform } from '@tauri-apps/plugin-os';
 import { getAvatarColor } from './utils/avatar'
 import { getSemanticEmoji } from './utils/emoji'
 
+import { useVoiceCall } from './composables/useVoiceCall'
+
 const shellService = new ShellService();
+
 const meshes = ref([])
 const openclawAgents = ref([])
 const openclawSessions = ref([])
@@ -226,6 +229,38 @@ const activeZAgent = ref(null)
 const currentActiveChatId = ref(null)
 const currentMesh = ref('')
 const currentMeshAgentUsername = ref('')
+
+const voiceCallSendChatFn = (text) => {
+  newMessage.value = text
+  sendMessage()
+}
+
+const voiceCallSendFn = (msgType, payload) => {
+  // In Agent voice mode, skip P2P voice signaling (voice-invite, voice-end, etc.)
+  if (voiceCallStore?.isAgentMode?.value && msgType.startsWith('voice-')) {
+    return
+  }
+
+  const agent = activeZAgent.value
+  const session = activeZeroClawSession.value
+  const conn = agent
+    ? wsConnections[agent.agent_name]
+    : null
+  const ws = conn?.zeroclawWS || zeroclawWS
+  if (ws && ws.sendVoiceMessage) {
+    ws.sendVoiceMessage(msgType, payload)
+    return
+  }
+
+  const peer = activeChat.value?.name
+  const mesh = currentMesh.value
+  if (mesh && peer) {
+    chatService.sendVoiceSignaling(mesh, peer, msgType, payload)
+      .catch(e => console.error('[voiceCallSendFn] Mesh send failed:', e))
+  }
+}
+
+const voiceCallStore = useVoiceCall(voiceCallSendFn, currentMeshAgentUsername.value || 'You', voiceCallSendChatFn)
 const chats = ref([])
 const activeChat = ref(null)
 const activeOpenclawAgent = ref(null)  // 当前活动的 openclaw agent
@@ -692,6 +727,10 @@ const createZeroClawMessageHandler = (connectionAgentName) => {
         }
       }
     } else if (data.type === 'done') {
+      // For agent voice mode, read the full reply aloud via TTS once fully streamed
+      if (voiceCallStore?.isAgentMode?.value && data.full_response) {
+        voiceCallStore.handleAgentResponse(data.full_response)
+      }
       let idx = messages.findIndex(m => !!m.isTyping)
       if (idx >= 0) {
         messages[idx].text = data.full_response || messages[idx].text
@@ -1179,6 +1218,14 @@ const parseTaskTags = (content, agentName) => {
 }
 
 const handleZeroClawMessage = (data) => {
+  if (data.type && data.type.startsWith('voice-')) {
+    const peerName = activeChat.value?.name || activeZAgent.value?.agent_name
+    if (data.from && data.from === peerName) {
+      voiceCallStore.handleIncomingMessage(data)
+    }
+    return
+  }
+
   const session = activeZeroClawSession.value
   const agent = activeZAgent.value
   if (!session && !agent) return
@@ -1227,6 +1274,10 @@ const handleZeroClawMessage = (data) => {
       })
     }
   } else if (data.type === 'done') {
+    // For agent voice mode, read the full reply aloud via TTS once fully streamed
+    if (voiceCallStore?.isAgentMode?.value && data.full_response) {
+      voiceCallStore.handleAgentResponse(data.full_response)
+    }
     // Parse full_response for task tags (AI may have sent complete markdown/table in full msg)
     if (agent && data.full_response) {
       parseTaskTags(data.full_response, agent.agent_name || 'main')
@@ -2869,7 +2920,7 @@ provide('activeZeroClawSession', activeZeroClawSession)
 provide('selectZeroClawSession', selectZeroClawSession)
 provide('zeroclawSessions', zeroclawSessions)
 provide('zAgents', zAgents)
-provide('activeZAgent', activeZAgent)
+provide('voiceCallStore', voiceCallStore)
 provide('selectZAgent', selectZAgent)
 provide('fetchZAgents', fetchZAgents)
 provide('createZAgent', createZAgent)

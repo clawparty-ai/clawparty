@@ -17,9 +17,11 @@
       @download-md="handleDownloadMd"
       @download-pdf="handleDownloadPdf"
       @reload="fetchMessages"
-      @toggleTaskPanel="showTaskPanel = !showTaskPanel"
-      @toggleWebSharePanel="showWebSharePanel = !showWebSharePanel"
-      @showMembers="showMembersPanel = !showMembersPanel"
+       @toggleTaskPanel="showTaskPanel = !showTaskPanel"
+       @toggleWebSharePanel="showWebSharePanel = !showWebSharePanel"
+       @showMembers="showMembersPanel = !showMembersPanel"
+       @initiateVoiceCall="handleInitiateVoiceCall"
+       @endVoiceCall="handleEndVoiceCall"
     />
     <div class="chat-body-wrapper">
       <div class="chat-content" :class="{ 'with-members-panel': showMembersPanel }">
@@ -218,6 +220,23 @@
         </div>
       </div>
     </div>
+    <VoiceCallOverlay
+      v-if="voiceCallStore?.state?.value"
+      :state="voiceCallStore.state.value"
+      :name="voiceCallStore.currentCall?.value?.from || voiceCallStore.currentCall?.value?.to || ''"
+      :isMuted="voiceCallStore.isMuted?.value || false"
+      :isSpeakerOn="voiceCallStore.isSpeakerOn?.value || false"
+      :duration="voiceCallStore.callDuration?.value || 0"
+      :remoteStream="voiceCallStore.remoteStream?.value || null"
+      :isAgentMode="voiceCallStore.isAgentMode?.value || false"
+      :agentTranscripts="voiceCallStore.agentTranscripts?.value || []"
+      :isSpeaking="voiceCallStore.isSpeaking?.value || false"
+      @accept="handleAcceptCall"
+      @reject="handleRejectCall"
+      @end="handleEndVoiceCall"
+      @toggleMute="voiceCallStore.toggleMute()"
+      @toggleSpeaker="voiceCallStore.toggleSpeaker()"
+    />
   </main>
 </template>
 
@@ -230,8 +249,11 @@ import HalfAutomationInput from './HalfAutomationInput.vue'
 import ConfigTable from './ConfigTable.vue'
 import TaskPanel from './TaskPanel.vue'
 import WebSharePanel from './WebSharePanel.vue'
+import VoiceCallOverlay from './VoiceCallOverlay.vue'
 import { chatService, taskService, ZeroClawWS, zagentService, groupChatService, webshareService } from '../services/chatService'
 import { getAvatarColor } from '../utils/avatar'
+
+const voiceCallStore = inject('voiceCallStore', null)
 
 marked.setOptions({
   breaks: true,
@@ -1603,6 +1625,19 @@ const fetchMessages = async () => {
     const messages = parseMessages(response.data || [])
     
     messages.forEach(newMsg => {
+      // Intercept voice signaling messages and route to voice call system
+      if (newMsg.text && newMsg.text.startsWith('{"type":"voice-')) {
+        try {
+          const voiceMsg = JSON.parse(newMsg.text)
+          if (voiceMsg.type && voiceMsg.type.startsWith('voice-')) {
+            if (voiceCallStore && voiceCallStore.handleIncomingMessage) {
+              voiceCallStore.handleIncomingMessage(voiceMsg)
+              return
+            }
+          }
+        } catch (e) {}
+      }
+
       const existingIndex = props.chat.messages.findIndex(m => 
         !m.isTemp && m.timestamp === newMsg.timestamp
       )
@@ -1638,6 +1673,19 @@ const pollMessages = async () => {
     if (response.data?.length > 0) {
       const newMessages = parseMessages(response.data)
       newMessages.forEach(newMsg => {
+        // Intercept voice signaling messages and route to voice call system
+        if (newMsg.text && newMsg.text.startsWith('{"type":"voice-')) {
+          try {
+            const voiceMsg = JSON.parse(newMsg.text)
+            if (voiceMsg.type && voiceMsg.type.startsWith('voice-')) {
+              if (voiceCallStore && voiceCallStore.handleIncomingMessage) {
+                voiceCallStore.handleIncomingMessage(voiceMsg)
+                return
+              }
+            }
+          } catch (e) {}
+        }
+
         // Deduplicate by timestamp only — sender display names may change between polls
         const existingIndex = props.chat.messages.findIndex(m => 
           !m.isTemp && m.timestamp === newMsg.timestamp
@@ -1886,6 +1934,38 @@ watch(showTaskPanel, async (visible) => {
 onUnmounted(() => {
   stopPolling()
 })
+
+function handleInitiateVoiceCall() {
+  if (!voiceCallStore) return
+  const targetName = props.chat.name || props.chat.agent_name || props.chat.display_name
+  if (!targetName) {
+    console.warn('[ChatMain] Cannot initiate voice call - no target name')
+    return
+  }
+  if (props.chat.isZeroClaw) {
+    voiceCallStore.startAgentVoiceSession(targetName)
+  } else {
+    voiceCallStore.initiateP2PCall(targetName)
+  }
+}
+
+function handleEndVoiceCall() {
+  if (!voiceCallStore) return
+  voiceCallStore.endCall()
+}
+
+function handleAcceptCall() {
+  if (!voiceCallStore) return
+  const call = voiceCallStore.currentCall?.value
+  if (call && call.payload && call.payload.sdpOffer) {
+    voiceCallStore.acceptCall(call.payload.sdpOffer)
+  }
+}
+
+function handleRejectCall() {
+  if (!voiceCallStore) return
+  voiceCallStore.rejectCall()
+}
 </script>
 
 <style scoped>

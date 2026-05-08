@@ -1,5 +1,16 @@
 import axios from 'axios'
 import { get, post, del, put, setToken, getToken } from './request'
+
+export const VOICE_MESSAGE_TYPES = {
+  INVITE: 'voice-invite',
+  ACCEPT: 'voice-accept',
+  REJECT: 'voice-reject',
+  END: 'voice-end',
+  ICE_CANDIDATE: 'voice-ice-candidate',
+  BUSY: 'voice-busy',
+  HELLO: 'voice-hello',
+}
+
 export function setApiToken(token) {
   return setToken(token)
 }
@@ -206,6 +217,22 @@ export class ZeroClawWS {
     }
   }
 
+  sendVoiceMessage(msgType, payload) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      const msg = JSON.stringify({
+        type: msgType,
+        ...payload,
+        timestamp: Date.now(),
+      })
+      console.log('[ZeroClawWS] Sending voice:', msgType)
+      this.ws.send(msg)
+      return true
+    } else {
+      console.error('[ZeroClawWS] Cannot send voice - not connected')
+      return false
+    }
+  }
+
   close() {
     if (this.ws) {
       this.ws.close()
@@ -325,6 +352,14 @@ export const chatService = {
     const body = { text, sessionId: sessionId || null }
     if (files && files.length > 0) body.files = files
     return api.post(`/meshes/${meshName}/apps/ztm/chat/api/groups/${encodeURIComponent(creator)}/${encodeURIComponent(groupId)}/messages`, body)
+  },
+
+  sendVoiceSignaling(meshName, peer, msgType, payload) {
+    const body = {
+      text: JSON.stringify({ type: msgType, ...payload }),
+      sessionId: null,
+    }
+    return api.post(`/meshes/${meshName}/apps/ztm/chat/api/peers/${encodeURIComponent(peer)}/messages`, body)
   },
 
   uploadFile(meshName, fileData) {

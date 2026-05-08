@@ -52,6 +52,14 @@ class WSService {
     }, this.reconnectInterval)
   }
 
+  sendVoiceMessage(msgType, payload) {
+    this.send({
+      type: msgType,
+      ...payload,
+      timestamp: Date.now(),
+    })
+  }
+
   disconnect() {
     if (this.ws) {
       this.ws.close()

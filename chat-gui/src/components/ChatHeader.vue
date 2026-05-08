@@ -17,6 +17,15 @@
     </div>
     <div class="header-right">
       <div class="header-icons">
+        <VoiceCallButton
+          v-if="!chat.isGroupChat"
+          :chat="chat"
+          :isInCall="false"
+          :isCurrentCall="false"
+          :callDuration="0"
+          @initiateCall="emit('initiateVoiceCall')"
+          @endCall="emit('endVoiceCall')"
+        />
         <div v-if="chat.isOpenclaw && openclawSessions && openclawSessions.length > 0" class="session-select-wrapper">
           <select 
             class="session-select" 
@@ -104,7 +113,7 @@
 </template>
 
 <script setup>
-
+import VoiceCallButton from './VoiceCallButton.vue'
 
 const props = defineProps({
   chat: {
@@ -141,7 +150,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload', 'toggleTaskPanel', 'toggleWebSharePanel', 'showMembers'])
+const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload', 'toggleTaskPanel', 'toggleWebSharePanel', 'showMembers', 'initiateVoiceCall', 'endVoiceCall'])
 </script>
 
 <style scoped>
