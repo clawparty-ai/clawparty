@@ -731,8 +731,11 @@ const handleReconcile = async () => {
   try {
     const { zagentService } = await import('../services/chatService')
     const res = await zagentService.reconcileAgents()
-    if (res.data && Array.isArray(res.data)) {
-      zAgents.value = res.data
+    // Backend may return array directly or wrapped in { data: [...] }
+    const agents = Array.isArray(res) ? res : (res.data || [])
+    const validAgents = agents.filter(a => a && a.agent_name)
+    if (validAgents.length > 0) {
+      zAgents.value = validAgents
     } else {
       await fetchZAgents()
     }

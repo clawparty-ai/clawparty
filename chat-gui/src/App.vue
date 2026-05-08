@@ -576,20 +576,23 @@ const loadZAgentHistory = async (agentName, messages) => {
 const fetchZAgents = async () => {
   try {
     const response = await zagentService.getAgents()
-    const agents = response.data || []
+    // Backend may return array directly or wrapped in { data: [...] }
+    const agents = Array.isArray(response) ? response : (response.data || [])
+    // Filter out agents with invalid agent_name to prevent phantom entries
+    const validAgents = agents.filter(a => a && a.agent_name)
     // Move 0#Agent to the top of the list
     var zeroAgentIndex = -1
-    for (var i = 0; i < agents.length; i++) {
-      if (agents[i].agent_name === '0#Agent') {
+    for (var i = 0; i < validAgents.length; i++) {
+      if (validAgents[i].agent_name === '0#Agent') {
         zeroAgentIndex = i
         break
       }
     }
     if (zeroAgentIndex > 0) {
-      var zeroAgent = agents.splice(zeroAgentIndex, 1)[0]
-      agents.unshift(zeroAgent)
+      var zeroAgent = validAgents.splice(zeroAgentIndex, 1)[0]
+      validAgents.unshift(zeroAgent)
     }
-    zAgents.value = agents
+    zAgents.value = validAgents
   } catch (error) {
     console.error('Failed to fetch zAgents:', error)
   }
