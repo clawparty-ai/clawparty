@@ -84,3 +84,6 @@ pipy/.*.swp
 pipy/bin/
 pipy/public/
 pipy/rfc-8998.hpp
+
+# Windows build artifacts and scripts (all auto-generated or local-only)
+/windows/
