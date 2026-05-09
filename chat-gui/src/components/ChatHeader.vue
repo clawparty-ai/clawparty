@@ -68,10 +68,12 @@
           v-if="showWebShareButton"
           class="header-btn"
           :class="{ active: webSharePanelVisible }"
-          title="Web Share"
+          title="共享文件"
           @click="emit('toggleWebSharePanel')"
         >
-          <span style="font-size: 13px; font-weight: 600;">🌐</span>
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>
+          </svg>
         </button>
         <button
           v-if="showTaskButton"

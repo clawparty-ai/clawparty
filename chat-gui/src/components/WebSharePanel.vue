@@ -1,7 +1,7 @@
 <template>
   <div class="webshare-panel" :style="{ height: panelHeight + 'px' }">
     <div class="webshare-panel-header" @click="toggleExpanded">
-      <span class="webshare-panel-icon">🌐</span>
+      <span class="webshare-panel-icon">📁</span>
       <span class="webshare-panel-title">共享文件</span>
       <span class="webshare-panel-breadcrumb" v-if="currentPath">{{ currentPath }}</span>
       <span class="webshare-panel-count" v-if="files.length > 0">{{ files.length }}</span>
