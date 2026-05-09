@@ -101,3 +101,13 @@ jobs:
     secrets: inherit
     permissions:
       contents: write
+
+  build-macos-x86:
+    needs: [set-release-version, create-draft-release]
+    name: build-macos-x86
+    uses: ./.github/workflows/macos-x86-release-build.yml
+    with:
+      tag: ${{ needs.set-release-version.outputs.release_version }}
+    secrets: inherit
+    permissions:
+      contents: write

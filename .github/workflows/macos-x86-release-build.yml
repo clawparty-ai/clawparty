@@ -1,0 +1,109 @@
+name: macos-x86-release-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.5.3)'
+        required: true
+        default: 'v0.5.3'
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.5.3)'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify architecture
+        run: |
+          set -e
+          echo "Runner architecture: $(uname -m)"
+          if [ "$(uname -m)" != "x86_64" ]; then
+            echo "Expected x86_64 runner for macOS x86 build"
+            exit 1
+          fi
+
+      - name: Build ztm (Pipy)
+        run: |
+          set -e
+          ./build/deps.sh
+          ./build/pipy.sh
+          mkdir -p bin
+          cp pipy/bin/pipy bin/ztm
+
+      - name: Build ZeroClaw
+        run: |
+          set -e
+          cd zeroclaw
+          cargo build --release --features gateway
+          cd ..
+          cp zeroclaw/target/release/zeroclaw bin/zeroclaw
+
+      - name: Build TUI
+        run: |
+          set -e
+          cd tui
+          cargo build --release
+          cd ..
+          cp tui/target/release/clawparty bin/clawparty
+
+      - name: Install GUI dependencies
+        working-directory: ./chat-gui
+        run: npm ci --no-audit
+
+      - name: Build Web GUI
+        working-directory: ./chat-gui
+        run: npm run build
+
+      - name: Verify GUI output
+        run: |
+          if [ ! -f "agent/gui/index.html" ]; then
+            echo "GUI build failed: agent/gui/index.html not found"
+            exit 1
+          fi
+          echo "GUI build OK"
+
+      - name: Package release (tar.gz)
+        run: |
+          set -e
+          mkdir -p dist
+          cp bin/ztm dist/ztm
+          cp bin/zeroclaw dist/zeroclaw
+          cp bin/clawparty dist/clawparty
+          cp -r agent/gui dist/gui
+          tag="${{ inputs.tag }}"
+          tar -czf "clawparty-${tag}-macos-x86_64.tar.gz" -C dist .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawparty-${{ inputs.tag }}-macos-x86_64
+          path: clawparty-${{ inputs.tag }}-macos-x86_64.tar.gz
+
+      - name: Upload Release Asset
+        if: inputs.tag != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ inputs.tag }}"
+          file="clawparty-${tag}-macos-x86_64.tar.gz"
+          gh release upload "$tag" "$file" --clobber
