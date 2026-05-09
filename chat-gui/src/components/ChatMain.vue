@@ -47,6 +47,8 @@
       @refresh="handleTaskRefresh"
       @confirmChange="handleConfirmTaskChange"
       @refreshTimeoutChange="refreshTimeout = $event"
+      @reuse="handleTaskReuse"
+      @generatePrompt="handleGeneratePrompt"
     />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
@@ -507,7 +509,7 @@ const handleTaskRefresh = async () => {
 
     const existingTasks = tasks.value.slice(0, MAX_TASKS_IN_PROMPT)
 
-    const prompt = `[系统指令] 你是 Task Analyst，请分析以下聊天记录，识别新任务和已有任务的状态变更，并为每个任务生成结果概要。\n\n## 当前已有任务${tasks.value.length > MAX_TASKS_IN_PROMPT ? '（仅显示部分）' : ''}\n${existingTasks.map(t => '- ID: ' + t.task_id + ' | 编号: #' + (t.task_number || '?') + ' | 标题: ' + t.title + ' | 状态: ' + t.status + (t.description ? ' | 目标: ' + t.description.substring(0, 80) : '')).join('\n') || '无'}\n\n## 新聊天记录（最近 ${recentMsgs.length} 条，user=用户，assistant=AI）\n${msgText}\n\n## 分析要求\n1. **新任务**：用户或 AI 提到的新待办事项、计划、工作目标\n2. **状态变更**：现有任务在聊天中被提到已完成、失败、取消或进度变化\n3. **结果概要**：为每个已有任务生成一段简短的结果概要——如果任务已完成，写完成总结；如果任务进行中，写当前进展；如果任务待办，写"待开始"\n\n## 输出格式（纯 JSON，不要 markdown 代码块，不要解释）\n{\n  "newTasks": [{"title": "...", "description": "...", "status": "pending|running|completed|failed", "progress": 0, "summary": "新任务的目标概要"}],\n  "statusChanges": [{"taskId": "现有任务ID", "newStatus": "...", "newProgress": 100, "reason": "变化原因", "summary": "该任务的结果概要或完成总结"}],\n  "summaries": [{"taskId": "现有任务ID", "summary": "即使状态未变也为每个任务生成结果概要"}]\n}`
+    const prompt = `[系统指令] 你是 Task Analyst，请分析以下聊天记录，识别新任务和已有任务的状态变更，并为每个任务生成结果概要。\n\n## 当前已有任务${tasks.value.length > MAX_TASKS_IN_PROMPT ? '（仅显示部分）' : ''}\n${existingTasks.map(t => '- ID: ' + t.task_id + ' | 编号: #' + (t.task_number || '?') + ' | 标题: ' + t.title + ' | 状态: ' + t.status + (t.description ? ' | 目标: ' + t.description.substring(0, 80) : '')).join('\n') || '无'}\n\n## 新聊天记录（最近 ${recentMsgs.length} 条，user=用户，assistant=AI）\n${msgText}\n\n## 分析要求\n1. **新任务**：用户或 AI 提到的新待办事项、计划、工作目标\n2. **状态变更**：现有任务在聊天中被提到已完成、失败、取消或进度变化\n3. **结果概要**：为每个已有任务生成一段简短的结果概要——如果任务已完成，写完成总结；如果任务进行中，写当前进展；如果任务待办，写"待开始"\n4. **重用提示词**：为每个新任务生成一个精简的提示词（prompt），该提示词应保留任务的核心意图和关键信息，去除冗余描述，长度控制在 50-150 字，可直接作为新任务的指令使用\n\n## 输出格式（纯 JSON，不要 markdown 代码块，不要解释）\n{\n  "newTasks": [{"title": "...", "description": "...", "status": "pending|running|completed|failed", "progress": 0, "summary": "新任务的目标概要", "prompt": "精简的重用提示词，保留核心意图，50-150字"}],\n  "statusChanges": [{"taskId": "现有任务ID", "newStatus": "...", "newProgress": 100, "reason": "变化原因", "summary": "该任务的结果概要或完成总结"}],\n  "summaries": [{"taskId": "现有任务ID", "summary": "即使状态未变也为每个任务生成结果概要"}]\n}`
 
     addRefreshLog('info', 'Building prompt... recentMsgs: ' + recentMsgs.length + ' | existingTasks: ' + existingTasks.length + ' | promptLen: ' + prompt.length)
 
@@ -651,7 +653,8 @@ const handleConfirmTaskChange = async (change) => {
         description: change.data.description || change.data.title,
         status: change.data.status || 'pending',
         progress: change.data.progress !== undefined ? change.data.progress : 0,
-        priority: 'normal'
+        priority: 'normal',
+        prompt: change.data.prompt || null
       })
       // Apply summary for newly created task if present
       if (change.data.summary) {
@@ -673,6 +676,110 @@ const handleConfirmTaskChange = async (change) => {
     addRefreshLog('info', 'Remaining pending: ' + pendingTaskChanges.value.length)
   } catch (e) {
     addRefreshLog('error', 'Confirm failed: ' + (e.message || e))
+  }
+}
+
+const handleTaskReuse = (prompt) => {
+  emit('update:modelValue', prompt)
+}
+
+const handleGeneratePrompt = async (task) => {
+  if (!task || !task.task_id) return
+  task._generatingPrompt = true
+  addRefreshLog('info', 'Generating prompt for task: ' + task.task_id)
+
+  try {
+    // Get 0#Agent info
+    const agentsRes = await zagentService.getAgents()
+    const zeroAgent = agentsRes.data.find(function(a) { return a.agent_name === '0#Agent' })
+    if (!zeroAgent || !zeroAgent.port) {
+      addRefreshLog('error', '0#Agent not found or port missing')
+      return
+    }
+
+    // Get messages before task creation time
+    const msgs = props.chat.messages || []
+    const taskCreatedAt = task.created_at ? task.created_at * 1000 : Date.now()
+    const relevantMsgs = msgs.filter(m => m.timestamp && m.timestamp <= taskCreatedAt).slice(-10)
+
+    const MAX_MSG_LEN = 300
+    const msgText = relevantMsgs.map(m => {
+      const role = m.isSent ? 'user' : 'assistant'
+      const text = (m.text || '').substring(0, MAX_MSG_LEN)
+      return `[${role}] ${m.sender || 'unknown'}: ${text}`
+    }).join('\n\n')
+
+    const prompt = `[系统指令] 请将以下任务信息和聊天记录整理成一个简洁、清晰的重用提示词。
+
+## 任务信息
+- 标题：${task.title}
+- 描述：${task.description || '无'}
+- 结果概要：${task.result_summary || '无'}
+
+## 相关聊天记录
+${msgText || '无'}
+
+## 要求
+1. 保留任务的核心意图和关键信息
+2. 去除冗余的对话和确认过程
+3. 输出格式适合直接作为新任务的指令
+4. 长度控制在 50-150 字
+5. 只输出提示词内容，不要任何解释或格式标记`
+
+    addRefreshLog('info', 'Sending prompt to 0#Agent...')
+
+    const sessionId = 'sys-gen-prompt-' + Date.now()
+    let fullResponse = ''
+    let hasResponded = false
+
+    const ws = new ZeroClawWS(
+      '0#Agent',
+      sessionId,
+      function(data) {
+        if (data.type === 'chunk') {
+          fullResponse += data.content
+        } else if (data.type === 'done') {
+          hasResponded = true
+          ws.close()
+          const generatedPrompt = fullResponse.trim()
+          addRefreshLog('info', 'Generated prompt, length: ' + generatedPrompt.length)
+
+          // Update task with generated prompt
+          taskService.updateTask(task.task_id, { prompt: generatedPrompt }).then(() => {
+            task.prompt = generatedPrompt
+            emit('update:modelValue', generatedPrompt)
+            addRefreshLog('info', 'Prompt saved and filled into input')
+          }).catch(e => {
+            addRefreshLog('error', 'Failed to save prompt: ' + (e.message || e))
+          })
+        }
+      },
+      function() {
+        addRefreshLog('info', 'WebSocket connected, sending prompt...')
+        ws.sendMessage(prompt)
+      },
+      function() {
+        addRefreshLog('info', 'WebSocket closed.')
+        task._generatingPrompt = false
+      },
+      function(error) {
+        addRefreshLog('error', 'WebSocket error: ' + (error.message || error))
+        task._generatingPrompt = false
+      },
+      zeroAgent.port
+    )
+    ws.connect()
+
+    setTimeout(function() {
+      if (!hasResponded) {
+        ws.close()
+        addRefreshLog('warn', 'Timeout waiting for 0#Agent response')
+        task._generatingPrompt = false
+      }
+    }, 60000)
+  } catch (e) {
+    addRefreshLog('error', 'Failed to generate prompt: ' + (e.message || e))
+    task._generatingPrompt = false
   }
 }
 

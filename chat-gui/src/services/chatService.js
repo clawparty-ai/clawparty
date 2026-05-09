@@ -254,6 +254,10 @@ export const taskService = {
       last_analyzed_at: lastAnalyzedAt,
     })
   },
+
+  generatePrompt(taskId) {
+    return api.post(`/tasks/${encodeURIComponent(taskId)}/generate-prompt`)
+  },
 }
 
 export const zagentService = {

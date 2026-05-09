@@ -1,6 +1,6 @@
 <template>
   <div class="task-panel" :style="{ height: panelHeight + 'px' }">
-    <div class="task-panel-header" @click="toggleExpanded">
+    <div class="task-panel-header">
       <span class="task-panel-icon">🎯</span>
       <span class="task-panel-title">任务</span>
       <span class="task-panel-stats">
@@ -66,6 +66,19 @@
                 <div class="task-progress-fill" :class="'fill-' + task.status" :style="{ width: task.progress + '%' }"></div>
               </div>
               <span class="task-progress-text">{{ task.progress }}%</span>
+              <button
+                v-if="task.prompt"
+                class="reuse-btn"
+                @click.stop="handleReuse(task)"
+                title="重用此任务"
+              >重用</button>
+              <button
+                v-else-if="!task._isPendingCreate"
+                class="gen-prompt-btn"
+                @click.stop="handleGeneratePrompt(task)"
+                :disabled="task._generatingPrompt"
+                title="生成重用提示词"
+              >{{ task._generatingPrompt ? '...' : '生成提示词' }}</button>
             </div>
             <div v-if="task._pendingChange" class="pending-reason">
               <span class="reason-text">{{ task._pendingChange.reason }}</span>
@@ -144,7 +157,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutChange'])
+const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutChange', 'reuse', 'generatePrompt'])
 
 const logBodyRef = ref(null)
 const refreshTimeout = ref(120)
@@ -188,6 +201,16 @@ const isPendingConfirm = (taskId) => {
 
 const confirmChange = (change) => {
   emit('confirmChange', change)
+}
+
+const handleReuse = (task) => {
+  if (task.prompt) {
+    emit('reuse', task.prompt)
+  }
+}
+
+const handleGeneratePrompt = (task) => {
+  emit('generatePrompt', task)
 }
 
 const formatPriority = (priority) => {
@@ -859,5 +882,50 @@ const taskStats = computed(() => {
 .confirm-btn:hover {
   background: #2eb67d;
   color: #fff;
+}
+
+/* Reuse button */
+.reuse-btn {
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 11px;
+  border: 1px solid #4a9eff;
+  background: transparent;
+  color: #4a9eff;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.reuse-btn:hover {
+  background: #4a9eff;
+  color: #fff;
+}
+
+/* Generate prompt button */
+.gen-prompt-btn {
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 11px;
+  border: 1px dashed #999;
+  background: transparent;
+  color: #999;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.gen-prompt-btn:hover {
+  border-color: #4a9eff;
+  color: #4a9eff;
+}
+
+.gen-prompt-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

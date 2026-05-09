@@ -656,6 +656,7 @@ function main(listen, apiToken, noAuth) {
           progress: body.progress || 0,
           priority: body.priority || 'normal',
           dependencies: body.dependencies || [],
+          prompt: body.prompt || null,
         }
         return response(201, db.createTask(task))
       }
@@ -698,6 +699,24 @@ function main(listen, apiToken, noAuth) {
         if (!task) return response(404, { error: 'Task not found' })
         var events = db.getTaskEvents(taskId)
         return response(200, { task_id: taskId, events: events })
+      }
+    },
+
+    '/api/tasks/{taskId}/generate-prompt': {
+      'POST': function ({ taskId }, req) {
+        taskId = URL.decodeComponent(taskId)
+        var task = db.getTask(taskId)
+        if (!task) return response(404, { error: 'Task not found' })
+        var body
+        try {
+          body = JSON.decode(req.body)
+        } catch {
+          return response(400, { error: 'invalid request body' })
+        }
+        if (!body || !body.prompt) return response(400, { error: 'prompt is required' })
+        var updated = db.updateTask(taskId, { prompt: body.prompt })
+        if (!updated) return response(500, { error: 'Failed to update task' })
+        return response(200, { task_id: taskId, prompt: updated.prompt })
       }
     },
 
