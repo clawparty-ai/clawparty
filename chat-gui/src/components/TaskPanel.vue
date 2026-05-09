@@ -38,7 +38,8 @@
           :key="task.task_id"
           v-else
           class="task-row"
-          :class="['indent-' + Math.min(task.depth, 3), 'status-' + task.status, { 'pending-confirm': task._pendingChange, 'pending-create': task._isPendingCreate }]"
+          :class="['indent-' + Math.min(task.depth, 3), 'status-' + task.status, { 'pending-confirm': task._pendingChange, 'pending-create': task._isPendingCreate, 'task-expanded': expandedTaskIds.has(task.task_id) }]"
+          @click="toggleExpand(task.task_id)"
         >
           <div class="task-indent-guide">
             <div v-for="d in task.depth" :key="d" class="indent-line"></div>
@@ -51,6 +52,7 @@
           </div>
           <div class="task-content">
             <div class="task-line">
+              <span class="task-number" v-if="task.task_number">#{{ task.task_number }}</span>
               <span class="task-created">{{ formatDate(task.created_at) }}</span>
               <span class="task-title" :title="task.ai_description || task.description">
                 <span v-if="task._isPendingCreate" class="new-badge">新</span>
@@ -68,6 +70,16 @@
             <div v-if="task._pendingChange" class="pending-reason">
               <span class="reason-text">{{ task._pendingChange.reason }}</span>
               <button class="confirm-btn" @click.stop="confirmChange(task._pendingChange)">✓ 确认</button>
+            </div>
+            <div v-if="expandedTaskIds.has(task.task_id)" class="task-detail">
+              <div class="task-detail-row">
+                <span class="task-detail-label">目标</span>
+                <span class="task-detail-value">{{ task.description || task.ai_description || '—' }}</span>
+              </div>
+              <div class="task-detail-row">
+                <span class="task-detail-label">结果</span>
+                <span class="task-detail-value">{{ task.result_summary || '暂无' }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -136,6 +148,7 @@ const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutC
 
 const logBodyRef = ref(null)
 const refreshTimeout = ref(120)
+const expandedTaskIds = ref(new Set())
 
 watch(() => refreshTimeout.value, (newVal) => {
   emit('refreshTimeoutChange', newVal)
@@ -154,6 +167,16 @@ const toggleExpanded = () => {
 
 const onRefresh = () => {
   emit('refresh')
+}
+
+const toggleExpand = (taskId) => {
+  const next = new Set(expandedTaskIds.value)
+  if (next.has(taskId)) {
+    next.delete(taskId)
+  } else {
+    next.add(taskId)
+  }
+  expandedTaskIds.value = next
 }
 
 const isPendingConfirm = (taskId) => {
@@ -492,6 +515,13 @@ const taskStats = computed(() => {
   gap: 4px;
   padding: 4px 0;
   position: relative;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.task-row:hover {
+  background: rgba(0, 0, 0, 0.02);
 }
 
 .task-indent-guide {
@@ -576,6 +606,16 @@ const taskStats = computed(() => {
   font-weight: 500;
 }
 
+.task-number {
+  font-size: 12px;
+  color: var(--text-muted, #999);
+  flex-shrink: 0;
+  font-weight: 500;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
 .task-priority {
   font-size: 12px;
   padding: 0 4px;
@@ -621,6 +661,40 @@ const taskStats = computed(() => {
   flex-shrink: 0;
   min-width: 28px;
   text-align: right;
+}
+
+.task-detail {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.task-detail-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 3px;
+  line-height: 1.5;
+}
+
+.task-detail-row:last-child {
+  margin-bottom: 0;
+}
+
+.task-detail-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim, #797979);
+  flex-shrink: 0;
+  min-width: 28px;
+}
+
+.task-detail-value {
+  font-size: 12px;
+  color: var(--text-primary, #4d4d4d);
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 768px) {

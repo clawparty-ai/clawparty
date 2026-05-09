@@ -311,6 +311,29 @@ function open(pathname) {
   try { db.exec(`ALTER TABLE tasks ADD COLUMN short_title TEXT`) } catch {}
   try { db.exec(`ALTER TABLE tasks ADD COLUMN ai_description TEXT`) } catch {}
 
+  // Migration: add task_number for sequential numbering per agent, and result_summary for AI-generated summaries
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN task_number INTEGER`) } catch {}
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN result_summary TEXT`) } catch {}
+
+  // Backfill task_number for existing tasks that don't have one yet
+  try {
+    var unnumbered = db.sql('SELECT task_id, agent_name FROM tasks WHERE task_number IS NULL ORDER BY created_at ASC').exec()
+    var agentCounters = {}
+    for (var u = 0; u < unnumbered.length; u++) {
+      var agent = unnumbered[u].agent_name
+      if (!(agent in agentCounters)) {
+        var maxRow = db.sql('SELECT MAX(task_number) as max_num FROM tasks WHERE agent_name = ? AND task_number IS NOT NULL')
+          .bind(1, agent).exec()[0]
+        agentCounters[agent] = (maxRow && maxRow.max_num) ? maxRow.max_num : 0
+      }
+      agentCounters[agent]++
+      db.sql('UPDATE tasks SET task_number = ? WHERE task_id = ?')
+        .bind(1, agentCounters[agent])
+        .bind(2, unnumbered[u].task_id)
+        .exec()
+    }
+  } catch {}
+
   // Task events table for audit trail
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_events (
@@ -1199,9 +1222,16 @@ function isGroupOwnerAgent(agentName) {
 
 function createTask(task) {
   var t = Date.now() / 1000
+
+  // Auto-assign task_number: per-agent sequential numbering
+  var maxRow = db.sql('SELECT MAX(task_number) as max_num FROM tasks WHERE agent_name = ?')
+    .bind(1, task.agent_name)
+    .exec()[0]
+  var nextNumber = (maxRow && maxRow.max_num) ? maxRow.max_num + 1 : 1
+
   db.sql(`
-    INSERT INTO tasks(task_id, agent_name, group_id, parent_id, title, short_title, description, ai_description, status, progress, priority, dependencies, created_at, updated_at)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks(task_id, agent_name, group_id, parent_id, title, short_title, description, ai_description, status, progress, priority, dependencies, task_number, created_at, updated_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
     .bind(1, task.task_id)
     .bind(2, task.agent_name)
@@ -1215,8 +1245,9 @@ function createTask(task) {
     .bind(10, task.progress !== undefined ? task.progress : 0)
     .bind(11, task.priority || 'normal')
     .bind(12, task.dependencies ? JSON.stringify(task.dependencies) : null)
-    .bind(13, t)
+    .bind(13, nextNumber)
     .bind(14, t)
+    .bind(15, t)
     .exec()
 
   recordTaskEvent(task.task_id, 'created', null, task.status || 'pending', task.progress || 0, 'Task created')
@@ -1240,6 +1271,8 @@ function getTask(taskId) {
     progress: row.progress,
     priority: row.priority,
     dependencies: row.dependencies ? JSON.parse(row.dependencies) : [],
+    task_number: row.task_number,
+    result_summary: row.result_summary,
     created_at: row.created_at,
     updated_at: row.updated_at,
     started_at: row.started_at,
@@ -1265,6 +1298,7 @@ function updateTask(taskId, updates) {
   if (updates.dependencies !== undefined) { fields.push('dependencies = ?'); params.push(JSON.stringify(updates.dependencies)) }
   if (updates.started_at !== undefined) { fields.push('started_at = ?'); params.push(updates.started_at) }
   if (updates.completed_at !== undefined) { fields.push('completed_at = ?'); params.push(updates.completed_at) }
+  if (updates.result_summary !== undefined) { fields.push('result_summary = ?'); params.push(updates.result_summary) }
 
   fields.push('updated_at = ?')
   params.push(t)
@@ -1331,6 +1365,8 @@ function getAgentTasks(agentName) {
       progress: row.progress,
       priority: row.priority,
       dependencies: row.dependencies ? JSON.parse(row.dependencies) : [],
+      task_number: row.task_number,
+      result_summary: row.result_summary,
       created_at: row.created_at,
       updated_at: row.updated_at,
       started_at: row.started_at,
