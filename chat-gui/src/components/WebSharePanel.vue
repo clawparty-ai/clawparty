@@ -107,7 +107,7 @@
                 <span class="file-time-col">-</span>
                 <span class="file-actions-col"></span>
               </div>
-               <div v-else class="webshare-file-row">
+               <div v-else class="webshare-file-row" @click="previewFile(file.name)">
                  <span class="file-name-col" :title="file.name">
                    <span class="file-icon">{{ fileIcon(file.name) }}</span>
                    {{ file.name }}
@@ -126,22 +126,52 @@
           </template>
         </div>
         <!-- Right: Preview panel -->
-        <div class="webshare-preview-pane" v-if="previewUrl">
-          <div class="preview-header">
-            <span class="preview-title" :title="previewName">{{ previewName }}</span>
-            <button class="preview-close" @click="closePreview">✕</button>
-          </div>
-          <div class="preview-body">
-            <img v-if="isImagePreview" :src="previewUrl" class="preview-image" :alt="previewName" />
-            <div v-else class="preview-placeholder">
-              <span class="preview-icon">{{ fileIcon(previewName) }}</span>
-              <span class="preview-hint">暂不支持此文件预览</span>
-              <a :href="previewUrl" target="_blank" rel="noopener noreferrer" class="preview-open-link">在新标签页打开</a>
+        <div class="webshare-preview-pane">
+          <template v-if="previewUrl">
+            <div class="preview-header">
+              <span class="preview-title" :title="previewName">{{ previewName }}</span>
+              <button class="preview-full-btn" @click="fullPreview = true" title="全屏预览">
+                <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h4a1 1 0 010 2H6.414l2.293 2.293a1 1 0 01-1.414 1.414L5 6.414V8a1 1 0 01-2 0V4zm9 1a1 1 0 110-2h4a1 1 0 011 1v4a1 1 0 11-2 0V6.414l-2.293 2.293a1 1 0 11-1.414-1.414L13.586 5H12zm-9 7a1 1 0 112 0v1.586l2.293-2.293a1 1 0 011.414 1.414L5.414 15H7a1 1 0 110 2H3a1 1 0 01-1-1v-4zm13.707 4.707a1 1 0 010-1.414L14.586 15H13a1 1 0 110-2h4a1 1 0 011 1v4a1 1 0 11-2 0v-1.586l-2.293 2.293a1 1 0 01-1.414-1.414z" clip-rule="evenodd"/>
+                </svg>
+              </button>
+              <button class="preview-close" @click="closePreview">✕</button>
             </div>
+            <div class="preview-body">
+              <img v-if="isImagePreview" :src="previewUrl" class="preview-image" :alt="previewName" />
+              <iframe v-else-if="isHtmlPreview" :src="previewUrl" class="preview-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
+              <div v-else class="preview-placeholder">
+                <span class="preview-icon">{{ fileIcon(previewName) }}</span>
+                <span class="preview-hint">暂不支持此文件预览</span>
+                <a :href="previewUrl" target="_blank" rel="noopener noreferrer" class="preview-open-link">在新标签页打开</a>
+              </div>
+            </div>
+          </template>
+          <div v-else class="preview-empty">
+            <span class="preview-empty-icon">📄</span>
+            <span class="preview-empty-text">选择文件以预览</span>
           </div>
         </div>
       </div>
     </div>
+    <!-- Fullscreen preview overlay -->
+    <Teleport to="body">
+      <div v-if="fullPreview" class="fullscreen-preview" @keyup.escape="fullPreview = false" tabindex="-1">
+        <div class="fullscreen-preview-header">
+          <span class="fullscreen-preview-title">{{ previewName }}</span>
+          <a :href="previewUrl" target="_blank" rel="noopener noreferrer" class="fullscreen-open-link">在新标签页打开</a>
+          <button class="fullscreen-close-btn" @click="fullPreview = false">✕ 退出全屏</button>
+        </div>
+        <div class="fullscreen-preview-body">
+          <img v-if="isImagePreview" :src="previewUrl" class="fullscreen-preview-image" :alt="previewName" />
+          <iframe v-else-if="isHtmlPreview" :src="previewUrl" class="fullscreen-preview-iframe"></iframe>
+          <div v-else class="fullscreen-preview-placeholder">
+            <span class="preview-icon">{{ fileIcon(previewName) }}</span>
+            <span class="preview-hint">暂不支持此文件预览</span>
+          </div>
+        </div>
+      </div>
+    </Teleport>
     <div
       class="resize-handle"
       :class="{ resizing: isResizing }"
@@ -183,6 +213,7 @@ const emit = defineEmits(['toggle', 'refresh', 'uploaded'])
 const currentPath = ref('')
 const previewUrl = ref('')
 const previewName = ref('')
+const fullPreview = ref(false)
 
 // Upload drag & drop state
 const isDragOver = ref(false)
@@ -312,6 +343,11 @@ const isImagePreview = computed(() => {
   return name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.gif') || name.endsWith('.webp') || name.endsWith('.svg') || name.endsWith('.ico')
 })
 
+const isHtmlPreview = computed(() => {
+  const name = previewName.value.toLowerCase()
+  return name.endsWith('.html') || name.endsWith('.htm')
+})
+
 const toggleExpanded = () => {
   if (!props.expanded) {
     emit('toggle')
@@ -384,7 +420,18 @@ const openFile = (filename) => {
 const closePreview = () => {
   previewUrl.value = ''
   previewName.value = ''
+  fullPreview.value = false
 }
+
+// Auto-preview index.html when directory changes and no file is selected
+watch(() => props.files, (newFiles) => {
+  if (!previewUrl.value && newFiles && newFiles.length > 0) {
+    const indexFile = newFiles.find(f => f.name === 'index.html')
+    if (indexFile) {
+      previewFile('index.html')
+    }
+  }
+})
 
 const fileIcon = (name) => {
   const lower = name.toLowerCase()
@@ -772,6 +819,33 @@ const stopResize = () => {
   text-decoration: underline;
 }
 
+.preview-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #fff;
+  border-radius: 4px;
+}
+
+.preview-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-dim, #797979);
+}
+
+.preview-empty-icon {
+  font-size: 28px;
+  opacity: 0.4;
+}
+
+.preview-empty-text {
+  font-size: 13px;
+}
+
 /* Breadcrumb */
 .breadcrumb-bar {
   display: flex;
@@ -839,7 +913,7 @@ const stopResize = () => {
   color: inherit;
   font-size: 13px;
   transition: background 0.15s;
-  cursor: default;
+  cursor: pointer;
 }
 
 .webshare-file-row:hover {
@@ -1028,6 +1102,116 @@ const stopResize = () => {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Full preview button in preview header */
+.preview-full-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim, #797979);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.preview-full-btn:hover {
+  background: rgba(64, 149, 254, 0.1);
+  color: #4095fe;
+}
+
+/* Fullscreen preview overlay */
+.fullscreen-preview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+
+.fullscreen-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  background: #f9fafc;
+  flex-shrink: 0;
+}
+
+.fullscreen-preview-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fullscreen-open-link {
+  font-size: 12px;
+  color: #4095fe;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.fullscreen-open-link:hover {
+  text-decoration: underline;
+}
+
+.fullscreen-close-btn {
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.fullscreen-close-btn:hover {
+  background: #f0f0f0;
+}
+
+.fullscreen-preview-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fullscreen-preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.fullscreen-preview-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.fullscreen-preview-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim, #797979);
 }
 
 @media (max-width: 768px) {

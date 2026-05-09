@@ -1,5 +1,5 @@
 <template>
-  <div class="sidebar-shell">
+  <div class="sidebar-shell" :class="{ collapsed: sidebarCollapsed }">
 
     <!-- Left: org switcher rail -->
     <nav class="org-rail">
@@ -68,6 +68,20 @@
       </div>
 
       <div class="org-rail-spacer"></div>
+
+      <!-- Sidebar collapse toggle -->
+      <button
+        class="sidebar-toggle-btn"
+        :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
+        @click="sidebarCollapsed = !sidebarCollapsed"
+      >
+        <svg v-if="!sidebarCollapsed" width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/>
+        </svg>
+        <svg v-else width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+        </svg>
+      </button>
 
       <div class="org-rail-bottom-spacer"></div>
 
@@ -880,6 +894,7 @@ const handleUpdateMembers = async () => {
 
 // Active org
 const activeOrg = ref('zagents')
+const sidebarCollapsed = ref(false)
 
 const emit = defineEmits(['select', 'selectOpenclaw', 'changeOrg', 'openLocalTemplates', 'openSharedTemplates', 'resetActiveChat', 'zagentTemplateCreated'])
 
@@ -1333,6 +1348,15 @@ const getStatusText = (agent) => {
   height: 100%;
   width: var(--sidebar-width);
   flex-shrink: 0;
+  transition: width 0.2s ease;
+}
+
+.sidebar-shell.collapsed {
+  width: 64px;
+}
+
+.sidebar-shell.collapsed .sidebar-panel {
+  display: none;
 }
 
 /* ── Org rail ── */
@@ -2081,6 +2105,27 @@ const getStatusText = (agent) => {
   height: 1px;
   background: rgba(255, 255, 255, 0.2);
   margin: 4px 0;
+}
+
+.sidebar-toggle-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  margin: 2px 0;
+}
+
+.sidebar-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
 }
 
 .profile-icon {
