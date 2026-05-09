@@ -679,8 +679,8 @@ const stopResize = () => {
 }
 
 .webshare-preview-pane {
-  width: 40%;
-  max-width: 400px;
+  width: 80%;
+  max-width: 800px;
   min-width: 180px;
   display: flex;
   flex-direction: column;
