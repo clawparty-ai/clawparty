@@ -750,7 +750,7 @@ const startPolling = () => {
   if (sidebarPollingTimer) return
   sidebarPollingTimer = setInterval(() => {
     fetchZAgents()
-  }, 3000)
+  }, 30000)
 }
 
 const stopPolling = () => {

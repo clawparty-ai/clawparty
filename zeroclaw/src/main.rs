@@ -963,10 +963,14 @@ async fn main() -> Result<()> {
 
     // Resolve log directory.
     let log_dir = {
+        let expand = |s: &str| -> PathBuf {
+            let expanded = shellexpand::tilde(s);
+            PathBuf::from(expanded.as_ref())
+        };
         let base = if let Some(ref d) = cli.config_dir {
-            PathBuf::from(d)
+            expand(d)
         } else if let Ok(d) = std::env::var("ZEROCLAW_CONFIG_DIR") {
-            PathBuf::from(d)
+            expand(&d)
         } else {
             std::env::var_os("HOME")
                 .map(PathBuf::from)
