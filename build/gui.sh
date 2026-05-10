@@ -18,6 +18,7 @@ fi
 check_version `node -v` 'v16' 'Require Node.js version 16 or above'
 
 cd "$ZTM_DIR/chat-gui"
-npm run build
+yarn install
+yarn build
 
 rm -f "$ZTM_DIR/pipy/build/deps/codebases.tar.gz.h"

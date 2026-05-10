@@ -260,6 +260,24 @@ export const taskService = {
   },
 }
 
+export const kanbanService = {
+  getKanbanConfig(agentName, groupId) {
+    var url = `/kanban?agent=${encodeURIComponent(agentName)}`
+    if (groupId) url += `&group=${encodeURIComponent(groupId)}`
+    return api.get(url)
+  },
+
+  setKanbanConfig(agentName, groupId, name, prompt, config) {
+    return api.put('/kanban', {
+      agent_name: agentName,
+      group_id: groupId || null,
+      name: name,
+      prompt: prompt,
+      config: config,
+    })
+  },
+}
+
 export const zagentService = {
   getAgents() {
     return api.get('/agents')

@@ -38,7 +38,7 @@ if [ "$CLEAN" = true ]; then
 fi
 
 cd "$GUI_DIR"
-npm ci --no-audit
+yarn install
 
 cd "$ZTM_DIR"
 build/deps.sh

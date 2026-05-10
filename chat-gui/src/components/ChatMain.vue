@@ -43,6 +43,7 @@
       :refreshing="isTaskRefreshing"
       :pendingChanges="pendingTaskChanges"
       :refreshLogs="refreshLogs"
+      :kanbanConfig="kanbanConfig"
       @toggle="taskPanelBodyExpanded = !taskPanelBodyExpanded"
       @refresh="handleTaskRefresh"
       @confirmChange="handleConfirmTaskChange"
@@ -51,6 +52,8 @@
       @generatePrompt="handleGeneratePrompt"
       @createPipelineTask="handleCreatePipelineTask"
       @togglePipelinePanel="handleTogglePipelinePanel"
+      @updateKanbanConfig="handleUpdateKanbanConfig"
+      @generateChart="handleGenerateChart"
     />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
@@ -237,7 +240,7 @@ import HalfAutomationInput from './HalfAutomationInput.vue'
 import ConfigTable from './ConfigTable.vue'
 import TaskPanel from './TaskPanel.vue'
 import WebSharePanel from './WebSharePanel.vue'
-import { chatService, taskService, ZeroClawWS, zagentService, groupChatService, webshareService } from '../services/chatService'
+import { chatService, taskService, kanbanService, ZeroClawWS, zagentService, groupChatService, webshareService } from '../services/chatService'
 import { getAvatarColor } from '../utils/avatar'
 
 marked.setOptions({
@@ -322,6 +325,18 @@ const quotedMessage = ref(null)
 
 // Task management (zAgent / Group Chat)
 const tasks = ref([])
+const kanbanConfig = ref({
+  name: '默认看板',
+  prompt: '',
+  config: {
+    charts: [
+      { id: 'status', type: 'doughnut', title: '状态分布', enabled: true, prompt: '' },
+      { id: 'trend', type: 'line', title: '近7天趋势', enabled: true, prompt: '' },
+      { id: 'agent', type: 'bar', title: 'Agent分布', enabled: true, prompt: '' },
+      { id: 'duration', type: 'bar', title: '耗时统计', enabled: true, prompt: '' }
+    ]
+  }
+})
 const showTaskPanel = ref(false)
 const taskPanelBodyExpanded = ref(true)
 const taskPanelInitialHeight = ref(180)
@@ -455,6 +470,62 @@ const loadTasks = async () => {
   } catch (e) {
     addRefreshLog('error', 'Failed to load tasks: ' + (e.message || e))
   }
+}
+
+const loadKanbanConfig = async () => {
+  if (!props.chat.isZeroClaw && !props.chat.isGroupChat) return
+  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
+  const groupId = props.chat.isGroupChat ? props.chat.groupId : null
+  if (!agentName) return
+  try {
+    const res = await kanbanService.getKanbanConfig(agentName, groupId)
+    if (res.data) {
+      kanbanConfig.value = {
+        name: res.data.name || '默认看板',
+        prompt: res.data.prompt || '',
+        config: res.data.config || {
+          charts: [
+            { id: 'status', type: 'doughnut', title: '状态分布', enabled: true, prompt: '' },
+            { id: 'trend', type: 'line', title: '近7天趋势', enabled: true, prompt: '' },
+            { id: 'agent', type: 'bar', title: 'Agent分布', enabled: true, prompt: '' },
+            { id: 'duration', type: 'bar', title: '耗时统计', enabled: true, prompt: '' }
+          ]
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load kanban config:', e)
+  }
+}
+
+const handleUpdateKanbanConfig = async (config) => {
+  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
+  const groupId = props.chat.isGroupChat ? props.chat.groupId : null
+  if (!agentName) return
+  try {
+    const res = await kanbanService.setKanbanConfig(
+      agentName,
+      groupId,
+      config.name,
+      config.prompt,
+      config.config
+    )
+    if (res.data) {
+      kanbanConfig.value = {
+        name: res.data.name,
+        prompt: res.data.prompt,
+        config: res.data.config
+      }
+    }
+  } catch (e) {
+    console.error('Failed to save kanban config:', e)
+  }
+}
+
+const handleGenerateChart = async (chartInfo) => {
+  // TODO: Implement AI chart generation
+  // This would send the chart prompt to 0#Agent and update the chart data
+  console.log('Generate chart:', chartInfo)
 }
 
 const handleTaskRefresh = async () => {
@@ -2066,6 +2137,7 @@ watch(showTaskPanel, async (visible) => {
       calcTaskPanelHeight()
     })
     await loadTasks()
+    await loadKanbanConfig()
   }
 })
 

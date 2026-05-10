@@ -750,6 +750,66 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
+    '/api/kanban': {
+      'GET': function (_, req) {
+        var url = new URL(req.head.path, 'http://localhost')
+        var agentName = url.searchParams.get('agent')
+        var groupId = url.searchParams.get('group')
+        if (!agentName) return response(400, { error: 'agent parameter required' })
+        var config = db.getKanbanConfig(agentName, groupId || null)
+        if (!config) {
+          // Return default config
+          return response(200, {
+            agent_name: agentName,
+            group_id: groupId || null,
+            name: '默认看板',
+            prompt: '',
+            config: {
+              charts: [
+                { id: 'status', type: 'doughnut', title: '状态分布', enabled: true, prompt: '' },
+                { id: 'trend', type: 'line', title: '近7天趋势', enabled: true, prompt: '' },
+                { id: 'agent', type: 'bar', title: 'Agent分布', enabled: true, prompt: '' },
+                { id: 'duration', type: 'bar', title: '耗时统计', enabled: true, prompt: '' }
+              ]
+            }
+          })
+        }
+        return response(200, {
+          agent_name: agentName,
+          group_id: groupId || null,
+          name: config.name,
+          prompt: config.prompt,
+          config: config.config,
+          created_at: config.created_at,
+          updated_at: config.updated_at,
+        })
+      },
+      'PUT': function (_, req) {
+        var body
+        try {
+          body = JSON.decode(req.body)
+        } catch {
+          return response(400, { error: 'invalid request body' })
+        }
+        if (!body || !body.agent_name) return response(400, { error: 'agent_name is required' })
+        var config = db.setKanbanConfig(
+          body.agent_name,
+          body.group_id || null,
+          body.name,
+          body.prompt,
+          body.config
+        )
+        return response(200, {
+          agent_name: body.agent_name,
+          group_id: body.group_id || null,
+          name: config.name,
+          prompt: config.prompt,
+          config: config.config,
+          updated_at: config.updated_at,
+        })
+      }
+    },
+
     // ── Web Share APIs ────────────────────────────────────────────────
 
     '/api/webshare/{agent}/list': {

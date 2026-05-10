@@ -12,6 +12,15 @@
         <span class="pipeline-btn-icon">🔗</span>
         <span class="pipeline-btn-text">创建流水线</span>
       </button>
+      <button
+        class="kanban-btn"
+        :class="{ active: showKanbanPanel }"
+        @click.stop="toggleKanbanPanel"
+        title="任务看板"
+      >
+        <span class="kanban-btn-icon">📊</span>
+        <span class="kanban-btn-text">看板</span>
+      </button>
       <span class="task-panel-stats">
         <span class="stat running" v-if="taskStats.running > 0">{{ taskStats.running }} 执行中</span>
         <span class="stat completed" v-if="taskStats.completed > 0">{{ taskStats.completed }} 完成</span>
@@ -109,13 +118,22 @@
         </div>
       </div>
 
-      <!-- Right: Refresh log panel or Pipeline editor -->
+      <!-- Right: Refresh log panel or Pipeline editor or Kanban -->
       <TaskPipelineEditor
         v-if="showPipelinePanel"
         :tasks="flattenedTasks"
         :agentName="agentName"
         @close="showPipelinePanel = false"
         @createTask="handleCreatePipelineTask"
+      />
+      <TaskKanban
+        v-else-if="showKanbanPanel"
+        :tasks="tasks"
+        :agentName="agentName"
+        :kanbanConfig="kanbanConfig"
+        @close="showKanbanPanel = false"
+        @update:kanbanConfig="$emit('updateKanbanConfig', $event)"
+        @generateChart="$emit('generateChart', $event)"
       />
       <div v-else-if="refreshLogs.length > 0" class="log-panel">
         <div class="log-header">🪵 任务分析</div>
@@ -144,6 +162,7 @@
 <script setup>
 import { computed, ref, watch, nextTick } from 'vue'
 import TaskPipelineEditor from './TaskPipelineEditor.vue'
+import TaskKanban from './TaskKanban.vue'
 
 const props = defineProps({
   agentName: {
@@ -173,15 +192,31 @@ const props = defineProps({
   refreshLogs: {
     type: Array,
     default: () => []
+  },
+  kanbanConfig: {
+    type: Object,
+    default: () => ({
+      name: '默认看板',
+      prompt: '',
+      config: {
+        charts: [
+          { id: 'status', type: 'doughnut', title: '状态分布', enabled: true, prompt: '' },
+          { id: 'trend', type: 'line', title: '近7天趋势', enabled: true, prompt: '' },
+          { id: 'agent', type: 'bar', title: 'Agent分布', enabled: true, prompt: '' },
+          { id: 'duration', type: 'bar', title: '耗时统计', enabled: true, prompt: '' }
+        ]
+      }
+    })
   }
 })
 
-const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutChange', 'reuse', 'generatePrompt', 'createPipelineTask', 'togglePipelinePanel'])
+const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutChange', 'reuse', 'generatePrompt', 'createPipelineTask', 'togglePipelinePanel', 'updateKanbanConfig', 'generateChart'])
 
 const logBodyRef = ref(null)
 const refreshTimeout = ref(120)
 const expandedTaskIds = ref(new Set())
 const showPipelinePanel = ref(false)
+const showKanbanPanel = ref(false)
 
 watch(() => refreshTimeout.value, (newVal) => {
   emit('refreshTimeoutChange', newVal)
@@ -248,7 +283,17 @@ const handleCreatePipelineTask = (data) => {
 
 const togglePipelinePanel = () => {
   showPipelinePanel.value = !showPipelinePanel.value
+  if (showPipelinePanel.value) {
+    showKanbanPanel.value = false
+  }
   emit('togglePipelinePanel', showPipelinePanel.value)
+}
+
+const toggleKanbanPanel = () => {
+  showKanbanPanel.value = !showKanbanPanel.value
+  if (showKanbanPanel.value) {
+    showPipelinePanel.value = false
+  }
 }
 
 const formatPriority = (priority) => {
@@ -502,6 +547,40 @@ const taskStats = computed(() => {
 }
 
 .pipeline-btn-text {
+  font-size: 11px;
+}
+
+.kanban-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid rgba(245, 166, 35, 0.3);
+  background: rgba(245, 166, 35, 0.08);
+  color: #f5a623;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.kanban-btn:hover {
+  background: rgba(245, 166, 35, 0.15);
+  border-color: rgba(245, 166, 35, 0.5);
+}
+
+.kanban-btn.active {
+  background: linear-gradient(135deg, #f5a623 0%, #e01e5a 100%);
+  color: #fff;
+  border-color: transparent;
+}
+
+.kanban-btn-icon {
+  font-size: 12px;
+}
+
+.kanban-btn-text {
   font-size: 11px;
 }
 

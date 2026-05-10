@@ -370,6 +370,25 @@ function open(pathname) {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_task_analysis_agent ON task_analysis_log(agent_name)`)
     db.exec(`CREATE INDEX IF NOT EXISTS idx_task_analysis_group ON task_analysis_log(group_id)`)
   } catch {}
+
+  // Kanban configuration: per-agent dashboard config with chart definitions
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS kanban_configs (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_name    TEXT NOT NULL,
+      group_id      TEXT,
+      name          TEXT DEFAULT '默认看板',
+      prompt        TEXT,
+      config        TEXT NOT NULL DEFAULT '{"charts":[]}',
+      created_at    REAL NOT NULL,
+      updated_at    REAL NOT NULL,
+      UNIQUE(agent_name, group_id)
+    )
+  `)
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_kanban_agent ON kanban_configs(agent_name)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_kanban_group ON kanban_configs(group_id)`)
+  } catch {}
 }
 
 function allZones() {
@@ -1489,6 +1508,65 @@ function getTaskCount(agentName, status) {
   return rows[0] ? rows[0].cnt : 0
 }
 
+// ── Kanban Config CRUD ────────────────────────────────────────────
+
+function getKanbanConfig(agentName, groupId) {
+  var sql = 'SELECT id, name, prompt, config, created_at, updated_at FROM kanban_configs WHERE agent_name = ?'
+  var stmt = db.sql(sql).bind(1, agentName)
+  if (groupId !== undefined && groupId !== null) {
+    stmt = db.sql(sql + ' AND group_id = ?').bind(1, agentName).bind(2, groupId)
+  } else {
+    stmt = db.sql(sql + ' AND group_id IS NULL').bind(1, agentName)
+  }
+  var rows = stmt.exec()
+  if (rows.length === 0) return null
+  var row = rows[0]
+  var config = {}
+  try {
+    config = JSON.decode(row.config)
+  } catch {}
+  return {
+    id: row.id,
+    name: row.name,
+    prompt: row.prompt,
+    config: config,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }
+}
+
+function setKanbanConfig(agentName, groupId, name, prompt, config) {
+  var t = Date.now() / 1000
+  var configStr = JSON.encode(config)
+  var existing = getKanbanConfig(agentName, groupId)
+  if (existing) {
+    var sql = 'UPDATE kanban_configs SET name = ?, prompt = ?, config = ?, updated_at = ? WHERE agent_name = ?'
+    var stmt = db.sql(sql).bind(1, name || existing.name).bind(2, prompt !== undefined ? prompt : existing.prompt).bind(3, configStr).bind(4, t).bind(5, agentName)
+    if (groupId !== undefined && groupId !== null) {
+      stmt = db.sql(sql + ' AND group_id = ?')
+        .bind(1, name || existing.name).bind(2, prompt !== undefined ? prompt : existing.prompt).bind(3, configStr).bind(4, t).bind(5, agentName).bind(6, groupId)
+    } else {
+      stmt = db.sql(sql + ' AND group_id IS NULL')
+        .bind(1, name || existing.name).bind(2, prompt !== undefined ? prompt : existing.prompt).bind(3, configStr).bind(4, t).bind(5, agentName)
+    }
+    stmt.exec()
+  } else {
+    db.sql(`
+      INSERT INTO kanban_configs(agent_name, group_id, name, prompt, config, created_at, updated_at)
+      VALUES(?, ?, ?, ?, ?, ?, ?)
+    `)
+      .bind(1, agentName)
+      .bind(2, groupId || null)
+      .bind(3, name || '默认看板')
+      .bind(4, prompt || null)
+      .bind(5, configStr)
+      .bind(6, t)
+      .bind(7, t)
+      .exec()
+  }
+  return getKanbanConfig(agentName, groupId)
+}
+
 export default {
   open,
   allZones,
@@ -1558,4 +1636,7 @@ export default {
   getTaskCount,
   getTaskAnalysisLog,
   setTaskAnalysisLog,
+  // Kanban
+  getKanbanConfig,
+  setKanbanConfig,
 }
