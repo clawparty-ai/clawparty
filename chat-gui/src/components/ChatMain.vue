@@ -49,6 +49,8 @@
       @refreshTimeoutChange="refreshTimeout = $event"
       @reuse="handleTaskReuse"
       @generatePrompt="handleGeneratePrompt"
+      @createPipelineTask="handleCreatePipelineTask"
+      @togglePipelinePanel="handleTogglePipelinePanel"
     />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
@@ -334,6 +336,49 @@ const addRefreshLog = (level, msg) => {
   const ss = t.getSeconds().toString().padStart(2, '0')
   refreshLogs.value.push({ time: hh + ':' + mm + ':' + ss, level, msg })
   if (refreshLogs.value.length > 80) refreshLogs.value.shift()
+}
+
+// Pipeline management
+const showPipelinePanel = ref(false)
+
+const handleTogglePipelinePanel = (visible) => {
+  showPipelinePanel.value = visible
+}
+
+const handleCreatePipelineTask = async (data) => {
+  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
+  if (!agentName) {
+    console.error('[Pipeline] No agent name available')
+    return
+  }
+
+  try {
+    const taskId = 'PIPELINE-' + Date.now()
+    const pipelineDesc = data.pipeline.map((t, i) => `步骤${i + 1}: ${t.title}`).join(' → ')
+
+    await taskService.createTask({
+      task_id: taskId,
+      agent_name: agentName,
+      group_id: props.chat.isGroupChat ? props.chat.groupId : null,
+      title: '流水线任务: ' + pipelineDesc,
+      description: data.prompt,
+      status: 'pending',
+      progress: 0,
+      priority: 'normal'
+    })
+
+    console.log('[Pipeline] Task created:', taskId)
+    addRefreshLog('info', '流水线任务已创建: ' + taskId)
+
+    // Send prompt to 0#Agent via chat
+    emit('send', data.prompt)
+
+    // Reload tasks
+    await loadTasks()
+  } catch (err) {
+    console.error('[Pipeline] Failed to create task:', err)
+    addRefreshLog('error', '创建流水线任务失败: ' + (err.message || err))
+  }
 }
 
 // Web Share management

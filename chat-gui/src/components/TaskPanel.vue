@@ -3,6 +3,15 @@
     <div class="task-panel-header">
       <span class="task-panel-icon">🎯</span>
       <span class="task-panel-title">任务</span>
+      <button
+        class="pipeline-btn"
+        :class="{ active: showPipelinePanel }"
+        @click.stop="togglePipelinePanel"
+        title="创建流水线"
+      >
+        <span class="pipeline-btn-icon">🔗</span>
+        <span class="pipeline-btn-text">创建流水线</span>
+      </button>
       <span class="task-panel-stats">
         <span class="stat running" v-if="taskStats.running > 0">{{ taskStats.running }} 执行中</span>
         <span class="stat completed" v-if="taskStats.completed > 0">{{ taskStats.completed }} 完成</span>
@@ -38,7 +47,9 @@
           :key="task.task_id"
           v-else
           class="task-row"
-          :class="['indent-' + Math.min(task.depth, 3), 'status-' + task.status, { 'pending-confirm': task._pendingChange, 'pending-create': task._isPendingCreate, 'task-expanded': expandedTaskIds.has(task.task_id) }]"
+          :class="['indent-' + Math.min(task.depth, 3), 'status-' + task.status, { 'pending-confirm': task._pendingChange, 'pending-create': task._isPendingCreate, 'task-expanded': expandedTaskIds.has(task.task_id), 'draggable-task': showPipelinePanel }]"
+          :draggable="showPipelinePanel"
+          @dragstart="showPipelinePanel ? onTaskDragStart($event, task) : null"
           @click="toggleExpand(task.task_id)"
         >
           <div class="task-indent-guide">
@@ -98,8 +109,15 @@
         </div>
       </div>
 
-      <!-- Right: Refresh log panel -->
-      <div v-if="refreshLogs.length > 0" class="log-panel">
+      <!-- Right: Refresh log panel or Pipeline editor -->
+      <TaskPipelineEditor
+        v-if="showPipelinePanel"
+        :tasks="flattenedTasks"
+        :agentName="agentName"
+        @close="showPipelinePanel = false"
+        @createTask="handleCreatePipelineTask"
+      />
+      <div v-else-if="refreshLogs.length > 0" class="log-panel">
         <div class="log-header">🪵 任务分析</div>
         <div class="log-body" ref="logBodyRef">
           <div
@@ -125,6 +143,7 @@
 
 <script setup>
 import { computed, ref, watch, nextTick } from 'vue'
+import TaskPipelineEditor from './TaskPipelineEditor.vue'
 
 const props = defineProps({
   agentName: {
@@ -157,11 +176,12 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutChange', 'reuse', 'generatePrompt'])
+const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutChange', 'reuse', 'generatePrompt', 'createPipelineTask', 'togglePipelinePanel'])
 
 const logBodyRef = ref(null)
 const refreshTimeout = ref(120)
 const expandedTaskIds = ref(new Set())
+const showPipelinePanel = ref(false)
 
 watch(() => refreshTimeout.value, (newVal) => {
   emit('refreshTimeoutChange', newVal)
@@ -211,6 +231,24 @@ const handleReuse = (task) => {
 
 const handleGeneratePrompt = (task) => {
   emit('generatePrompt', task)
+}
+
+const onTaskDragStart = (event, task) => {
+  event.dataTransfer.setData('application/json', JSON.stringify({
+    task_id: task.task_id,
+    title: task.short_title || task.title || '未命名任务',
+    description: task.description || task.ai_description || ''
+  }))
+  event.dataTransfer.effectAllowed = 'copy'
+}
+
+const handleCreatePipelineTask = (data) => {
+  emit('createPipelineTask', data)
+}
+
+const togglePipelinePanel = () => {
+  showPipelinePanel.value = !showPipelinePanel.value
+  emit('togglePipelinePanel', showPipelinePanel.value)
 }
 
 const formatPriority = (priority) => {
@@ -433,6 +471,40 @@ const taskStats = computed(() => {
   color: var(--text-primary, #4d4d4d);
 }
 
+.pipeline-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  background: rgba(102, 126, 234, 0.08);
+  color: #667eea;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.pipeline-btn:hover {
+  background: rgba(102, 126, 234, 0.15);
+  border-color: rgba(102, 126, 234, 0.5);
+}
+
+.pipeline-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border-color: transparent;
+}
+
+.pipeline-btn-icon {
+  font-size: 12px;
+}
+
+.pipeline-btn-text {
+  font-size: 11px;
+}
+
 .task-panel-stats {
   display: flex;
   gap: 8px;
@@ -545,6 +617,20 @@ const taskStats = computed(() => {
 
 .task-row:hover {
   background: rgba(0, 0, 0, 0.02);
+}
+
+.task-row.draggable-task {
+  cursor: grab;
+}
+
+.task-row.draggable-task:hover {
+  background: rgba(64, 149, 254, 0.08);
+  outline: 1px dashed rgba(64, 149, 254, 0.3);
+}
+
+.task-row.draggable-task:active {
+  cursor: grabbing;
+  opacity: 0.7;
 }
 
 .task-indent-guide {

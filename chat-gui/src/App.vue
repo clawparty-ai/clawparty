@@ -2993,7 +2993,13 @@ const startApp = () => {
   })
   // fetchOpenclawAgents() // Disabled - openclaw agents not used
   // startZeroClawSessionsPolling() // Disabled - zeroclaw sessions hidden
-  fetchZAgents()
+  fetchZAgents().then(() => {
+    // Auto-select 0#Agent on startup
+    const zeroAgent = zAgents.value.find(a => a.agent_name === '0#Agent')
+    if (zeroAgent) {
+      selectZAgent(zeroAgent)
+    }
+  })
   fetchLocalGroupChats()
 }
 
