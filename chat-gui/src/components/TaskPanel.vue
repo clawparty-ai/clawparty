@@ -139,6 +139,42 @@
         @update:kanbanConfig="$emit('updateKanbanConfig', $event)"
         @generateChart="$emit('generateChart', $event)"
       />
+      <div v-else-if="selectedTaskId && !flattenedTasks.find(t => t.task_id === selectedTaskId)?.is_pipeline" class="log-panel task-detail-log-panel">
+        <div class="log-header">
+          📋 任务日志
+          <span class="log-header-sub" v-if="loadingTaskLogs">加载中...</span>
+        </div>
+        <div class="log-body" ref="logBodyRef">
+          <!-- Execution logs -->
+          <div v-if="selectedTaskLogs.length > 0" class="log-section">
+            <div class="log-section-title">执行步骤</div>
+            <div
+              v-for="(log, idx) in selectedTaskLogs"
+              :key="'exec-' + log.id"
+              class="log-line"
+            >
+              <span class="log-step">#{{ log.step_number }}</span>
+              <span class="log-msg">{{ log.content }}</span>
+            </div>
+          </div>
+          <!-- Chat logs -->
+          <div v-if="selectedTaskChatLogs.length > 0" class="log-section">
+            <div class="log-section-title">💬 对话记录</div>
+            <div
+              v-for="(log, idx) in selectedTaskChatLogs"
+              :key="'chat-' + log.id"
+              class="log-line"
+              :class="'chat-' + log.msg_type"
+            >
+              <span class="log-sender">{{ log.msg_type === 'user' ? '用户' : 'AI' }}</span>
+              <span class="log-msg">{{ log.content }}</span>
+            </div>
+          </div>
+          <div v-if="selectedTaskLogs.length === 0 && selectedTaskChatLogs.length === 0 && !loadingTaskLogs" class="log-empty">
+            暂无执行日志
+          </div>
+        </div>
+      </div>
       <div v-else-if="refreshLogs.length > 0" class="log-panel">
         <div class="log-header">🪵 任务分析</div>
         <div class="log-body" ref="logBodyRef">
@@ -167,6 +203,7 @@
 import { computed, ref, watch, nextTick } from 'vue'
 import TaskPipelineEditor from './TaskPipelineEditor.vue'
 import TaskKanban from './TaskKanban.vue'
+import { taskService } from '../services/chatService.js'
 
 const props = defineProps({
   agentName: {
@@ -224,6 +261,12 @@ const showKanbanPanel = ref(false)
 const pipelineEditorMode = ref('create')
 const editingPipelineTask = ref(null)
 
+// Task detail logs
+const selectedTaskId = ref(null)
+const selectedTaskLogs = ref([])
+const selectedTaskChatLogs = ref([])
+const loadingTaskLogs = ref(false)
+
 watch(() => refreshTimeout.value, (newVal) => {
   emit('refreshTimeoutChange', newVal)
 })
@@ -253,6 +296,13 @@ const toggleExpand = (taskId) => {
     showPipelinePanel.value = true
     showKanbanPanel.value = false
     emit('togglePipelinePanel', true)
+    selectedTaskId.value = null
+  } else if (!isCurrentlyExpanded && task && !task.is_pipeline) {
+    selectedTaskId.value = taskId
+    loadTaskLogs(taskId)
+    showPipelinePanel.value = false
+  } else if (isCurrentlyExpanded) {
+    selectedTaskId.value = null
   }
 
   const next = new Set(expandedTaskIds.value)
@@ -262,6 +312,25 @@ const toggleExpand = (taskId) => {
     next.add(taskId)
   }
   expandedTaskIds.value = next
+}
+
+const loadTaskLogs = async (taskId) => {
+  if (!taskId) return
+  loadingTaskLogs.value = true
+  try {
+    const [execRes, chatRes] = await Promise.all([
+      taskService.getTaskExecutionLogs(taskId),
+      taskService.getTaskChatLogs(taskId)
+    ])
+    selectedTaskLogs.value = execRes.data?.logs || []
+    selectedTaskChatLogs.value = chatRes.data?.logs || []
+  } catch (e) {
+    console.warn('[TaskPanel] Failed to load task logs:', e)
+    selectedTaskLogs.value = []
+    selectedTaskChatLogs.value = []
+  } finally {
+    loadingTaskLogs.value = false
+  }
 }
 
 const isPendingConfirm = (taskId) => {
@@ -696,6 +765,62 @@ const taskStats = computed(() => {
 .log-warn  { color: #f0ad4e; }
 .log-error { color: #d9534f; }
 .log-debug { color: #888888; }
+
+/* Task detail log panel */
+.task-detail-log-panel .log-section {
+  margin-bottom: 8px;
+}
+
+.task-detail-log-panel .log-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: #999;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  margin-bottom: 4px;
+}
+
+.task-detail-log-panel .log-step {
+  display: inline-block;
+  min-width: 24px;
+  color: #4095fe;
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.task-detail-log-panel .log-sender {
+  display: inline-block;
+  min-width: 32px;
+  font-weight: 600;
+  margin-right: 6px;
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.task-detail-log-panel .chat-user .log-sender {
+  color: #2eb67d;
+  background: rgba(46, 182, 125, 0.1);
+}
+
+.task-detail-log-panel .chat-assistant .log-sender {
+  color: #4095fe;
+  background: rgba(64, 149, 254, 0.1);
+}
+
+.task-detail-log-panel .log-header-sub {
+  font-size: 10px;
+  color: #999;
+  margin-left: 8px;
+  font-weight: 400;
+}
+
+.task-detail-log-panel .log-empty {
+  padding: 16px;
+  text-align: center;
+  color: #999;
+  font-size: 12px;
+}
 
 .task-empty {
   display: flex;

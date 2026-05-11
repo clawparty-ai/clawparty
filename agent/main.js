@@ -704,6 +704,40 @@ function main(listen, apiToken, noAuth) {
       }
     },
 
+    '/api/tasks/{taskId}/execution-logs': {
+      'GET': function ({ taskId }) {
+        taskId = URL.decodeComponent(taskId)
+        var task = db.getTask(taskId)
+        if (!task) return response(404, { error: 'Task not found' })
+        var logs = db.getTaskExecutionLogs(taskId)
+        return response(200, { task_id: taskId, logs: logs })
+      }
+    },
+
+    '/api/tasks/{taskId}/chat-logs': {
+      'GET': function ({ taskId }) {
+        taskId = URL.decodeComponent(taskId)
+        var task = db.getTask(taskId)
+        if (!task) return response(404, { error: 'Task not found' })
+        var logs = db.getTaskChatLogs(taskId)
+        return response(200, { task_id: taskId, logs: logs })
+      },
+      'POST': function ({ taskId }, req) {
+        taskId = URL.decodeComponent(taskId)
+        var task = db.getTask(taskId)
+        if (!task) return response(404, { error: 'Task not found' })
+        var body
+        try {
+          body = JSON.decode(req.body)
+        } catch {
+          return response(400, { error: 'invalid request body' })
+        }
+        if (!body || !body.content) return response(400, { error: 'content is required' })
+        db.recordTaskChatLog(taskId, body.sender || '', body.content, body.msg_type || 'assistant')
+        return response(201, { task_id: taskId, sender: body.sender, content: body.content })
+      }
+    },
+
     '/api/tasks/{taskId}/generate-prompt': {
       'POST': function ({ taskId }, req) {
         taskId = URL.decodeComponent(taskId)

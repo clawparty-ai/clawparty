@@ -377,6 +377,37 @@ function open(pathname) {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_task_analysis_group ON task_analysis_log(group_id)`)
   } catch {}
 
+  // Task execution log: records detailed execution steps for each task
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_execution_log (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id       TEXT NOT NULL,
+      step_number   INTEGER NOT NULL,
+      content       TEXT NOT NULL,
+      timestamp     REAL NOT NULL
+    )
+  `)
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_task_exec_log_task ON task_execution_log(task_id)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_task_exec_log_step ON task_execution_log(task_id, step_number)`)
+  } catch {}
+
+  // Task chat log: records AI interaction history related to each task
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_chat_log (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id       TEXT NOT NULL,
+      sender        TEXT NOT NULL,
+      content       TEXT NOT NULL,
+      msg_type      TEXT NOT NULL DEFAULT 'assistant',
+      timestamp     REAL NOT NULL
+    )
+  `)
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_task_chat_log_task ON task_chat_log(task_id)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_task_chat_log_time ON task_chat_log(timestamp)`)
+  } catch {}
+
   // Kanban configuration: per-agent dashboard config with chart definitions
   db.exec(`
     CREATE TABLE IF NOT EXISTS kanban_configs (
@@ -1357,6 +1388,11 @@ function updateTask(taskId, updates) {
     recordTaskEvent(taskId, 'progress', existing.status, existing.status, updates.progress, updates.message || '')
   }
 
+  // Auto-record execution log when description changes (non-empty and different)
+  if (updates.description !== undefined && updates.description !== existing.description && updates.description) {
+    recordTaskExecutionLog(taskId, updates.description)
+  }
+
   return newTask
 }
 
@@ -1458,6 +1494,69 @@ function getTaskEvents(taskId) {
       to_status: r.to_status,
       progress: r.progress,
       message: r.message,
+      timestamp: r.timestamp,
+    })
+  }
+  return result
+}
+
+function recordTaskExecutionLog(taskId, content) {
+  var maxRow = db.sql('SELECT MAX(step_number) as max_step FROM task_execution_log WHERE task_id = ?')
+    .bind(1, taskId).exec()[0]
+  var nextStep = (maxRow && maxRow.max_step) ? maxRow.max_step + 1 : 1
+  db.sql(`
+    INSERT INTO task_execution_log(task_id, step_number, content, timestamp)
+    VALUES(?, ?, ?, ?)
+  `)
+    .bind(1, taskId)
+    .bind(2, nextStep)
+    .bind(3, content)
+    .bind(4, Date.now() / 1000)
+    .exec()
+}
+
+function getTaskExecutionLogs(taskId) {
+  var rows = db.sql('SELECT * FROM task_execution_log WHERE task_id = ? ORDER BY step_number ASC')
+    .bind(1, taskId).exec()
+  var result = []
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]
+    result.push({
+      id: r.id,
+      task_id: r.task_id,
+      step_number: r.step_number,
+      content: r.content,
+      timestamp: r.timestamp,
+    })
+  }
+  return result
+}
+
+function recordTaskChatLog(taskId, sender, content, msgType) {
+  db.sql(`
+    INSERT INTO task_chat_log(task_id, sender, content, msg_type, timestamp)
+    VALUES(?, ?, ?, ?, ?)
+  `)
+    .bind(1, taskId)
+    .bind(2, sender || '')
+    .bind(3, content || '')
+    .bind(4, msgType || 'assistant')
+    .bind(5, Date.now() / 1000)
+    .exec()
+}
+
+function getTaskChatLogs(taskId) {
+  var rows = db.sql('SELECT * FROM task_chat_log WHERE task_id = ? ORDER BY timestamp ASC')
+    .bind(1, taskId).exec()
+  var result = []
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]
+    result.push({
+      id: r.id,
+      task_id: r.task_id,
+      sender: r.sender,
+      content: r.content,
+      msg_type: r.msg_type,
       timestamp: r.timestamp,
     })
   }
@@ -1650,6 +1749,11 @@ export default {
   getTaskCount,
   getTaskAnalysisLog,
   setTaskAnalysisLog,
+  // Task Logs
+  recordTaskExecutionLog,
+  getTaskExecutionLogs,
+  recordTaskChatLog,
+  getTaskChatLogs,
   // Kanban
   getKanbanConfig,
   setKanbanConfig,

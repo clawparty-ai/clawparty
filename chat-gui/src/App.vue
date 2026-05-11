@@ -1017,7 +1017,9 @@ const handleZeroClawError = (error) => {
 // ── Task Management: parse <task> and <subtask> tags from AI responses ──
 
 const parseTaskTags = (content, agentName) => {
-  if (!content || !agentName) return
+  if (!content || !agentName) return []
+
+  const detectedTaskIds = []
 
   // ── Step 1: Parse <task> and <subtask> XML tags ──
   const taskRegex = /<task\s+id="([^"]+)"\s+title="([^"]*)"(?:\s+status="([^"]*)")?(?:\s+progress="(\d+)")?[^>]*>([\s\S]*?)<\/task>/gi
@@ -1030,6 +1032,10 @@ const parseTaskTags = (content, agentName) => {
     const status = taskMatch[3] || 'pending'
     const progress = parseInt(taskMatch[4] || '0', 10)
     const description = taskMatch[5]?.trim() || ''
+
+    if (detectedTaskIds.indexOf(taskId) < 0) {
+      detectedTaskIds.push(taskId)
+    }
 
     taskService.getAgentTasks(agentName).then(res => {
       const existingTasks = res.data?.tasks || []
@@ -1068,6 +1074,10 @@ const parseTaskTags = (content, agentName) => {
     const status = subMatch[4] || 'pending'
     const progress = parseInt(subMatch[5] || '0', 10)
     const description = subMatch[6]?.trim() || ''
+
+    if (detectedTaskIds.indexOf(taskId) < 0) {
+      detectedTaskIds.push(taskId)
+    }
 
     taskService.getAgentTasks(agentName).then(res => {
       const existingTasks = res.data?.tasks || []
@@ -1176,6 +1186,8 @@ const parseTaskTags = (content, agentName) => {
       }).catch(e => console.warn('[Task/Fallback] Query failed:', e))
     }
   }
+
+  return detectedTaskIds
 }
 
 const handleZeroClawMessage = (data) => {
@@ -1228,9 +1240,30 @@ const handleZeroClawMessage = (data) => {
     }
   } else if (data.type === 'done') {
     // Parse full_response for task tags (AI may have sent complete markdown/table in full msg)
+    var detectedTaskIds = []
     if (agent && data.full_response) {
-      parseTaskTags(data.full_response, agent.agent_name || 'main')
+      detectedTaskIds = parseTaskTags(data.full_response, agent.agent_name || 'main')
     }
+
+    // Record chat logs for detected tasks
+    if (detectedTaskIds.length > 0 && data.full_response) {
+      var agentName = agent?.agent_name || 'main'
+      for (var ti = 0; ti < detectedTaskIds.length; ti++) {
+        var tId = detectedTaskIds[ti]
+        // Record AI response
+        taskService.addTaskChatLog(tId, agentName, data.full_response, 'assistant').catch(function(e) {})
+        // Find last user message and record it
+        if (target.messages && target.messages.length > 0) {
+          for (var mi = target.messages.length - 1; mi >= 0; mi--) {
+            if (target.messages[mi].isSent) {
+              taskService.addTaskChatLog(tId, 'user', target.messages[mi].text || '', 'user').catch(function(e) {})
+              break
+            }
+          }
+        }
+      }
+    }
+
     const typingIdx = target.messages?.findIndex(m => m.isTyping)
     if (typingIdx >= 0) {
       if (agent) {
@@ -1762,9 +1795,29 @@ const createGroupChatMessageHandler = (groupId, agentName) => {
     }
     case 'done': {
       // Parse full response for task tags
+      var detectedTaskIds = []
       if (data.full_response) {
-        parseTaskTags(data.full_response, agentName)
+        detectedTaskIds = parseTaskTags(data.full_response, agentName)
       }
+
+      // Record chat logs for detected tasks
+      if (detectedTaskIds.length > 0 && data.full_response) {
+        for (var ti = 0; ti < detectedTaskIds.length; ti++) {
+          var tId = detectedTaskIds[ti]
+          // Record AI response
+          taskService.addTaskChatLog(tId, agentName, data.full_response, 'assistant').catch(function(e) {})
+          // Find last user message and record it
+          if (group.messages && group.messages.length > 0) {
+            for (var mi = group.messages.length - 1; mi >= 0; mi--) {
+              if (group.messages[mi].isSent) {
+                taskService.addTaskChatLog(tId, 'user', group.messages[mi].text || '', 'user').catch(function(e) {})
+                break
+              }
+            }
+          }
+        }
+      }
+
       const replyText = data.full_response || ''
       const isNoReply = replyText.includes('NO_REPLY') || replyText.includes('不回复')
 

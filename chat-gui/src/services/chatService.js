@@ -258,6 +258,22 @@ export const taskService = {
   generatePrompt(taskId) {
     return api.post(`/tasks/${encodeURIComponent(taskId)}/generate-prompt`)
   },
+
+  getTaskExecutionLogs(taskId) {
+    return api.get(`/tasks/${encodeURIComponent(taskId)}/execution-logs`)
+  },
+
+  getTaskChatLogs(taskId) {
+    return api.get(`/tasks/${encodeURIComponent(taskId)}/chat-logs`)
+  },
+
+  addTaskChatLog(taskId, sender, content, msgType) {
+    return api.post(`/tasks/${encodeURIComponent(taskId)}/chat-logs`, {
+      sender: sender,
+      content: content,
+      msg_type: msgType || 'assistant',
+    })
+  },
 }
 
 export const kanbanService = {
