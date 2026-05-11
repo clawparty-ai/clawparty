@@ -51,6 +51,7 @@
       @reuse="handleTaskReuse"
       @generatePrompt="handleGeneratePrompt"
       @createPipelineTask="handleCreatePipelineTask"
+      @savePipeline="handleSavePipeline"
       @togglePipelinePanel="handleTogglePipelinePanel"
       @updateKanbanConfig="handleUpdateKanbanConfig"
       @generateChart="handleGenerateChart"
@@ -379,7 +380,9 @@ const handleCreatePipelineTask = async (data) => {
       description: data.prompt,
       status: 'pending',
       progress: 0,
-      priority: 'normal'
+      priority: 'normal',
+      is_pipeline: true,
+      pipeline_definition: data.pipeline.map(t => t.task_id)
     })
 
     console.log('[Pipeline] Task created:', taskId)
@@ -393,6 +396,20 @@ const handleCreatePipelineTask = async (data) => {
   } catch (err) {
     console.error('[Pipeline] Failed to create task:', err)
     addRefreshLog('error', '创建流水线任务失败: ' + (err.message || err))
+  }
+}
+
+const handleSavePipeline = async (data) => {
+  try {
+    await taskService.updateTask(data.taskId, {
+      pipeline_definition: data.pipeline_definition,
+      description: data.prompt
+    })
+    addRefreshLog('info', '流水线已更新: ' + data.taskId)
+    await loadTasks()
+  } catch (err) {
+    console.error('[Pipeline] Failed to save pipeline:', err)
+    addRefreshLog('error', '保存流水线失败: ' + (err.message || err))
   }
 }
 

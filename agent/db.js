@@ -292,6 +292,8 @@ function open(pathname) {
       progress      INTEGER DEFAULT 0,
       priority      TEXT DEFAULT 'normal',
       dependencies  TEXT,
+      is_pipeline   INTEGER DEFAULT 0,
+      pipeline_definition TEXT,
       created_at    REAL NOT NULL,
       updated_at    REAL NOT NULL,
       started_at    REAL,
@@ -317,6 +319,10 @@ function open(pathname) {
 
   // Migration: add prompt for task reuse
   try { db.exec(`ALTER TABLE tasks ADD COLUMN prompt TEXT`) } catch {}
+
+  // Migration: add pipeline fields
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN is_pipeline INTEGER DEFAULT 0`) } catch {}
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN pipeline_definition TEXT`) } catch {}
 
   // Backfill task_number for existing tasks that don't have one yet
   try {
@@ -1252,8 +1258,8 @@ function createTask(task) {
   var nextNumber = (maxRow && maxRow.max_num) ? maxRow.max_num + 1 : 1
 
   db.sql(`
-    INSERT INTO tasks(task_id, agent_name, group_id, parent_id, title, short_title, description, ai_description, status, progress, priority, dependencies, task_number, prompt, created_at, updated_at)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks(task_id, agent_name, group_id, parent_id, title, short_title, description, ai_description, status, progress, priority, dependencies, task_number, prompt, is_pipeline, pipeline_definition, created_at, updated_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
     .bind(1, task.task_id)
     .bind(2, task.agent_name)
@@ -1269,8 +1275,10 @@ function createTask(task) {
     .bind(12, task.dependencies ? JSON.stringify(task.dependencies) : null)
     .bind(13, nextNumber)
     .bind(14, task.prompt || null)
-    .bind(15, t)
-    .bind(16, t)
+    .bind(15, task.is_pipeline ? 1 : 0)
+    .bind(16, task.pipeline_definition ? JSON.stringify(task.pipeline_definition) : null)
+    .bind(17, t)
+    .bind(18, t)
     .exec()
 
   recordTaskEvent(task.task_id, 'created', null, task.status || 'pending', task.progress || 0, 'Task created')
@@ -1297,6 +1305,8 @@ function getTask(taskId) {
     task_number: row.task_number,
     result_summary: row.result_summary,
     prompt: row.prompt,
+    is_pipeline: row.is_pipeline ? true : false,
+    pipeline_definition: row.pipeline_definition ? JSON.parse(row.pipeline_definition) : [],
     created_at: row.created_at,
     updated_at: row.updated_at,
     started_at: row.started_at,
@@ -1324,6 +1334,8 @@ function updateTask(taskId, updates) {
   if (updates.completed_at !== undefined) { fields.push('completed_at = ?'); params.push(updates.completed_at) }
   if (updates.result_summary !== undefined) { fields.push('result_summary = ?'); params.push(updates.result_summary) }
   if (updates.prompt !== undefined) { fields.push('prompt = ?'); params.push(updates.prompt) }
+  if (updates.is_pipeline !== undefined) { fields.push('is_pipeline = ?'); params.push(updates.is_pipeline ? 1 : 0) }
+  if (updates.pipeline_definition !== undefined) { fields.push('pipeline_definition = ?'); params.push(JSON.stringify(updates.pipeline_definition)) }
 
   fields.push('updated_at = ?')
   params.push(t)
@@ -1393,6 +1405,8 @@ function getAgentTasks(agentName) {
       task_number: row.task_number,
       result_summary: row.result_summary,
       prompt: row.prompt,
+      is_pipeline: row.is_pipeline ? true : false,
+      pipeline_definition: row.pipeline_definition ? JSON.parse(row.pipeline_definition) : [],
       created_at: row.created_at,
       updated_at: row.updated_at,
       started_at: row.started_at,

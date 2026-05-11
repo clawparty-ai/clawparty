@@ -76,6 +76,7 @@
               <span class="task-created">{{ formatDate(task.created_at) }}</span>
               <span class="task-title" :title="task.ai_description || task.description">
                 <span v-if="task._isPendingCreate" class="new-badge">新</span>
+                <span v-if="task.is_pipeline" class="pipeline-badge" title="流水线任务">🔗</span>
                 {{ task.short_title || task.title }}
               </span>
               <span class="task-duration" v-if="task.created_at">{{ formatDuration(task) }}</span>
@@ -123,8 +124,11 @@
         v-if="showPipelinePanel"
         :tasks="flattenedTasks"
         :agentName="agentName"
-        @close="showPipelinePanel = false"
+        :mode="pipelineEditorMode"
+        :pipelineTask="editingPipelineTask"
+        @close="handleClosePipelineEditor"
         @createTask="handleCreatePipelineTask"
+        @savePipeline="handleSavePipeline"
       />
       <TaskKanban
         v-else-if="showKanbanPanel"
@@ -210,13 +214,15 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutChange', 'reuse', 'generatePrompt', 'createPipelineTask', 'togglePipelinePanel', 'updateKanbanConfig', 'generateChart'])
+const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutChange', 'reuse', 'generatePrompt', 'createPipelineTask', 'togglePipelinePanel', 'updateKanbanConfig', 'generateChart', 'savePipeline'])
 
 const logBodyRef = ref(null)
 const refreshTimeout = ref(120)
 const expandedTaskIds = ref(new Set())
 const showPipelinePanel = ref(false)
 const showKanbanPanel = ref(false)
+const pipelineEditorMode = ref('create')
+const editingPipelineTask = ref(null)
 
 watch(() => refreshTimeout.value, (newVal) => {
   emit('refreshTimeoutChange', newVal)
@@ -238,8 +244,19 @@ const onRefresh = () => {
 }
 
 const toggleExpand = (taskId) => {
+  const task = flattenedTasks.value.find(t => t.task_id === taskId)
+  const isCurrentlyExpanded = expandedTaskIds.value.has(taskId)
+
+  if (!isCurrentlyExpanded && task && task.is_pipeline) {
+    pipelineEditorMode.value = 'edit'
+    editingPipelineTask.value = task
+    showPipelinePanel.value = true
+    showKanbanPanel.value = false
+    emit('togglePipelinePanel', true)
+  }
+
   const next = new Set(expandedTaskIds.value)
-  if (next.has(taskId)) {
+  if (isCurrentlyExpanded) {
     next.delete(taskId)
   } else {
     next.add(taskId)
@@ -281,10 +298,28 @@ const handleCreatePipelineTask = (data) => {
   emit('createPipelineTask', data)
 }
 
+const handleSavePipeline = (data) => {
+  emit('savePipeline', data)
+}
+
+const handleClosePipelineEditor = () => {
+  showPipelinePanel.value = false
+  editingPipelineTask.value = null
+  pipelineEditorMode.value = 'create'
+  emit('togglePipelinePanel', false)
+}
+
 const togglePipelinePanel = () => {
   showPipelinePanel.value = !showPipelinePanel.value
   if (showPipelinePanel.value) {
     showKanbanPanel.value = false
+    if (pipelineEditorMode.value === 'edit') {
+      pipelineEditorMode.value = 'create'
+      editingPipelineTask.value = null
+    }
+  } else {
+    editingPipelineTask.value = null
+    pipelineEditorMode.value = 'create'
   }
   emit('togglePipelinePanel', showPipelinePanel.value)
 }
@@ -1012,6 +1047,12 @@ const taskStats = computed(() => {
   color: #4095fe;
   margin-right: 4px;
   font-weight: 600;
+}
+
+.pipeline-badge {
+  display: inline-block;
+  font-size: 13px;
+  margin-right: 4px;
 }
 
 /* Pending reason + confirm button */

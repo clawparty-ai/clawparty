@@ -657,6 +657,8 @@ function main(listen, apiToken, noAuth) {
           priority: body.priority || 'normal',
           dependencies: body.dependencies || [],
           prompt: body.prompt || null,
+          is_pipeline: body.is_pipeline || false,
+          pipeline_definition: body.pipeline_definition || [],
         }
         return response(201, db.createTask(task))
       }

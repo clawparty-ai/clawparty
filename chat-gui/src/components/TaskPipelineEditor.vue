@@ -2,7 +2,7 @@
   <div class="pipeline-editor">
     <div class="pipeline-header">
       <span class="pipeline-icon">🔗</span>
-      <span class="pipeline-title">流水线设计</span>
+      <span class="pipeline-title">{{ mode === 'edit' ? '流水线编辑' : '流水线设计' }}</span>
       <button class="pipeline-close-btn" @click="$emit('close')" title="关闭流水线">×</button>
     </div>
 
@@ -61,11 +61,20 @@
             {{ isGenerating ? '生成中...' : '生成提示词' }}
           </button>
           <button
+            v-if="mode === 'create'"
             class="action-btn create-btn"
             :disabled="!promptText.trim() || isCreating"
             @click="createTask"
           >
             {{ isCreating ? '创建中...' : '创建任务' }}
+          </button>
+          <button
+            v-else
+            class="action-btn save-btn"
+            :disabled="!promptText.trim() || isSaving"
+            @click="savePipeline"
+          >
+            {{ isSaving ? '保存中...' : '保存' }}
           </button>
         </div>
       </div>
@@ -74,7 +83,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, watch } from 'vue'
 
 const props = defineProps({
   tasks: {
@@ -84,17 +93,53 @@ const props = defineProps({
   agentName: {
     type: String,
     default: ''
+  },
+  mode: {
+    type: String,
+    default: 'create'
+  },
+  pipelineTask: {
+    type: Object,
+    default: null
   }
 })
 
-const emit = defineEmits(['close', 'createTask'])
+const emit = defineEmits(['close', 'createTask', 'savePipeline'])
 
 const pipeline = ref([])
 const promptText = ref('')
 const isGenerating = ref(false)
 const isCreating = ref(false)
+const isSaving = ref(false)
 const isDragOver = ref(false)
 const dragIndex = ref(-1)
+
+// Load pipeline data when in edit mode
+watch(() => props.pipelineTask, (newTask) => {
+  if (props.mode === 'edit' && newTask && newTask.pipeline_definition) {
+    pipeline.value = []
+    for (let i = 0; i < newTask.pipeline_definition.length; i++) {
+      const taskId = newTask.pipeline_definition[i]
+      const task = props.tasks.find(t => t.task_id === taskId)
+      if (task) {
+        pipeline.value.push({
+          task_id: task.task_id,
+          title: task.short_title || task.title || '未命名任务',
+          description: task.description || task.ai_description || ''
+        })
+      }
+    }
+    promptText.value = newTask.description || ''
+  }
+}, { immediate: true })
+
+// Reset when switching to create mode
+watch(() => props.mode, (newMode) => {
+  if (newMode === 'create') {
+    pipeline.value = []
+    promptText.value = ''
+  }
+})
 
 let dragCounter = 0
 
@@ -204,6 +249,27 @@ const createTask = async () => {
     console.error('[Pipeline] Failed to create task:', err)
   } finally {
     isCreating.value = false
+  }
+}
+
+const savePipeline = async () => {
+  if (!props.pipelineTask || !promptText.value.trim()) return
+
+  isSaving.value = true
+  try {
+    const definition = []
+    for (let i = 0; i < pipeline.value.length; i++) {
+      definition.push(pipeline.value[i].task_id)
+    }
+    emit('savePipeline', {
+      taskId: props.pipelineTask.task_id,
+      pipeline_definition: definition,
+      prompt: promptText.value
+    })
+  } catch (err) {
+    console.error('[Pipeline] Failed to save pipeline:', err)
+  } finally {
+    isSaving.value = false
   }
 }
 </script>
@@ -490,5 +556,15 @@ const createTask = async () => {
 .create-btn:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(46, 182, 125, 0.4);
+}
+
+.save-btn {
+  background: linear-gradient(135deg, #4095fe 0%, #1d9bd1 100%);
+  color: #fff;
+}
+
+.save-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(64, 149, 254, 0.4);
 }
 </style>
