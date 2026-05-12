@@ -6,17 +6,59 @@ ZTM_DIR=$(cd "$(dirname "$0")" && pwd)
 GUI_DIR="$ZTM_DIR/chat-gui"
 
 CLEAN=false
-ZTM_ONLY=false
+BUILD_ZTM=false
+BUILD_ZEROCLAW=false
+BUILD_TUI=false
+BUILD_PIPY=false
+
+# Determine build targets from arguments
+has_positional=false
 for arg in "$@"; do
   case $arg in
     --clean|-c)
       CLEAN=true
       ;;
     --ztm-only|-z)
-      ZTM_ONLY=true
+      # Legacy flag: only skip Rust binaries, build everything else
+      BUILD_ZTM=true
+      ;;
+    ztm|all)
+      has_positional=true
+      BUILD_ZTM=true
+      BUILD_ZEROCLAW=true
+      BUILD_TUI=true
+      BUILD_PIPY=true
+      ;;
+    zeroclaw)
+      has_positional=true
+      BUILD_ZEROCLAW=true
+      ;;
+    tui)
+      has_positional=true
+      BUILD_TUI=true
+      ;;
+    pipy)
+      has_positional=true
+      BUILD_PIPY=true
       ;;
   esac
 done
+
+# Default: build everything if no positional arg was given
+if [ "$has_positional" = false ]; then
+  BUILD_ZTM=true
+  BUILD_ZEROCLAW=true
+  BUILD_TUI=true
+  BUILD_PIPY=true
+fi
+
+# Legacy --ztm-only with no positional arg also triggers full ZTM build
+if [ "$BUILD_ZTM" = false ] && [ "$BUILD_ZEROCLAW" = false ] && [ "$BUILD_TUI" = false ] && [ "$BUILD_PIPY" = false ]; then
+  BUILD_ZTM=true
+  BUILD_ZEROCLAW=true
+  BUILD_TUI=true
+  BUILD_PIPY=true
+fi
 
 if [ ! -d "$GUI_DIR" ] && [ -d "$ZTM_DIR/gui" ]; then
   GUI_DIR="$ZTM_DIR/gui"
@@ -37,19 +79,20 @@ if [ "$CLEAN" = true ]; then
   rm -rf "$ZTM_DIR/chat-gui/dist"
 fi
 
-cd "$GUI_DIR"
-yarn install
+# GUI is always built when ZTM is requested (no standalone GUI target)
+if [ "$BUILD_ZTM" = true ] || [ "$BUILD_PIPY" = true ]; then
+  cd "$GUI_DIR"
+  yarn install
 
-cd "$ZTM_DIR"
-build/deps.sh
+  cd "$ZTM_DIR"
+  build/deps.sh
 
-cd "$ZTM_DIR"
-build/gui.sh
+  cd "$ZTM_DIR"
+  build/gui.sh
+fi
 
-# Build Rust binaries before pipy.sh so its package step can include them.
-# (Skipped in --ztm-only mode.)
-if [ "$ZTM_ONLY" != true ]; then
-  # Build ZeroClaw (Rust)
+# Build ZeroClaw (Rust)
+if [ "$BUILD_ZEROCLAW" = true ]; then
   echo "Building ZeroClaw..."
   cd "$ZTM_DIR/zeroclaw"
   mkdir -p "$HOME/.clawparty/.zeroclaw"
@@ -60,8 +103,10 @@ if [ "$ZTM_ONLY" != true ]; then
     codesign -s - --force --deep "$ZTM_DIR/bin/zeroclaw" 2>/dev/null || true
   fi
   echo "ZeroClaw built: $ZTM_DIR/bin/zeroclaw"
+fi
 
-  # Build TUI (Rust)
+# Build TUI (Rust)
+if [ "$BUILD_TUI" = true ]; then
   echo "Building TUI..."
   cd "$ZTM_DIR/tui"
   cargo build --release
@@ -73,28 +118,27 @@ if [ "$ZTM_ONLY" != true ]; then
   echo "TUI built: $ZTM_DIR/bin/clawparty"
 fi
 
-cd "$ZTM_DIR"
+# Build plain pipy + pipy.sh
+if [ "$BUILD_PIPY" = true ]; then
+  cd "$ZTM_DIR"
 
-# Build plain pipy without internal repos
-echo "Building plain pipy..."
-mkdir -p "$ZTM_DIR/pipy/build-plain"
-cd "$ZTM_DIR/pipy/build-plain"
-cmake .. \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_COMPILER=clang \
-  -DCMAKE_CXX_COMPILER=clang++ \
-  -DPIPY_GUI=OFF \
-  -DPIPY_SAMPLE_CODEBASES=OFF
-make -j2
-mkdir -p "$ZTM_DIR/bin"
-cp -f "$ZTM_DIR/pipy/bin/pipy" "$ZTM_DIR/bin/pipy"
-echo "Plain pipy built: $ZTM_DIR/bin/pipy"
-rm -rf "$ZTM_DIR/pipy/build-plain"
+  echo "Building plain pipy..."
+  mkdir -p "$ZTM_DIR/pipy/build-plain"
+  cd "$ZTM_DIR/pipy/build-plain"
+  cmake .. \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DPIPY_GUI=OFF \
+    -DPIPY_SAMPLE_CODEBASES=OFF
+  make -j2
+  mkdir -p "$ZTM_DIR/bin"
+  cp -f "$ZTM_DIR/pipy/bin/pipy" "$ZTM_DIR/bin/pipy"
+  echo "Plain pipy built: $ZTM_DIR/bin/pipy"
+  rm -rf "$ZTM_DIR/pipy/build-plain"
 
-cd "$ZTM_DIR"
-build/pipy.sh
-
-if [ "$ZTM_ONLY" = true ]; then
-  echo "=== ZTM only build complete ==="
-  exit 0
+  cd "$ZTM_DIR"
+  build/pipy.sh
 fi
+
+echo "=== Build complete ==="

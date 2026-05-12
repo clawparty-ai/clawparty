@@ -140,6 +140,8 @@
             <div class="preview-body">
               <img v-if="isImagePreview" :src="previewUrl" class="preview-image" :alt="previewName" />
               <iframe v-else-if="isHtmlPreview" :src="previewUrl" class="preview-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
+              <div v-else-if="isMarkdownPreview" class="preview-markdown" v-html="markdownContent"></div>
+              <pre v-else-if="isTextPreview" class="preview-text">{{ textContent }}</pre>
               <div v-else class="preview-placeholder">
                 <span class="preview-icon">{{ fileIcon(previewName) }}</span>
                 <span class="preview-hint">暂不支持此文件预览</span>
@@ -165,6 +167,8 @@
         <div class="fullscreen-preview-body">
           <img v-if="isImagePreview" :src="previewUrl" class="fullscreen-preview-image" :alt="previewName" />
           <iframe v-else-if="isHtmlPreview" :src="previewUrl" class="fullscreen-preview-iframe"></iframe>
+          <div v-else-if="isMarkdownPreview" class="preview-markdown fullscreen" v-html="markdownContent"></div>
+          <pre v-else-if="isTextPreview" class="preview-text fullscreen">{{ textContent }}</pre>
           <div v-else class="fullscreen-preview-placeholder">
             <span class="preview-icon">{{ fileIcon(previewName) }}</span>
             <span class="preview-hint">暂不支持此文件预览</span>
@@ -183,6 +187,7 @@
 
 <script setup>
 import { ref, watch, computed } from 'vue'
+import { marked } from 'marked'
 import { webshareService } from '../services/chatService'
 
 const props = defineProps({
@@ -214,6 +219,8 @@ const currentPath = ref('')
 const previewUrl = ref('')
 const previewName = ref('')
 const fullPreview = ref(false)
+const markdownContent = ref('')
+const textContent = ref('')
 
 // Upload drag & drop state
 const isDragOver = ref(false)
@@ -348,6 +355,62 @@ const isHtmlPreview = computed(() => {
   return name.endsWith('.html') || name.endsWith('.htm')
 })
 
+const isMarkdownPreview = computed(() => {
+  const name = previewName.value.toLowerCase()
+  return name.endsWith('.md') || name.endsWith('.markdown')
+})
+
+const isTextPreview = computed(() => {
+  const name = previewName.value.toLowerCase()
+  return name.endsWith('.txt') || name.endsWith('.text') || name.endsWith('.log')
+})
+
+const loadTextContent = async () => {
+  if (!isTextPreview.value) {
+    textContent.value = ''
+    return
+  }
+  try {
+    const res = await webshareService.getAgentWebshareFileContent(props.agentName, previewName.value, currentPath.value)
+    var text
+    if (typeof res === 'string') {
+      text = res
+    } else if (res instanceof ArrayBuffer) {
+      const decoder = new TextDecoder('utf-8')
+      text = decoder.decode(res)
+    } else {
+      text = res?.data instanceof ArrayBuffer ? new TextDecoder('utf-8').decode(res.data) : (res?.data || res)
+    }
+    textContent.value = text
+  } catch (err) {
+    console.error('[WebShare] Failed to load text:', err)
+    textContent.value = '加载失败'
+  }
+}
+
+const loadMarkdownContent = async () => {
+  if (!isMarkdownPreview.value) {
+    markdownContent.value = ''
+    return
+  }
+  try {
+    const res = await webshareService.getAgentWebshareFileContent(props.agentName, previewName.value, currentPath.value)
+    var text
+    if (typeof res === 'string') {
+      text = res
+    } else if (res instanceof ArrayBuffer) {
+      const decoder = new TextDecoder('utf-8')
+      text = decoder.decode(res)
+    } else {
+      text = res?.data instanceof ArrayBuffer ? new TextDecoder('utf-8').decode(res.data) : (res?.data || res)
+    }
+    markdownContent.value = marked(text)
+  } catch (err) {
+    console.error('[WebShare] Failed to load markdown:', err)
+    markdownContent.value = '<p style="color:red;">加载失败</p>'
+  }
+}
+
 const toggleExpanded = () => {
   if (!props.expanded) {
     emit('toggle')
@@ -407,9 +470,17 @@ const copyFileUrl = async (filename) => {
   }
 }
 
-const previewFile = (filename) => {
+const previewFile = async (filename) => {
   previewName.value = filename
   previewUrl.value = fileUrl(filename)
+  if (isMarkdownPreview.value) {
+    await loadMarkdownContent()
+  } else if (isTextPreview.value) {
+    await loadTextContent()
+  } else {
+    markdownContent.value = ''
+    textContent.value = ''
+  }
 }
 
 const openFile = (filename) => {
@@ -442,6 +513,7 @@ const fileIcon = (name) => {
   if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp') || lower.endsWith('.svg')) return '🖼️'
   if (lower.endsWith('.pdf')) return '📄'
   if (lower.endsWith('.md')) return '📝'
+  if (lower.endsWith('.txt') || lower.endsWith('.text') || lower.endsWith('.log')) return '📃'
   if (lower.endsWith('.mp4') || lower.endsWith('.webm')) return '🎬'
   if (lower.endsWith('.mp3') || lower.endsWith('.wav') || lower.endsWith('.ogg')) return '🎵'
   return '📄'
@@ -825,6 +897,136 @@ const stopResize = () => {
   border: none;
   background: #fff;
   border-radius: 4px;
+}
+
+.preview-markdown {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #333;
+  box-sizing: border-box;
+}
+
+.preview-markdown.fullscreen {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+  font-size: 15px;
+}
+
+.preview-markdown :deep(h1),
+.preview-markdown :deep(h2),
+.preview-markdown :deep(h3),
+.preview-markdown :deep(h4) {
+  margin: 16px 0 8px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.preview-markdown :deep(h1) { font-size: 1.5em; }
+.preview-markdown :deep(h2) { font-size: 1.3em; }
+.preview-markdown :deep(h3) { font-size: 1.15em; }
+
+.preview-markdown :deep(p) {
+  margin: 8px 0;
+}
+
+.preview-markdown :deep(code) {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+.preview-markdown :deep(pre) {
+  background: #f5f5f5;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.preview-markdown :deep(pre code) {
+  background: none;
+  padding: 0;
+}
+
+.preview-markdown :deep(ul),
+.preview-markdown :deep(ol) {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.preview-markdown :deep(li) {
+  margin: 4px 0;
+}
+
+.preview-markdown :deep(blockquote) {
+  border-left: 4px solid #ddd;
+  padding-left: 12px;
+  margin: 12px 0;
+  color: #666;
+}
+
+.preview-markdown :deep(a) {
+  color: #4095fe;
+  text-decoration: none;
+}
+
+.preview-markdown :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.preview-markdown :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+
+.preview-markdown :deep(th),
+.preview-markdown :deep(td) {
+  border: 1px solid #ddd;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.preview-markdown :deep(th) {
+  background: #f5f5f5;
+  font-weight: 600;
+}
+
+.preview-markdown :deep(img) {
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+.preview-text {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: 12px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #333;
+  background: #fafafa;
+  border: none;
+  box-sizing: border-box;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+}
+
+.preview-text.fullscreen {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+  font-size: 14px;
+  background: #fff;
 }
 
 .preview-empty {

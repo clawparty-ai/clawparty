@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { get, post, del, put, setToken, getToken } from './request'
+import { get, post, del, put, setToken, getToken, getMetaUrl } from './request'
 export function setApiToken(token) {
   return setToken(token)
 }
@@ -458,14 +458,22 @@ export const webshareService = {
   },
   getAgentWebshareFileUrl(agentName, filename, path) {
     var token = getToken() ? `token=${encodeURIComponent(getToken())}` : ''
-    var url = `/api/webshare/${encodeURIComponent(agentName)}/file/${encodeURIComponent(filename)}`
+    var url = `/webshare/${encodeURIComponent(agentName)}/file/${encodeURIComponent(filename)}`
     var sep = '?'
     if (path) {
       url += `?path=${encodeURIComponent(path)}`
       sep = '&'
     }
     if (token) url += sep + token
+    if (typeof window !== 'undefined' && !window.__TAURI_INTERNALS__) {
+      url = getMetaUrl(url)
+    }
     return url
+  },
+  getAgentWebshareFileContent(agentName, filename, path) {
+    var url = `/webshare/${encodeURIComponent(agentName)}/file/${encodeURIComponent(filename)}`
+    if (path) url += `?path=${encodeURIComponent(path)}`
+    return api.get(url, { responseType: 'arraybuffer' })
   },
   uploadAgentWebshareFile(agentName, fileData, fileName, path) {
     var url = `/webshare/${encodeURIComponent(agentName)}/upload?name=${encodeURIComponent(fileName)}`

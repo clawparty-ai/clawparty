@@ -187,12 +187,13 @@ function getMetaUrl(url){
 		}
 	}
 	const devPath = localStorage.getItem("DEV_BASE")
+	const apiPrefix = url.indexOf('/api/') === 0 ? '' : '/api'
 	if(!!devPath){
-		return `http://127.0.0.1:${getPort()}${devPath}${url}`
+		return `http://127.0.0.1:${getPort()}${devPath}${apiPrefix}${url}`
 	}else if(!window.__TAURI_INTERNALS__ || url.indexOf('://')>=0){
-		return `${path}${url}`
+		return path ? `${path}${url}` : `http://localhost:${getPort()}${apiPrefix}${url}`
 	} else {
-		return `http://127.0.0.1:${getPort()}${path}${url}`
+		return `http://127.0.0.1:${getPort()}${path}${apiPrefix}${url}`
 	}
 }
 function getLocalUrl(url){
@@ -342,7 +343,7 @@ async function request(url, method, params, config) {
 		const _header = config?.headers || {};
 		const isJson = !_header["Content-Type"] || _header["Content-Type"] == "application/json";
 		if(!!method && method != METHOD.GET){
-			return tauriFetch(getUrl('/api'+url), getConfig(config,params, method)).then((res) => {
+			return tauriFetch(getUrl((url.indexOf('/api/') === 0 ? '' : '/api') + url), getConfig(config,params, method)).then((res) => {
 				if(typeof(res) == 'object' && res.status >= 400){
 					return Promise.reject(res);
 				} else if(typeof(res) == 'object' && !!res.body && isJson){
@@ -359,10 +360,7 @@ async function request(url, method, params, config) {
 				throw e;
 			});
 		} else {
-			// console.log(getUrl(url))
-			// const req = tauriFetch(getUrl(url), getConfig(config,params, method));
-			// return await req.body.json();
-			return tauriFetch(getUrl('/api'+url), getConfig(config,params, method)).then((res) => {
+			return tauriFetch(getUrl((url.indexOf('/api/') === 0 ? '' : '/api') + url), getConfig(config,params, method)).then((res) => {
 				// console.log(res)
 				if(typeof(res) == 'object' && res.status >= 400){
 					return Promise.reject(res);
