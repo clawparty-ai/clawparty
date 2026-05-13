@@ -2353,6 +2353,15 @@ pub async fn run(
         None
     };
     let native_tools = provider.supports_native_tools();
+    let memory_session_id = session_state_file.as_deref().and_then(|path| {
+        let raw = path.to_string_lossy().trim().to_string();
+        if raw.is_empty() {
+            None
+        } else {
+            Some(format!("cli:{raw}"))
+        }
+    });
+    let peer_name = memory_session_id.as_deref().map(crate::peers::peer_name_from_session_id);
     let mut system_prompt = crate::agent::system_prompt::build_system_prompt_with_mode_and_autonomy(
         &config.workspace_dir,
         &model_name,
@@ -2365,6 +2374,7 @@ pub async fn run(
         config.skills.prompt_injection_mode,
         config.agent.compact_context,
         config.agent.max_system_prompt_chars,
+        peer_name,
     );
 
     // Append structured tool-use instructions with schemas (only for non-native providers)
@@ -2385,14 +2395,6 @@ pub async fn run(
         None
     };
     let channel_name = if interactive { "cli" } else { "daemon" };
-    let memory_session_id = session_state_file.as_deref().and_then(|path| {
-        let raw = path.to_string_lossy().trim().to_string();
-        if raw.is_empty() {
-            None
-        } else {
-            Some(format!("cli:{raw}"))
-        }
-    });
 
     // ── Cost tracking context (scoped for CLI / cron / web agents) ──
     let cost_tracking_context: Option<ToolLoopCostTrackingContext> =
@@ -3245,6 +3247,7 @@ pub async fn process_message(
         None
     };
     let native_tools = provider.supports_native_tools();
+    let peer_name = session_id.map(crate::peers::peer_name_from_session_id);
     let mut system_prompt = crate::agent::system_prompt::build_system_prompt_with_mode_and_autonomy(
         &config.workspace_dir,
         &model_name,
@@ -3257,6 +3260,7 @@ pub async fn process_message(
         config.skills.prompt_injection_mode,
         config.agent.compact_context,
         config.agent.max_system_prompt_chars,
+        peer_name,
     );
     if !native_tools {
         system_prompt.push_str(&build_tool_instructions(&tools_registry, Some(&i18n_descs)));
@@ -3271,7 +3275,7 @@ pub async fn process_message(
         match crate::agent::thinking::parse_thinking_directive(message) {
             Some((level, remaining)) => {
                 tracing::info!(thinking_level = ?level, "Thinking directive parsed from message");
-                (Some(level), remaining)
+                (Some(level), remaining.to_string())
             }
             None => (None, message.to_string()),
         };

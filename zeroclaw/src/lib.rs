@@ -88,6 +88,8 @@ pub mod rag;
 #[cfg(feature = "agent-runtime")]
 pub mod routines;
 #[cfg(feature = "agent-runtime")]
+pub mod peers;
+#[cfg(feature = "agent-runtime")]
 pub(crate) mod security;
 #[cfg(feature = "agent-runtime")]
 pub(crate) mod service;
@@ -622,6 +624,28 @@ pub enum SopCommands {
     /// Show details of an SOP
     Show {
         /// Name of the SOP to show
+        name: String,
+    },
+}
+
+/// Peer profile management subcommands
+#[derive(Subcommand, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PeerCommands {
+    /// List all peer profiles
+    List,
+    /// Show a peer profile's content
+    Show {
+        /// Peer name
+        name: String,
+    },
+    /// Create or edit a peer profile (opens editor or creates from template)
+    Add {
+        /// Peer name
+        name: String,
+    },
+    /// Remove a peer profile
+    Remove {
+        /// Peer name
         name: String,
     },
 }

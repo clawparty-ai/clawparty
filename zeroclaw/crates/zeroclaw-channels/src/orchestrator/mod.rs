@@ -5270,6 +5270,7 @@ pub async fn start_channels(config: Config) -> Result<()> {
         config.skills.prompt_injection_mode,
         config.agent.compact_context,
         config.agent.max_system_prompt_chars,
+        None,
     );
     if !native_tools {
         system_prompt.push_str(&build_tool_instructions(

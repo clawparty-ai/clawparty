@@ -18,6 +18,7 @@ pub mod hooks;
 pub mod integrations;
 pub mod nodes;
 pub mod observability;
+pub mod peers;
 pub mod onboard;
 pub mod platform;
 pub mod rag;

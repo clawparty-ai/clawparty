@@ -99,6 +99,7 @@ pub fn build_system_prompt_with_mode(
         skills_prompt_mode,
         false,
         0,
+        None,
     )
 }
 
@@ -115,6 +116,7 @@ pub fn build_system_prompt_with_mode_and_autonomy(
     skills_prompt_mode: zeroclaw_config::schema::SkillsPromptInjectionMode,
     compact_context: bool,
     max_system_prompt_chars: usize,
+    peer_name: Option<&str>,
 ) -> String {
     use std::fmt::Write;
     let mut prompt = String::with_capacity(8192);
@@ -277,6 +279,16 @@ pub fn build_system_prompt_with_mode_and_autonomy(
         // No identity config - use OpenClaw format
         let max_chars = bootstrap_max_chars.unwrap_or(BOOTSTRAP_MAX_CHARS);
         load_openclaw_bootstrap_files(&mut prompt, workspace_dir, max_chars);
+    }
+
+    // ── 5b. Peer profile (session-specific persona) ─────────────
+    if let Some(name) = peer_name {
+        if let Some(peer) = crate::peers::load_peer(workspace_dir, name) {
+            if let Some(fragment) = crate::peers::peer_to_prompt_fragment(&peer) {
+                prompt.push_str(&fragment);
+                prompt.push('\n');
+            }
+        }
     }
 
     // ── 6. Date & Time ──────────────────────────────────────────

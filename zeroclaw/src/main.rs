@@ -116,6 +116,8 @@ mod identity;
 mod integrations;
 mod memory;
 #[cfg(feature = "agent-runtime")]
+mod peers;
+#[cfg(feature = "agent-runtime")]
 mod migration;
 #[cfg(feature = "agent-runtime")]
 mod multimodal;
@@ -158,7 +160,7 @@ use config::Config;
 // Re-export so binary modules can use crate::<CommandEnum> while keeping a single source of truth.
 pub use zeroclaw::{
     ChannelCommands, CronCommands, GatewayCommands, HardwareCommands, IntegrationCommands,
-    MigrateCommands, PeripheralCommands, ServiceCommands, SkillCommands, SopCommands,
+    MigrateCommands, PeerCommands, PeripheralCommands, ServiceCommands, SkillCommands, SopCommands,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -465,6 +467,23 @@ Examples:
     Sop {
         #[command(subcommand)]
         sop_command: SopCommands,
+    },
+
+    /// Manage peer profiles (session personas)
+    #[command(long_about = "\
+Manage peer profiles that define the preferences and communication style of each session participant.
+
+Peer profiles live in `workspace/peers/<name>/PEER.md` and are injected into the system prompt
+so the agent adapts its responses to the peer's style.
+
+Examples:
+  zeroclaw peer list
+  zeroclaw peer show me
+  zeroclaw peer add me
+  zeroclaw peer remove me")]
+    Peer {
+        #[command(subcommand)]
+        peer_command: PeerCommands,
     },
 
     /// Migrate data from other agent runtimes
@@ -1721,6 +1740,8 @@ async fn main() -> Result<()> {
         Commands::Skills { skill_command } => skills::handle_command(skill_command, &config),
 
         Commands::Sop { sop_command } => sop::handle_command(sop_command, &config),
+
+        Commands::Peer { peer_command } => peers::handle_command(peer_command, &config),
 
         Commands::Migrate { migrate_command } => {
             migration::handle_command(migrate_command, &config).await
