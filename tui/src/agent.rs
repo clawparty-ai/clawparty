@@ -5,6 +5,11 @@ use tokio::sync::mpsc;
 
 pub struct AgentManager {
     process: Option<Child>,
+    pipy_bin: String,
+    data_dir: String,
+    listen_addr: String,
+    token: String,
+    log_tx: mpsc::Sender<String>,
 }
 
 impl AgentManager {
@@ -15,21 +20,34 @@ impl AgentManager {
         token: String,
         log_tx: mpsc::Sender<String>,
     ) -> Self {
-        let expanded_data = data_dir.replace(
+        let mut mgr = Self {
+            process: None,
+            pipy_bin,
+            data_dir,
+            listen_addr,
+            token,
+            log_tx,
+        };
+        mgr.spawn();
+        mgr
+    }
+
+    fn spawn(&mut self) {
+        let expanded_data = self.data_dir.replace(
             "~",
             &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()),
         );
 
-        let mut child = Command::new(&pipy_bin)
+        let mut child = Command::new(&self.pipy_bin)
             .args([
                 "run",
                 "agent",
                 "--listen",
-                &listen_addr,
+                &self.listen_addr,
                 "--data",
                 &expanded_data,
                 "--api-token",
-                &token,
+                &self.token,
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -40,7 +58,7 @@ impl AgentManager {
 
         // Capture stdout
         if let Some(stdout) = child.stdout.take() {
-            let tx = log_tx.clone();
+            let tx = self.log_tx.clone();
             std::thread::spawn(move || {
                 let reader = BufReader::new(stdout);
                 for line in reader.lines() {
@@ -53,7 +71,7 @@ impl AgentManager {
 
         // Capture stderr
         if let Some(stderr) = child.stderr.take() {
-            let tx = log_tx.clone();
+            let tx = self.log_tx.clone();
             std::thread::spawn(move || {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines() {
@@ -64,9 +82,12 @@ impl AgentManager {
             });
         }
 
-        Self {
-            process: Some(child),
-        }
+        self.process = Some(child);
+    }
+
+    pub fn restart(&mut self) {
+        self.stop();
+        self.spawn();
     }
 
     pub fn stop(&mut self) {

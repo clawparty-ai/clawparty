@@ -1,7 +1,9 @@
 use reqwest::Client;
 use anyhow::Result;
 use crate::models::*;
+use std::time::Duration;
 
+#[derive(Clone)]
 pub struct ApiClient {
     client: Client,
     base_url: String,
@@ -39,6 +41,7 @@ impl ApiClient {
     pub async fn check_health(&self) -> bool {
         self.client
             .get(format!("{}/ok", self.base_url))
+            .timeout(Duration::from_secs(5))
             .send()
             .await
             .map(|r| r.status().is_success())
@@ -230,6 +233,30 @@ impl ApiClient {
             Ok(sessions)
         } else {
             Ok(vec![])
+        }
+    }
+
+    pub async fn create_zeroclaw_session(&self, name: Option<&str>) -> Result<crate::app::ZeroClawSession> {
+        let body = serde_json::json!({
+            "name": name.unwrap_or("default")
+        });
+        let resp = self.client
+            .post("http://localhost:42617/api/sessions")
+            .json(&body)
+            .send()
+            .await?;
+        
+        if resp.status().is_success() {
+            let result: serde_json::Value = resp.json().await?;
+            Ok(crate::app::ZeroClawSession {
+                session_id: result["session_id"].as_str().unwrap_or("").to_string(),
+                name: result["name"].as_str()
+                    .unwrap_or(result["session_id"].as_str().unwrap_or(""))
+                    .to_string(),
+                last_activity: "".to_string(),
+            })
+        } else {
+            anyhow::bail!("Failed to create session: {}", resp.status())
         }
     }
 

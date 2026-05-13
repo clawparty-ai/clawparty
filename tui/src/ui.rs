@@ -50,7 +50,8 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
 fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     let title = match &state.active_org {
-        ActiveOrg::Mesh(name) => format!("ClawParty - {}", name),
+        ActiveOrg::ZeroClaw => "🦀 ClawParty - ZeroClaw".to_string(),
+        ActiveOrg::Mesh(name) => format!("ClawParty - Mesh: {}", name),
         ActiveOrg::Groups => "ClawParty - Group Chats".to_string(),
         ActiveOrg::Agents => "ClawParty - My Agents".to_string(),
     };
@@ -95,14 +96,16 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &mut AppState) {
     let mut list_items: Vec<ListItem> = Vec::new();
     let mut global_idx = 0;
 
+    // ZeroClaw Sessions (PRIMARY - always shown first)
+    list_items.push(ListItem::new(Line::from(Span::styled(
+        "🦀 ZeroClaw Sessions",
+        Style::default()
+            .fg(THEME_SECTION_HEADER)
+            .add_modifier(Modifier::BOLD),
+    ))));
+    global_idx += 1;
+    
     if !state.zeroclaw_sessions.is_empty() {
-        list_items.push(ListItem::new(Line::from(Span::styled(
-            "ZeroClaw Sessions",
-            Style::default()
-                .fg(THEME_SECTION_HEADER)
-                .add_modifier(Modifier::BOLD),
-        ))));
-        global_idx += 1; // section header is indexed
         for session in &state.zeroclaw_sessions {
             let style = if global_idx == state.selected_index {
                 Style::default()
@@ -112,9 +115,24 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &mut AppState) {
             } else {
                 Style::default().fg(THEME_DEFAULT_TEXT)
             };
-            list_items.push(ListItem::new(format!("🦀 {}", session.name)).style(style));
+            let prefix = if let Some(ref current) = state.current_zeroclaw_session {
+                if current.session_id == session.session_id { "▶ " } else { "  " }
+            } else { "  " };
+            list_items.push(ListItem::new(format!("{}🦀 {}", prefix, session.name)).style(style));
             global_idx += 1;
         }
+    } else {
+        // Show option to create new session
+        let style = if global_idx == state.selected_index {
+            Style::default()
+                .bg(THEME_SELECTED_BG)
+                .fg(THEME_SELECTED_FG)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Green)
+        };
+        list_items.push(ListItem::new("  + New Session").style(style));
+        global_idx += 1;
     }
 
     if !state.local_agents.is_empty() {
@@ -195,6 +213,7 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &mut AppState) {
     }
 
     let title = match &state.active_org {
+        ActiveOrg::ZeroClaw => " ZeroClaw Sessions ",
         ActiveOrg::Mesh(_) => " Chats ",
         ActiveOrg::Groups => " Groups ",
         ActiveOrg::Agents => " Agents ",
@@ -237,7 +256,7 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &mut AppState) {
 
 fn render_messages(frame: &mut Frame, area: Rect, state: &mut AppState) {
     let title = if let Some(session) = &state.current_zeroclaw_session {
-        format!(" {} ", session.name)
+        format!("🦀 {} ", session.name)
     } else if let Some(chat_idx) = state.current_chat {
         if let Some(chat) = state.chats.get(chat_idx) {
             format!(" {} ", chat.display_name())

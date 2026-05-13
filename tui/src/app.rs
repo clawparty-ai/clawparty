@@ -20,7 +20,8 @@ pub enum ActivePanel {
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ActiveOrg {
-    Mesh(String),
+    ZeroClaw,  // ZeroClaw sessions (primary)
+    Mesh(String),  // ZTM mesh (secondary, for networking)
     Groups,
     Agents,
 }
@@ -75,10 +76,14 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(api: ApiClient) -> Self {
+    pub fn new(api: ApiClient, zeroclaw_only: bool) -> Self {
         let now = chrono::Local::now();
         let timestamp = now.format("%Y%m%d-%H%M%S");
-        let log_filename = format!("console-log-{}.log", timestamp);
+        // Log to ~/.clawparty/ directory instead of current directory
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        let log_dir = format!("{}/.clawparty", home);
+        let _ = std::fs::create_dir_all(&log_dir);
+        let log_filename = format!("{}/console-log-{}.log", log_dir, timestamp);
         let log_file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -96,7 +101,8 @@ impl AppState {
             logs: Vec::new(),
             selected_index: 0,
             active_panel: ActivePanel::Sidebar,
-            active_org: ActiveOrg::Mesh(String::new()),
+            // Default to ZeroClaw if available, otherwise Mesh
+            active_org: if zeroclaw_only { ActiveOrg::ZeroClaw } else { ActiveOrg::Mesh(String::new()) },
             current_chat: None,
             current_openclaw_agent: None,
             current_peer: None,
@@ -168,6 +174,7 @@ impl AppState {
     }
 
     pub fn refresh_sections(&mut self) {
+        // ZeroClaw sessions are always shown (primary feature)
         // Local agents and group chats are always shown (independent of mesh)
         self.local_agents = self.openclaw_agents.clone();
         // Deduplicate group chats by group+creator
@@ -198,23 +205,38 @@ impl AppState {
     pub fn get_sidebar_items(&self) -> Vec<SidebarItem> {
         let mut items = Vec::new();
 
-        // ZeroClaw Sessions
+        // ZeroClaw Sessions (PRIMARY - always shown first)
         if !self.zeroclaw_sessions.is_empty() {
             items.push(SidebarItem {
-                label: "🦀 ZeroClaw".to_string(),
+                label: "🦀 ZeroClaw Sessions".to_string(),
                 section: "zeroclaw_header".to_string(),
                 index: 0,
             });
             for (i, session) in self.zeroclaw_sessions.iter().enumerate() {
+                let prefix = if let Some(ref current) = self.current_zeroclaw_session {
+                    if current.session_id == session.session_id { "▶ " } else { "  " }
+                } else { "  " };
                 items.push(SidebarItem {
-                    label: format!("🦀 {}", session.name),
+                    label: format!("{}🦀 {}", prefix, session.name),
                     section: "zeroclaw_sessions".to_string(),
                     index: i,
                 });
             }
+        } else {
+            // Show "New Session" option even if no sessions exist
+            items.push(SidebarItem {
+                label: "🦀 ZeroClaw Sessions".to_string(),
+                section: "zeroclaw_header".to_string(),
+                index: 0,
+            });
+            items.push(SidebarItem {
+                label: "  + New Session".to_string(),
+                section: "zeroclaw_new".to_string(),
+                index: 0,
+            });
         }
 
-        // OpenClaw Agents
+        // OpenClaw Agents (secondary)
         if !self.local_agents.is_empty() {
             items.push(SidebarItem {
                 label: "🤖 OpenClaw Agents".to_string(),
@@ -223,7 +245,7 @@ impl AppState {
             });
             for (i, agent) in self.local_agents.iter().enumerate() {
                 items.push(SidebarItem {
-                    label: format!("{} {}", agent.display_emoji(), agent.display_name()),
+                    label: format!("  {} {}", agent.display_emoji(), agent.display_name()),
                     section: "local_agents".to_string(),
                     index: i,
                 });
@@ -273,8 +295,10 @@ impl AppState {
         self.selected_index = index;
         let item = &items[index];
 
+        // Update active_org based on selection
         match item.section.as_str() {
             "zeroclaw_sessions" => {
+                self.active_org = ActiveOrg::ZeroClaw;
                 if item.index < self.zeroclaw_sessions.len() {
                     self.current_zeroclaw_session =
                         Some(self.zeroclaw_sessions[item.index].clone());
@@ -283,13 +307,20 @@ impl AppState {
                     self.current_peer = None;
                 }
             }
+            "zeroclaw_new" => {
+                // Handled in event loop
+            }
             "local_agents" => {
+                self.active_org = ActiveOrg::Agents;
                 if item.index < self.local_agents.len() {
                     self.current_openclaw_agent = Some(self.local_agents[item.index].clone());
                     self.current_chat = None;
                     self.current_peer = None;
                     self.current_zeroclaw_session = None;
                 }
+            }
+            "zeroclaw_new" => {
+                // Handled in event loop
             }
             "groups" => {
                 if item.index < self.group_chats.len() {

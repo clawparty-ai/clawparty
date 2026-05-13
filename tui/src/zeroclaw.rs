@@ -2,9 +2,76 @@ use std::io::{BufRead, BufReader};
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use tokio::sync::mpsc;
+use reqwest::Client;
 
 pub struct ZeroClawDaemon {
     process: Option<Child>,
+}
+
+impl ZeroClawDaemon {
+    // Static method to check if ZeroClaw Gateway is healthy
+    pub async fn check_health(url: &str) -> bool {
+        Client::new()
+            .get(format!("{}/health", url))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+    }
+
+    // Static method to get sessions
+    pub async fn get_sessions(base_url: &str) -> anyhow::Result<Vec<crate::app::ZeroClawSession>> {
+        let resp = Client::new()
+            .get(format!("{}/api/sessions", base_url))
+            .send()
+            .await?;
+        
+        if resp.status().is_success() {
+            let result: serde_json::Value = resp.json().await?;
+            let sessions: Vec<crate::app::ZeroClawSession> = result["sessions"]
+                .as_array()
+                .unwrap_or(&vec![])
+                .iter()
+                .filter_map(|s| {
+                    Some(crate::app::ZeroClawSession {
+                        session_id: s["session_id"].as_str()?.to_string(),
+                        name: s["name"].as_str()
+                            .unwrap_or(s["session_id"].as_str().unwrap_or(""))
+                            .to_string(),
+                        last_activity: s["last_activity"].as_str()?.to_string(),
+                    })
+                })
+                .collect();
+            Ok(sessions)
+        } else {
+            anyhow::bail!("Failed to get sessions: {}", resp.status())
+        }
+    }
+
+    // Static method to create a new session
+    pub async fn create_session(base_url: &str, name: Option<&str>) -> anyhow::Result<crate::app::ZeroClawSession> {
+        let body = serde_json::json!({
+            "name": name.unwrap_or("default")
+        });
+        let resp = Client::new()
+            .post(format!("{}/api/sessions", base_url))
+            .json(&body)
+            .send()
+            .await?;
+        
+        if resp.status().is_success() {
+            let result: serde_json::Value = resp.json().await?;
+            Ok(crate::app::ZeroClawSession {
+                session_id: result["session_id"].as_str().unwrap_or("").to_string(),
+                name: result["name"].as_str()
+                    .unwrap_or(result["session_id"].as_str().unwrap_or(""))
+                    .to_string(),
+                last_activity: "".to_string(),
+            })
+        } else {
+            anyhow::bail!("Failed to create session: {}", resp.status())
+        }
+    }
 }
 
 impl ZeroClawDaemon {
@@ -14,9 +81,12 @@ impl ZeroClawDaemon {
         port: u16,
         log_tx: mpsc::Sender<String>,
     ) -> Self {
-        // Pass the path with ~ directly to zeroclaw, let it handle tilde expansion
-        // on its own platform (avoids issues when HOME is set to wrong platform's path)
-        let config_dir = format!("{}/.zeroclaw", data_dir);
+        // Expand ~ to home directory
+        let expanded_data = data_dir.replace(
+            "~",
+            &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()),
+        );
+        let config_dir = format!("{}/.zeroclaw", expanded_data);
 
         let mut child = Command::new(&zeroclaw_bin)
             .args([
