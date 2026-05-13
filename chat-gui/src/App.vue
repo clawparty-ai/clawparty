@@ -530,7 +530,7 @@ const loadZAgentHistory = async (agentName, messages) => {
         time: formatChatTime(msg.created_at),
         isSent: msg.role === 'user',
         isTemp: false,
-        timestamp: msg.created_at ? new Date(msg.created_at).getTime() : 0
+        timestamp: msg.created_at ? new Date(msg.created_at).getTime() : Date.now()
       })
     }
   } catch (e) {
@@ -1735,7 +1735,7 @@ const enterGroupChat = async (groupId) => {
           text,
           sender,
           time: formatTime(msg.created_at),
-          timestamp: msg.created_at ? new Date(msg.created_at).getTime() : 0,
+          timestamp: msg.created_at ? new Date(msg.created_at).getTime() : Date.now(),
           isSent,
           isTemp: false
         })

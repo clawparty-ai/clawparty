@@ -581,18 +581,25 @@ const handleTaskRefresh = async () => {
     lastAnalyzed = props.chat.lastTaskAnalyzedAt
   }
 
-  let newMessages = msgs.filter(m => m.timestamp && m.timestamp > lastAnalyzed)
+  let newMessages = msgs.filter(m => m.timestamp != null && m.timestamp >= lastAnalyzed)
   addRefreshLog('info', 'Messages total: ' + msgs.length + ' | new since last analysis: ' + newMessages.length)
 
   if (newMessages.length === 0) {
-    const latestTs = msgs.length > 0 ? msgs[msgs.length - 1].timestamp : Date.now()
-    const newLast = Math.max(lastAnalyzed, latestTs)
-    props.chat.lastTaskAnalyzedAt = newLast
-    if (agentName) {
-      try {
-        await taskService.setAnalysisLog(agentName, groupId, newLast)
-        addRefreshLog('info', 'Persisted analysis log (no new messages)')
-      } catch (e) {}
+    if (msgs.length === 0) {
+      addRefreshLog('warn', 'Messages not loaded yet, skip cursor persistence')
+      isTaskRefreshing.value = false
+      return
+    }
+    const latestTs = msgs[msgs.length - 1].timestamp
+    if (latestTs != null) {
+      const newLast = Math.max(lastAnalyzed, latestTs)
+      props.chat.lastTaskAnalyzedAt = newLast
+      if (agentName) {
+        try {
+          await taskService.setAnalysisLog(agentName, groupId, newLast)
+          addRefreshLog('info', 'Persisted analysis log (no new messages)')
+        } catch (e) {}
+      }
     }
     addRefreshLog('info', 'No new messages. Done.')
     isTaskRefreshing.value = false
