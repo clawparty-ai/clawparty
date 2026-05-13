@@ -442,7 +442,13 @@ function main(listen, apiToken, noAuth) {
         var seenUserKeys = {}
 
         var promises = allAgentNames.map(function(agentName) {
-          var agentStatus = api.getAgentStatus(agentName)
+          var agentStatus
+          try {
+            agentStatus = api.getAgentStatus(agentName)
+          } catch (e) {
+            console.error('[GroupChat] Agent not found, skipping:', agentName)
+            return Promise.resolve()
+          }
           if (!agentStatus || agentStatus.status !== 'running') return Promise.resolve()
           var zeroclawAgent = new http.Agent('localhost:' + agentStatus.port)
           return zeroclawAgent.request('GET', '/api/sessions/' + gc.session_id + '/messages').then(
