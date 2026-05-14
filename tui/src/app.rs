@@ -42,6 +42,29 @@ pub struct ZeroClawSession {
     pub last_activity: String,
 }
 
+use std::process::Child as ChildProcess;
+
+pub struct AgentProcess {
+    pub agent_name: String,
+    child: Option<ChildProcess>,
+}
+
+impl AgentProcess {
+    pub fn new(agent_name: String, child: ChildProcess) -> Self {
+        Self { agent_name, child: Some(child) }
+    }
+}
+
+impl Drop for AgentProcess {
+    fn drop(&mut self) {
+        if let Some(ref mut child) = self.child {
+            let pid = child.id() as i32;
+            let _ = unsafe { libc::kill(-pid, libc::SIGKILL) };
+            eprintln!("AgentProcess: killed {} (pid {})", self.agent_name, pid);
+        }
+    }
+}
+
 pub struct AppState {
     pub api: Arc<Mutex<ApiClient>>,
     pub meshes: Vec<Mesh>,
@@ -73,6 +96,7 @@ pub struct AppState {
     pub zeroclaw_running: bool,
     pub zeroclaw_mgr: Option<ZeroClawDaemon>,
     pub zeroclaw_pending_tasks: std::collections::HashMap<String, tokio::task::AbortHandle>,
+    pub agent_processes: Vec<AgentProcess>,
 }
 
 impl AppState {
@@ -122,6 +146,7 @@ impl AppState {
             zeroclaw_running: false,
             zeroclaw_mgr: None,
             zeroclaw_pending_tasks: std::collections::HashMap::new(),
+            agent_processes: Vec::new(),
         }
     }
 

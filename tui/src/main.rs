@@ -10,7 +10,8 @@ use agent::AgentManager;
 use args::Args;
 use api::ApiClient;
 use zeroclaw::ZeroClawDaemon;
-use app::{AppState, ActivePanel, ActiveOrg};
+use app::{AppState, ActivePanel, ActiveOrg, AgentProcess};
+use models::AgentConfig;
 use clap::Parser;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
@@ -23,6 +24,70 @@ use std::process::Command;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{sleep, Duration, timeout};
+
+fn set_all_agents_running(data_dir: &str) {
+    let expanded = data_dir.replace("~", &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let db_path = format!("{}/ztm.db", expanded);
+    let conn = match rusqlite::Connection::open(&db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("DB open for update error: {}", e);
+            return;
+        }
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as f64;
+    match conn.execute(
+        "UPDATE agents SET status = 'running', updated_at = ?1 WHERE deleted = 0 AND status != 'running'",
+        rusqlite::params![now],
+    ) {
+        Ok(n) => {
+            if n > 0 {
+                println!("Updated {} agent(s) status to running", n);
+            }
+        }
+        Err(e) => eprintln!("DB update error: {}", e),
+    }
+}
+
+fn read_agents_from_db(data_dir: &str) -> Vec<AgentConfig> {
+    let expanded = data_dir.replace("~", &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let db_path = format!("{}/ztm.db", expanded);
+    let conn = match rusqlite::Connection::open(&db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("DB open error: {}", e);
+            return vec![];
+        }
+    };
+    let mut stmt = match conn.prepare("SELECT agent_name, directory, port, status FROM agents WHERE deleted = 0") {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("DB prepare error: {}", e);
+            return vec![];
+        }
+    };
+    let rows = match stmt.query_map([], |row| {
+        Ok(AgentConfig {
+            agent_name: row.get(0)?,
+            directory: row.get(1)?,
+            port: row.get(2)?,
+            status: row.get(3)?,
+        })
+    }) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("DB query error: {}", e);
+            return vec![];
+        }
+    };
+    let result: Vec<AgentConfig> = rows.filter_map(|r| r.ok()).collect();
+    drop(stmt);
+    drop(conn);
+    result
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -118,6 +183,48 @@ async fn main() -> anyhow::Result<()> {
         Err(e) => state.add_log("WARN", &format!("Failed to fetch ZeroClaw sessions: {}", e)),
     }
 
+    // Read agents from DB and start zeroclaw daemon for each non-running agent
+    let zeroclaw_bin_for_agents = args.zeroclaw_bin.clone().unwrap_or_else(|| {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let zc = dir.join("zeroclaw");
+                if zc.exists() {
+                    return zc.to_string_lossy().to_string();
+                }
+            }
+        }
+        "zeroclaw".to_string()
+    });
+    let agent_configs = read_agents_from_db(&args.data);
+    if !agent_configs.is_empty() {
+        state.add_log("INFO", &format!("Found {} agents in DB, starting zeroclaw daemons...", agent_configs.len()));
+    }
+    for agent_cfg in &agent_configs {
+        state.add_log("INFO", &format!("Starting agent {} on port {}", agent_cfg.agent_name, agent_cfg.port));
+        let child = match std::process::Command::new(&zeroclaw_bin_for_agents)
+            .args([
+                "daemon",
+                "--config-dir",
+                &agent_cfg.directory,
+                "-p",
+                &agent_cfg.port.to_string(),
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .stdin(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                state.add_log("ERROR", &format!("Failed to spawn agent {}: {}", agent_cfg.agent_name, e));
+                continue;
+            }
+        };
+        let pid = child.id();
+        state.add_log("INFO", &format!("Agent {} started (pid {})", agent_cfg.agent_name, pid));
+        state.agent_processes.push(AgentProcess::new(agent_cfg.agent_name.clone(), child));
+    }
+
     // Keep resolved pipy_bin for watchdog restart
     // ZTM Agent is optional (for mesh networking)
     if !args.zeroclaw_only {
@@ -170,6 +277,8 @@ async fn main() -> anyhow::Result<()> {
             if ready {
                 state.agent_running = true;
                 state.add_log("INFO", "ZTM Agent started successfully");
+                set_all_agents_running(&args.data);
+                state.add_log("INFO", "All agent statuses set to running in DB");
             } else {
                 state.add_log("WARN", "ZTM Agent failed to start (mesh features unavailable)");
             }
@@ -586,8 +695,9 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
     let (log_tx, mut log_rx) = mpsc::channel::<String>(100);
 
     println!("\n🔄 Starting ZeroClaw daemon...");
+    let zeroclaw_bin_for_service = zeroclaw_bin.clone();
     let zeroclaw_mgr = zeroclaw::ZeroClawDaemon::new(
-        zeroclaw_bin,
+        zeroclaw_bin_for_service,
         args.data.clone(),
         42617,
         log_tx.clone(),
@@ -613,6 +723,35 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
         return Err(anyhow::anyhow!("ZeroClaw startup failed"));
     }
     println!("✅ ZeroClaw daemon started successfully on port 42617");
+
+    // Start all ZeroClaw agents from DB before ZTM
+    let agent_configs = read_agents_from_db(&args.data);
+    if !agent_configs.is_empty() {
+        println!("📋 Found {} agent(s) in DB, starting zeroclaw daemons...", agent_configs.len());
+    }
+    for agent_cfg in &agent_configs {
+        println!("🔄 Starting agent {} on port {}...", agent_cfg.agent_name, agent_cfg.port);
+        match std::process::Command::new(&zeroclaw_bin)
+            .args([
+                "daemon",
+                "--config-dir",
+                &agent_cfg.directory,
+                "-p",
+                &agent_cfg.port.to_string(),
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .stdin(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(child) => {
+                println!("✅ Agent {} started (pid {})", agent_cfg.agent_name, child.id());
+            }
+            Err(e) => {
+                eprintln!("❌ Failed to start agent {}: {}", agent_cfg.agent_name, e);
+            }
+        }
+    }
 
     let api = ApiClient::new(args.api_host.clone(), args.token.clone());
     let agent_mgr_arc = Arc::new(tokio::sync::Mutex::new(None::<AgentManager>));
@@ -658,6 +797,8 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
             if ready {
                 println!("✅ ZTM Agent started successfully");
                 *agent_mgr_arc.lock().await = Some(mgr);
+                set_all_agents_running(&args.data);
+                println!("✅ All agent statuses updated to running in DB");
             } else {
                 eprintln!("❌ ZTM Agent failed to start within timeout");
                 return Err(anyhow::anyhow!("ZTM Agent startup failed"));

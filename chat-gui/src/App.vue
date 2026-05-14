@@ -615,7 +615,7 @@ const handleStartZAgent = async () => {
   if (!agent) return
 
   try {
-    await zagentService.startAgent(agentName)
+    // await zagentService.startAgent(agentName)
     await fetchZAgents()
     // Re-select to reconnect WebSocket
     const updatedAgent = zAgents.value.find(a => a.agent_name === agentName)
@@ -782,15 +782,7 @@ const selectZAgent = async (agent) => {
   activeOpenclawAgent.value = null
 
   if (agent.status !== 'running') {
-    console.log('[zAgent] Starting agent:', agent.agent_name)
-    try {
-      await zagentService.startAgent(agent.agent_name)
-      await fetchZAgents()
-    } catch (error) {
-      console.error('[zAgent] Failed to start agent:', error)
-      currentZAgentName = null
-      return
-    }
+    await fetchZAgents()
   }
 
   const latestAgent = zAgents.value.find(a => a.agent_name === agent.agent_name)
@@ -1638,13 +1630,13 @@ const enterGroupChat = async (groupId) => {
   activeGroupId.value = groupId
   const allMembers = [group.ownerAgent, ...group.members]
 
-  // ── Auto-start non-running member agents ────────────────────────────
+  // ── Auto-start non-running member agents (disabled; TUI starts all agents) ──
   const startPromises = allMembers.map(async (agentName) => {
     const agent = zAgents.value.find(a => a.agent_name === agentName)
     if (!agent || agent.status === 'running') return { agentName, ok: true }
     try {
-      console.log('[GroupChat] Auto-starting member:', agentName)
-      await zagentService.startAgent(agentName)
+      console.log('[GroupChat] Member not running, waiting for TUI:', agentName)
+      // await zagentService.startAgent(agentName)
       return { agentName, ok: true }
     } catch (e) {
       console.error('[GroupChat] Failed to start member:', agentName, e)

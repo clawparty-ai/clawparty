@@ -196,6 +196,29 @@ impl OpenclawAgent {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentStatus {
+    pub agent_name: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub pid: Option<u64>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub error_msg: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AgentConfig {
+    pub agent_name: String,
+    pub directory: String,
+    pub port: u16,
+    pub status: String,
+}
+
 impl Chat {
     pub fn display_name(&self) -> String {
         if self.is_group {

@@ -406,6 +406,42 @@ impl ApiClient {
         }
     }
 
+    pub async fn get_agents(&self) -> Result<Vec<AgentStatus>> {
+        let resp = self.client
+            .get(format!("{}/api/agents", self.base_url))
+            .send()
+            .await?;
+
+        if resp.status().is_success() {
+            let agents: Vec<AgentStatus> = resp.json().await?;
+            Ok(agents)
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    pub async fn start_agent(&self, name: &str) -> Result<()> {
+        let mut url = url::Url::parse(&self.base_url)
+            .map_err(|e| anyhow::anyhow!("Invalid base URL: {}", e))?;
+        {
+            let mut segments = url.path_segments_mut()
+                .map_err(|_| anyhow::anyhow!("Cannot modify URL path"))?;
+            segments.extend(&["api", "agents", name, "start"]);
+        }
+        let resp = self.client
+            .post(url)
+            .send()
+            .await?;
+
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to start agent {}: {} - {}", name, status, body)
+        }
+    }
+
     pub async fn set_default_auto_reply(&self, agent_name: &str) -> Result<()> {
         let body = serde_json::json!({ "agent": agent_name });
         let resp = self.client
