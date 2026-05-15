@@ -607,7 +607,7 @@ const handleTaskRefresh = async () => {
   }
 
   if (!agentName) {
-    addRefreshLog('warn', 'No agentName available. Cannot send to 0#Agent.')
+    addRefreshLog('warn', 'No agentName available. Cannot send to Zerus.')
     props.chat.lastTaskAnalyzedAt = newMessages[newMessages.length - 1].timestamp
     isTaskRefreshing.value = false
     return

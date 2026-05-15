@@ -1187,7 +1187,7 @@ const handleJoinParty = async () => {
     joinPartyStep.value = '正在获取配置...'
     // Wait a bit to show the step
     await new Promise(resolve => setTimeout(resolve, 300))
-    joinPartyStep.value = '正在创建 0#Agent...'
+    joinPartyStep.value = '正在创建 Zerus...'
     await new Promise(resolve => setTimeout(resolve, 300))
     joinPartySuccess.value = '成功加入组织！'
     joinPartyStep.value = ''

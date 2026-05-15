@@ -86,7 +86,20 @@ impl ZeroClawDaemon {
             "~",
             &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()),
         );
-        let config_dir = format!("{}/.zeroclaw", expanded_data);
+
+        // Migrate old ~/.clawparty/.zeroclaw to ~/.clawparty/agents/0#Agent
+        let agent_dir = format!("{}/agents/0#Agent", expanded_data);
+        let old_config_dir = format!("{}/.zeroclaw", expanded_data);
+        if std::fs::metadata(&old_config_dir).is_ok() && std::fs::metadata(&agent_dir).is_err() {
+            eprintln!("[ZeroClawDaemon] Migrating config: {} -> {}", old_config_dir, agent_dir);
+            if let Some(parent) = std::path::Path::new(&agent_dir).parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(e) = std::fs::rename(&old_config_dir, &agent_dir) {
+                eprintln!("[ZeroClawDaemon] Migration failed: {}", e);
+            }
+        }
+        let config_dir = agent_dir;
 
         let rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".to_string());
 

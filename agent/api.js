@@ -635,8 +635,8 @@ function createZeroAgentFromConfig(configTomlContent) {
     // Record to database
     db.createAgent({
       agent_name: agentName,
-      display_name: '0#Agent',
-      description: 'System agent created from hub config',
+      display_name: 'Zerus',
+      description: 'Main system agent created from hub config',
       directory: agentDir,
       config_path: configPath,
       workspace_dir: workspaceDir,
@@ -685,13 +685,12 @@ function discoverExistingZeroClaw() {
   try { os.mkdir(agentDir) } catch {}
   try { os.mkdir(workspaceDir, { recursive: true }) } catch {}
 
-  // Try to pull in the real config that start.bat created.
+  // Try to pull in the real config (prepared by tui at agents/0#Agent/).
   // If the file is missing we simply write a minimal stub.
   var configPath = os.path.join(agentDir, 'config.toml')
   var configContent = ''
-  var globalConfigPath = os.path.join(os.home(), '.zeroclaw', 'config.toml')
   try {
-    configContent = os.read(globalConfigPath).toString()
+    configContent = os.read(configPath).toString()
   } catch {
     try {
       var hubTemplatePath = os.path.join(rootDir, 'zeroclaw-template.toml')
@@ -706,15 +705,15 @@ function discoverExistingZeroClaw() {
   // Minimal SOUL.md (so the agent directory looks complete)
   try {
     os.write(os.path.join(workspaceDir, 'SOUL.md'),
-             '# 0#Agent\n\nSystem agent for ZeroClaw integration.\n')
+             '# Zerus\n\nMain system agent for ZeroClaw integration.\n')
   } catch {}
 
   // Persist into ztm.db — status is "running" because the external
   // zeroclaw process was started *before* ztm by start.bat.
   db.createAgent({
     agent_name: agentName,
-    display_name: '0#Agent',
-    description: 'System agent discovered from running ZeroClaw instance',
+    display_name: 'Zerus',
+    description: 'Main system agent for ZeroClaw integration',
     directory: agentDir,
     config_path: configPath,
     workspace_dir: workspaceDir,

@@ -599,7 +599,7 @@ function main(listen, apiToken, noAuth, adminPassword) {
       'DELETE': function ({ name }) {
         name = URL.decodeComponent(name)
         if (name === '0#Agent') {
-          return response(403, JSON.stringify({ error: 'Cannot delete system agent: 0#Agent' }))
+          return response(403, JSON.stringify({ error: 'Cannot delete system agent' }))
         }
         try {
           var result = api.deleteAgent(name)

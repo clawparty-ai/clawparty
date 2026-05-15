@@ -1576,7 +1576,7 @@ const handleZAgentTemplateCreated = async (data) => {
     conn.messages.push({
       text: '',
       time: time,
-      sender: '0#Agent',
+      sender: 'Zerus',
       timestamp: now.getTime() + 1,
       isSent: false,
       isTyping: true
