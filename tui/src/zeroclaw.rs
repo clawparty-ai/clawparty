@@ -88,6 +88,8 @@ impl ZeroClawDaemon {
         );
         let config_dir = format!("{}/.zeroclaw", expanded_data);
 
+        let rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".to_string());
+
         let mut child = Command::new(&zeroclaw_bin)
             .args([
                 "daemon",
@@ -96,6 +98,7 @@ impl ZeroClawDaemon {
                 "--config-dir",
                 &config_dir,
             ])
+            .env("RUST_LOG", &rust_log)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .stdin(Stdio::null())
@@ -123,7 +126,7 @@ impl ZeroClawDaemon {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines() {
                     if let Ok(line) = line {
-                        let _ = tx.try_send(format!("[ZeroClaw ERR] {}", line));
+                        let _ = tx.try_send(format!("[ZeroClaw INF] {}", line));
                     }
                 }
             });

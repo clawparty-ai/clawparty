@@ -130,8 +130,6 @@ function md5(text) {
 }
 
 function main(listen, apiToken, noAuth, adminPassword) {
-  var gui = new http.Directory('gui')
-
   // Initialize default admin user if users table is empty
   try {
     if (db.countUsers() === 0) {
@@ -258,30 +256,6 @@ function main(listen, apiToken, noAuth, adminPassword) {
         return response(200, {
           ztm: data,
           pipy: pipy.version,
-        })
-      },
-    },
-
-    '/api/login': {
-      'POST': function (_, req) {
-        var body = JSON.decode(req.body)
-        var username = body?.username
-        var password = body?.password
-        if (!username || !password) {
-          return response(400, { status: 400, message: 'username and password are required' })
-        }
-        var user = db.verifyUserPassword(username, password)
-        if (!user) {
-          return response(401, { status: 401, message: 'invalid username or password' })
-        }
-        if (db.isUserExpired(user)) {
-          return response(401, { status: 401, message: 'account expired' })
-        }
-        var token = db.updateUserToken(username)
-        return response(200, {
-          username: user.username,
-          role: user.role,
-          token: token,
         })
       },
     },
@@ -2293,20 +2267,17 @@ function main(listen, apiToken, noAuth, adminPassword) {
 
   function isAuthorized(head) {
     if (noAuth) return true
-    // Allow login endpoint without authentication
     var path = (head && head.path) || ''
     if (typeof path !== 'string') path = String(path)
-    if (path === '/api/login' || path.startsWith('/api/login?')) return true
+    // /api/login is handled by the proxy (tui), not ztm
     var directToken = getHeader(head, 'x-ztm-token')
     if (directToken) {
-      if (directToken === apiToken) return true
       var user = db.getUserByToken(directToken)
       if (user && !db.isUserExpired(user)) return true
     }
     var authorization = getHeader(head, 'authorization')
     if (typeof authorization === 'string' && authorization.startsWith(authSchemePrefix)) {
       var tokenValue = authorization.substring(authSchemePrefix.length)
-      if (tokenValue === apiToken) return true
       var user = db.getUserByToken(tokenValue)
       if (user && !db.isUserExpired(user)) return true
     }
@@ -2315,7 +2286,6 @@ function main(listen, apiToken, noAuth, adminPassword) {
       var url = new URL(head.path, 'http://localhost')
       var qtoken = url.searchParams.get('token')
       if (qtoken) {
-        if (qtoken === apiToken) return true
         var user = db.getUserByToken(qtoken)
         if (user && !db.isUserExpired(user)) return true
       }
@@ -2352,7 +2322,7 @@ function main(listen, apiToken, noAuth, adminPassword) {
             } else if (routes.find(r => r.match(path))) {
               return 'api'
             } else {
-              return 'gui'
+              return 'notfound'
             }
           }
         }, {
@@ -2427,8 +2397,8 @@ function main(listen, apiToken, noAuth, adminPassword) {
             })
             .onEnd(() => $appSession?.free?.())
           ),
-          'gui': $=>$.replaceMessage(
-            req => gui.serve(req) || new Message({ status: 404 })
+          'notfound': $=>$.replaceMessage(
+            req => new Message({ status: 404 }, 'Not Found')
           ),
           'unauthorized': $=>$.replaceData().replaceMessage(
             req => {
@@ -2455,13 +2425,13 @@ function main(listen, apiToken, noAuth, adminPassword) {
                 var url = new URL(path, 'http://localhost')
                 var agentName = url.searchParams.get('agent') || 'main'
                 var sessionId = url.searchParams.get('session_id') || 'me'
-                var agent = api.getAgentStatus(agentName)
-                if (agent && agent.status === 'running') {
-                  $wsTarget = 'localhost:' + agent.port
-                  console.log('[WS] Proxy WebSocket to ' + agentName + ' at ' + $wsTarget)
-                  return new Message({ status: 101, headers: { 'sec-websocket-protocol': 'zeroclaw.v1' } })
-                }
-                console.log('[WS] Agent not running: ' + agentName)
+              var agent = api.getAgentStatus(agentName)
+              if (agent && agent.status === 'running') {
+                $wsTarget = 'localhost:' + agent.port
+                console.log('[WS] Proxy WebSocket to ' + agentName + ' at ' + $wsTarget)
+                return new Message({ status: 101, headers: { 'sec-websocket-protocol': 'zeroclaw.v1' } })
+              }
+              console.log('[WS] Agent not running: ' + agentName)
               } catch (e) {
                 console.log('[WS] Failed to parse path:', e.message)
               }

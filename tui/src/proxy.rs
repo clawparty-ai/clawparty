@@ -1,17 +1,18 @@
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use sha1::{Digest, Sha1};
+use sha2::Sha256;
 use base64::Engine;
+use rusqlite::OptionalExtension;
 
 use futures_util::{SinkExt, StreamExt};
-use http_body_util::{BodyExt, Empty, Full};
+use http_body_util::{BodyExt, Full};
 use hyper::body::{Bytes, Incoming};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{header, Request, Response, StatusCode, Uri, Version};
+use hyper::{header, Request, Response, StatusCode, Uri};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use hyper_util::rt::TokioIo;
@@ -112,26 +113,53 @@ fn clone_headers(
     builder
 }
 
-/// Resolve the backend target URI based on the request path.
-fn resolve_backend(req: &Request<Incoming>) -> anyhow::Result<Uri> {
-    let path_and_query = req
-        .uri()
-        .path_and_query()
-        .map(|p| p.as_str())
-        .unwrap_or("/");
+/// Resolve the backend target URI for HTTP requests.
+///
+/// Routing rules:
+/// - /api/zeroclaw/sessions/{id}      → http://127.0.0.1:42617/api/sessions/{id}
+/// - /api/zeroclaw/sessions/{id}/chat → http://127.0.0.1:42617/api/sessions/{id}/chat
+/// - /api/zeroclaw/messages?session=  → http://127.0.0.1:42617/api/sessions/{session}/messages
+/// - /api/zeroclaw/health             → http://127.0.0.1:42617/api/health
+/// - /api/zeroclaw/* (catch-all)      → http://127.0.0.1:42617/api/* (strip /zeroclaw)
+/// - everything else                  → http://127.0.0.1:6789
+fn resolve_http_backend(req: &Request<Incoming>) -> anyhow::Result<Uri> {
+    let path_and_query = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/");
 
-    let target = if path_and_query.starts_with("/api/zeroclaw/") {
-        format!("http://127.0.0.1:42617{}", path_and_query)
+    if path_and_query.starts_with("/api/zeroclaw/") {
+        let remainder = &path_and_query["/api/zeroclaw".len()..];
+        let target = if remainder.starts_with("/messages") {
+            // /api/zeroclaw/messages?agent=...&session=...
+            // → /api/sessions/{session}/messages
+            if let Some(idx) = remainder.find('?') {
+                let query_str = &remainder[idx + 1..];
+                let mut session = "me".to_string();
+                for (key, value) in url::form_urlencoded::parse(query_str.as_bytes()) {
+                    if key == "session" {
+                        session = value.to_string();
+                        break;
+                    }
+                }
+                format!("http://127.0.0.1:42617/api/sessions/{}/messages", session)
+            } else {
+                "http://127.0.0.1:42617/api/sessions/me/messages".to_string()
+            }
+        } else if remainder == "/health" {
+            "http://127.0.0.1:42617/api/health".to_string()
+        } else {
+            // /api/zeroclaw/sessions or /api/zeroclaw/sessions/{id}/chat
+            // → /api/sessions... or /api/sessions/{id}/chat
+            format!("http://127.0.0.1:42617/api{}", remainder)
+        };
+        Ok(target.parse()?)
     } else {
-        format!("http://127.0.0.1:6789{}", path_and_query)
-    };
-
-    Ok(target.parse()?)
+        let target = format!("http://127.0.0.1:6789{}", path_and_query);
+        Ok(target.parse()?)
+    }
 }
 
 /// Proxy an HTTP request to the backend and return the response.
 async fn proxy_http(req: Request<Incoming>) -> anyhow::Result<Response<BoxBody>> {
-    let backend_uri = resolve_backend(&req)?;
+    let backend_uri = resolve_http_backend(&req)?;
 
     let client = Client::builder(TokioExecutor::new())
         .build(
@@ -168,23 +196,14 @@ async fn proxy_http(req: Request<Incoming>) -> anyhow::Result<Response<BoxBody>>
     }
 }
 
-/// Handle a WebSocket upgrade by proxying to the backend.
+/// Handle a WebSocket upgrade by proxying directly to zeroclaw:42617.
 async fn proxy_websocket(
     mut req: Request<Incoming>,
 ) -> anyhow::Result<Response<BoxBody>> {
-    let backend_uri = resolve_backend(&req)?;
-    let ws_url = format!(
-        "ws://127.0.0.1:{}{}",
-        if backend_uri.path().starts_with("/api/zeroclaw/") {
-            "42617"
-        } else {
-            "6789"
-        },
-        backend_uri
-            .path_and_query()
-            .map(|p| p.as_str())
-            .unwrap_or("/")
-    );
+    // WebSocket always goes directly to zeroclaw:42617 (bypass ztm agent)
+    let path_and_query = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/");
+    let ws_url = format!("ws://127.0.0.1:42617{}", path_and_query);
+    log::debug!("[Proxy][WS] Upgrade request: {} -> {}", path_and_query, ws_url);
 
     // Collect upgrade future from the request before building response
     let frontend_upgrade = hyper::upgrade::on(&mut req);
@@ -195,12 +214,15 @@ async fn proxy_websocket(
     let mut sec_version = None;
     if let Some(v) = req.headers().get("sec-websocket-key") {
         sec_key_raw = Some(v.to_str().unwrap_or("").to_string());
+        log::debug!("[Proxy][WS] sec-websocket-key: {}", v.to_str().unwrap_or("(invalid)"));
     }
     if let Some(v) = req.headers().get("sec-websocket-protocol") {
         sec_protocol = Some(v.clone());
+        log::debug!("[Proxy][WS] sec-websocket-protocol: {}", v.to_str().unwrap_or("(invalid)"));
     }
     if let Some(v) = req.headers().get("sec-websocket-version") {
         sec_version = Some(v.clone());
+        log::debug!("[Proxy][WS] sec-websocket-version: {}", v.to_str().unwrap_or("(invalid)"));
     }
 
     let sec_protocol_for_spawn = sec_protocol.clone();
@@ -208,13 +230,14 @@ async fn proxy_websocket(
     tokio::spawn(async move {
         match frontend_upgrade.await {
             Ok(upgraded) => {
+                log::debug!("[Proxy][WS] Frontend upgrade success, spawning bridge");
                 let frontend_io = TokioIo::new(upgraded);
                 if let Err(e) = bridge_websocket(frontend_io, &ws_url, sec_protocol_for_spawn).await {
                     eprintln!("[Proxy] WebSocket bridge error: {}", e);
                 }
             }
             Err(e) => {
-                eprintln!("[Proxy] Frontend upgrade failed: {}", e);
+                log::debug!("[Proxy][WS] Frontend upgrade failed: {}", e);
             }
         }
     });
@@ -224,7 +247,9 @@ async fn proxy_websocket(
         let mut hasher = Sha1::new();
         hasher.update(key.as_bytes());
         hasher.update(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
-        base64::engine::general_purpose::STANDARD.encode(hasher.finalize())
+        let accept = base64::engine::general_purpose::STANDARD.encode(hasher.finalize());
+        log::debug!("[Proxy][WS] Computed sec-websocket-accept: {}", accept);
+        accept
     });
 
     // Build 101 Switching Protocols response
@@ -243,6 +268,7 @@ async fn proxy_websocket(
         builder = builder.header("sec-websocket-version", ver);
     }
 
+    log::debug!("[Proxy][WS] Returning 101 Switching Protocols");
     Ok(builder.body(box_body(Bytes::new()))?)
 }
 
@@ -252,62 +278,305 @@ async fn bridge_websocket(
     backend_url: &str,
     sec_protocol: Option<hyper::header::HeaderValue>,
 ) -> anyhow::Result<()> {
+    log::debug!("[Proxy][WS] bridge_websocket starting for: {}", backend_url);
+
+    // Generate a random Sec-WebSocket-Key for the backend handshake
+    let ws_key = base64::engine::general_purpose::STANDARD.encode(rand::random::<[u8; 16]>());
+    log::debug!("[Proxy][WS] Generated backend sec-websocket-key: {}", ws_key);
+
     let mut backend_req = tokio_tungstenite::tungstenite::handshake::client::Request::builder()
         .uri(backend_url)
-        .header("Host", "localhost");
+        .header("Host", "localhost")
+        .header("Connection", "Upgrade")
+        .header("Upgrade", "websocket")
+        .header("Sec-WebSocket-Key", &ws_key)
+        .header("Sec-WebSocket-Version", "13");
 
     if let Some(proto) = sec_protocol {
-        backend_req = backend_req.header("Sec-WebSocket-Protocol", proto.to_str().unwrap_or("zeroclaw.v1"));
+        let proto_str = proto.to_str().unwrap_or("zeroclaw.v1");
+        log::debug!("[Proxy][WS] Backend request sec-protocol: {}", proto_str);
+        backend_req = backend_req.header("Sec-WebSocket-Protocol", proto_str);
+    } else {
+        log::debug!("[Proxy][WS] No sec-protocol for backend request");
     }
 
     let backend_req = backend_req.body(())?;
+    log::debug!("[Proxy][WS] Connecting to backend: {}", backend_url);
 
-    let (backend_ws, _) = tokio_tungstenite::connect_async(backend_req).await?;
+    let (backend_ws, backend_resp) = tokio_tungstenite::connect_async(backend_req).await?;
+    log::debug!("[Proxy][WS] Backend connected, response status: {:?}", backend_resp.status());
 
+    log::debug!("[Proxy][WS] Waiting for frontend WebSocketStream...");
     let frontend_ws = tokio_tungstenite::WebSocketStream::from_raw_socket(
         frontend,
         tokio_tungstenite::tungstenite::protocol::Role::Server,
         None,
     )
     .await;
+    log::debug!("[Proxy][WS] Frontend WebSocketStream ready");
 
     let (mut frontend_sink, mut frontend_stream) = frontend_ws.split();
     let (mut backend_sink, mut backend_stream) = backend_ws.split();
 
     let fwd_to_backend = async {
+        log::debug!("[Proxy][WS] F->B loop started");
+        let mut count = 0;
         while let Some(msg) = frontend_stream.next().await {
-            if let Ok(msg) = msg {
-                if backend_sink.send(msg).await.is_err() {
+            match msg {
+                Ok(msg) => {
+                    count += 1;
+                    let desc = match &msg {
+                        tokio_tungstenite::tungstenite::Message::Text(t) => format!("Text({} bytes)", t.len()),
+                        tokio_tungstenite::tungstenite::Message::Binary(b) => format!("Binary({} bytes)", b.len()),
+                        tokio_tungstenite::tungstenite::Message::Ping(_) => "Ping".to_string(),
+                        tokio_tungstenite::tungstenite::Message::Pong(_) => "Pong".to_string(),
+                        tokio_tungstenite::tungstenite::Message::Close(c) => format!("Close({:?})", c),
+                        tokio_tungstenite::tungstenite::Message::Frame(_) => "Frame".to_string(),
+                    };
+                    log::debug!("[Proxy][WS] F->B #{}: {}", count, desc);
+                    if backend_sink.send(msg).await.is_err() {
+                        log::debug!("[Proxy][WS] F->B #{}: backend_sink send error, breaking", count);
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::debug!("[Proxy][WS] F->B error: {}", e);
                     break;
                 }
-            } else {
-                break;
             }
         }
+        log::debug!("[Proxy][WS] F->B loop ended, total messages: {}", count);
     };
 
     let fwd_to_frontend = async {
+        log::debug!("[Proxy][WS] B->F loop started");
+        let mut count = 0;
         while let Some(msg) = backend_stream.next().await {
-            if let Ok(msg) = msg {
-                if frontend_sink.send(msg).await.is_err() {
+            match msg {
+                Ok(msg) => {
+                    count += 1;
+                    let desc = match &msg {
+                        tokio_tungstenite::tungstenite::Message::Text(t) => format!("Text({} bytes)", t.len()),
+                        tokio_tungstenite::tungstenite::Message::Binary(b) => format!("Binary({} bytes)", b.len()),
+                        tokio_tungstenite::tungstenite::Message::Ping(_) => "Ping".to_string(),
+                        tokio_tungstenite::tungstenite::Message::Pong(_) => "Pong".to_string(),
+                        tokio_tungstenite::tungstenite::Message::Close(c) => format!("Close({:?})", c),
+                        tokio_tungstenite::tungstenite::Message::Frame(_) => "Frame".to_string(),
+                    };
+                    log::debug!("[Proxy][WS] B->F #{}: {}", count, desc);
+                    if frontend_sink.send(msg).await.is_err() {
+                        log::debug!("[Proxy][WS] B->F #{}: frontend_sink send error, breaking", count);
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::debug!("[Proxy][WS] B->F error: {}", e);
                     break;
                 }
-            } else {
-                break;
             }
         }
+        log::debug!("[Proxy][WS] B->F loop ended, total messages: {}", count);
     };
 
     tokio::select! {
-        _ = fwd_to_backend => {},
-        _ = fwd_to_frontend => {},
+        _ = fwd_to_backend => {
+            log::debug!("[Proxy][WS] fwd_to_backend completed first");
+        },
+        _ = fwd_to_frontend => {
+            log::debug!("[Proxy][WS] fwd_to_frontend completed first");
+        },
     }
 
+    log::debug!("[Proxy][WS] bridge_websocket completed");
     Ok(())
+}
+
+// ── Authentication helpers (login runs in proxy, not ztm) ──────────────────
+
+/// DB path for authentication (set once at startup).
+static DB_PATH: OnceLock<String> = OnceLock::new();
+
+fn generate_random_string(len: usize) -> String {
+    use rand::Rng;
+    let chars: Vec<char> = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".chars().collect();
+    let mut rng = rand::rng();
+    (0..len).map(|_| chars[rng.random_range(0..chars.len())]).collect()
+}
+
+fn is_user_expired(expire: f64) -> bool {
+    if expire <= 0.0 {
+        false // never expire
+    } else {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64();
+        now > expire
+    }
+}
+
+fn verify_token(token: &str, db_path: &str) -> bool {
+    if token.is_empty() {
+        return false;
+    }
+    let conn = match rusqlite::Connection::open(db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[Proxy] DB open error: {}", e);
+            return false;
+        }
+    };
+    let result: Option<f64> = conn.query_row(
+        "SELECT expire FROM users WHERE api_token = ?1",
+        [token],
+        |row| row.get(0),
+    ).optional().unwrap_or(None);
+
+    if let Some(expire) = result {
+        !is_user_expired(expire)
+    } else {
+        false
+    }
+}
+
+async fn handle_login(req: Request<Incoming>, db_path: &str) -> anyhow::Result<Response<BoxBody>> {
+    let body_bytes = req.collect().await?.to_bytes();
+    let body_str = String::from_utf8_lossy(&body_bytes);
+    let body_json: serde_json::Value = serde_json::from_str(&body_str)
+        .map_err(|e| anyhow::anyhow!("Invalid JSON: {}", e))?;
+
+    let username = body_json.get("username").and_then(|v| v.as_str()).unwrap_or("");
+    let password = body_json.get("password").and_then(|v| v.as_str()).unwrap_or("");
+
+    if username.is_empty() || password.is_empty() {
+        let err_body = r#"{"status":400,"message":"username and password are required"}"#;
+        return Ok(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(box_body(Bytes::from(err_body)))?);
+    }
+
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| anyhow::anyhow!("Failed to open DB: {}", e))?;
+
+    let row: Option<(String, String, String, f64)> = conn.query_row(
+        "SELECT password_hash, salt, api_token, expire FROM users WHERE username = ?1",
+        [username],
+        |row| {
+            let hash: String = row.get(0)?;
+            let salt: String = row.get(1)?;
+            let token: String = row.get(2)?;
+            let expire: f64 = row.get(3)?;
+            Ok((hash, salt, token, expire))
+        }
+    ).optional()?;
+
+    if let Some((hash, salt, _old_token, expire)) = row {
+        let mut hasher = Sha256::new();
+        hasher.update(format!("{}{}", salt, password).as_bytes());
+        let computed_hash = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>();
+
+        if computed_hash == hash {
+            if is_user_expired(expire) {
+                let err_body = r#"{"status":401,"message":"account expired"}"#;
+                return Ok(Response::builder()
+                    .status(StatusCode::UNAUTHORIZED)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(box_body(Bytes::from(err_body)))?);
+            }
+
+            let new_token = generate_random_string(32);
+            conn.execute(
+                "UPDATE users SET api_token = ?1 WHERE username = ?2",
+                [&new_token, username],
+            ).map_err(|e| anyhow::anyhow!("Failed to update token: {}", e))?;
+
+            let role = conn.query_row(
+                "SELECT role FROM users WHERE username = ?1",
+                [username],
+                |row| row.get::<_, String>(0),
+            ).unwrap_or_else(|_| "user".to_string());
+
+            let resp_body = serde_json::json!({
+                "username": username,
+                "role": role,
+                "token": new_token,
+            }).to_string();
+
+            return Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(box_body(Bytes::from(resp_body)))?);
+        }
+    }
+
+    let err_body = r#"{"status":401,"message":"invalid username or password"}"#;
+    Ok(Response::builder()
+        .status(StatusCode::UNAUTHORIZED)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(box_body(Bytes::from(err_body)))?)
+}
+
+fn extract_token(req: &Request<Incoming>) -> String {
+    // 1. Authorization header
+    if let Some(auth) = req.headers().get(header::AUTHORIZATION) {
+        if let Ok(auth_str) = auth.to_str() {
+            if auth_str.starts_with("Bearer ") {
+                return auth_str["Bearer ".len()..].to_string();
+            }
+        }
+    }
+    // 2. Query parameter ?token=
+    if let Some(query) = req.uri().query() {
+        for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
+            if key == "token" {
+                return value.to_string();
+            }
+        }
+    }
+    String::new()
 }
 
 /// Main request handler.
 async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Infallible> {
+    let path = req.uri().path().to_string();
+    let method = req.method().clone();
+
+    // Login endpoint (no auth required)
+    if path == "/api/login" && method == hyper::Method::POST {
+        if let Some(db_path) = DB_PATH.get() {
+            match handle_login(req, db_path).await {
+                Ok(resp) => return Ok(resp),
+                Err(e) => {
+                    eprintln!("[Proxy] Login error: {}", e);
+                    let mut resp = Response::new(box_body(Bytes::from("Internal Server Error")));
+                    *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    return Ok(resp);
+                }
+            }
+        } else {
+            let mut resp = Response::new(box_body(Bytes::from("Service Unavailable")));
+            *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+            return Ok(resp);
+        }
+    }
+
+    // API routes require token validation
+    if path.starts_with("/api/") {
+        let token = extract_token(&req);
+        if let Some(db_path) = DB_PATH.get() {
+            if !verify_token(&token, db_path) {
+                let mut resp = Response::new(box_body(Bytes::from(r#"{"status":401,"message":"unauthorized"}"#)));
+                *resp.status_mut() = StatusCode::UNAUTHORIZED;
+                return Ok(resp);
+            }
+        } else {
+            let mut resp = Response::new(box_body(Bytes::from("Service Unavailable")));
+            *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+            return Ok(resp);
+        }
+    }
+
     if is_websocket_request(&req) {
         match proxy_websocket(req).await {
             Ok(resp) => Ok(resp),
@@ -319,13 +588,28 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
             }
         }
     } else {
-        match proxy_http(req).await {
-            Ok(resp) => Ok(resp),
-            Err(e) => {
-                eprintln!("[Proxy] HTTP proxy error: {}", e);
-                let mut resp = Response::new(box_body(Bytes::from("Proxy error")));
-                *resp.status_mut() = StatusCode::BAD_GATEWAY;
-                Ok(resp)
+        let path = req.uri().path();
+        // API routes go to backend (ztm:6789 or zeroclaw:42617)
+        if path.starts_with("/api/") {
+            match proxy_http(req).await {
+                Ok(resp) => Ok(resp),
+                Err(e) => {
+                    eprintln!("[Proxy] HTTP proxy error: {}", e);
+                    let mut resp = Response::new(box_body(Bytes::from("Proxy error")));
+                    *resp.status_mut() = StatusCode::BAD_GATEWAY;
+                    Ok(resp)
+                }
+            }
+        } else {
+            // Everything else serves embedded GUI static files (SPA fallback)
+            match crate::static_files::serve(req).await {
+                Ok(resp) => Ok(resp),
+                Err(e) => {
+                    eprintln!("[Proxy] Static file error: {}", e);
+                    let mut resp = Response::new(box_body(Bytes::from("Internal Server Error")));
+                    *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    Ok(resp)
+                }
             }
         }
     }
@@ -433,7 +717,10 @@ async fn run_https_proxy(port: u16, cert_dir: &str) -> anyhow::Result<()> {
 }
 
 /// Start both HTTP redirect and HTTPS proxy servers.
-pub async fn start(https_port: u16, http_port: u16, cert_dir: &str) {
+pub async fn start(https_port: u16, http_port: u16, cert_dir: &str, data_dir: &str) {
+    let expanded = data_dir.replace("~", &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let _ = DB_PATH.get_or_init(|| format!("{}/ztm.db", expanded));
+
     let redirect = run_http_redirect(http_port);
     let proxy = run_https_proxy(https_port, cert_dir);
 

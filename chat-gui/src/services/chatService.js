@@ -123,13 +123,13 @@ export const picoclawService = {
 
 export const zeroclawService = {
   checkHealth() {
-    return api.get('/api/zeroclaw/health')
+    return api.get('/zeroclaw/health')
   },
-  
+
   getSessions() {
     return api.get('/zeroclaw/sessions')
   },
-  
+
   getMessages(agentName, sessionId) {
     if (!sessionId) sessionId = 'me'
     return api.get(`/zeroclaw/messages?agent=${encodeURIComponent(agentName)}&session=${encodeURIComponent(sessionId)}`)

@@ -48,6 +48,7 @@ impl AgentManager {
                 &expanded_data,
                 "--api-token",
                 &self.token,
+                "--no-auth",
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

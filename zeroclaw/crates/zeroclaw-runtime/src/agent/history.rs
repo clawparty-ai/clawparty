@@ -163,19 +163,7 @@ pub fn log_llm_context_stats(messages: &[ChatMessage], iteration: usize) {
         format!("user={user},assistant={assistant},tool={tool},system={system}")
     };
 
-    // Fallback println in case tracing subscriber is not initialised or
-    // RUST_LOG filter drops the span.
-    println!(
-        "[ZEROCLAW-DEBUG] iter={} msgs={} est_tokens={} system_chars={} roles={} per_msg={}",
-        iteration + 1,
-        messages.len(),
-        estimated_tokens,
-        system_chars,
-        role_counts,
-        per_msg,
-    );
-
-    tracing::info!(
+    tracing::debug!(
         iteration = iteration + 1,
         messages_count = messages.len(),
         estimated_input_tokens = estimated_tokens,

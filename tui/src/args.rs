@@ -45,6 +45,10 @@ pub struct Args {
     #[arg(long, default_value = "30")]
     pub watchdog_interval: u64,
 
+    // Disable all health-check probes to ZTM agent (skips startup wait and watchdog)
+    #[arg(long, default_value = "false")]
+    pub no_health_check: bool,
+
     // HTTPS Proxy settings (only active in --service mode)
     #[arg(long, default_value = "443")]
     pub proxy_https_port: u16,

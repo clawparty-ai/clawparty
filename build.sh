@@ -79,16 +79,19 @@ if [ "$CLEAN" = true ]; then
   rm -rf "$ZTM_DIR/chat-gui/dist"
 fi
 
-# GUI is always built when ZTM is requested (no standalone GUI target)
-if [ "$BUILD_ZTM" = true ] || [ "$BUILD_PIPY" = true ]; then
+# GUI build must happen FIRST because TUI embeds the built frontend via rust-embed
+if [ "$BUILD_ZTM" = true ] || [ "$BUILD_PIPY" = true ] || [ "$BUILD_TUI" = true ]; then
   cd "$GUI_DIR"
   yarn install
 
   cd "$ZTM_DIR"
-  build/deps.sh
-
-  cd "$ZTM_DIR"
   build/gui.sh
+fi
+
+# Build dependencies (pipy C++ runtime)
+if [ "$BUILD_ZTM" = true ] || [ "$BUILD_PIPY" = true ]; then
+  cd "$ZTM_DIR"
+  build/deps.sh
 fi
 
 # Build ZeroClaw (Rust)
@@ -105,7 +108,7 @@ if [ "$BUILD_ZEROCLAW" = true ]; then
   echo "ZeroClaw built: $ZTM_DIR/bin/zeroclaw"
 fi
 
-# Build TUI (Rust)
+# Build TUI (Rust) — must run after GUI build so rust-embed picks up the latest files
 if [ "$BUILD_TUI" = true ]; then
   echo "Building TUI..."
   cd "$ZTM_DIR/tui"

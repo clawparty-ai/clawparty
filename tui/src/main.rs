@@ -6,6 +6,7 @@ mod app;
 mod ui;
 mod zeroclaw;
 mod proxy;
+mod static_files;
 
 use agent::AgentManager;
 use args::Args;
@@ -246,18 +247,9 @@ async fn main() -> anyhow::Result<()> {
             "ztm".to_string()
         });
 
-        // Check if ZTM agent is already running
-        let agent_already_running = {
-            let api_lock = state.api.lock().await;
-            api_lock.check_health().await
-        };
-
-        if agent_already_running {
-            state.add_log("INFO", "ZTM Agent is already running");
-            state.agent_running = true;
-        } else {
-            // Start the ZTM agent
-            state.add_log("INFO", &format!("Starting ZTM agent ({})...", pipy_bin));
+        if args.no_health_check {
+            // Skip health checks, start ZTM agent unconditionally
+            state.add_log("INFO", &format!("Starting ZTM agent ({}) [health check disabled]...", pipy_bin));
             let agent_mgr = AgentManager::new(
                 pipy_bin.clone(),
                 args.data.clone(),
@@ -265,30 +257,55 @@ async fn main() -> anyhow::Result<()> {
                 args.token.clone(),
                 log_tx.clone(),
             );
-            // Wait for agent to be ready
-            let mut ready = false;
-            for i in 0..20 {
-                sleep(Duration::from_millis(500)).await;
-                let api_lock = state.api.lock().await;
-                if api_lock.check_health().await {
-                    ready = true;
-                    drop(api_lock);
-                    break;
-                }
-                drop(api_lock);
-                if i == 0 {
-                    state.add_log("INFO", "Waiting for ZTM agent to start...");
-                }
-            }
-            if ready {
-                state.agent_running = true;
-                state.add_log("INFO", "ZTM Agent started successfully");
-                set_all_agents_running(&args.data);
-                state.add_log("INFO", "All agent statuses set to running in DB");
-            } else {
-                state.add_log("WARN", "ZTM Agent failed to start (mesh features unavailable)");
-            }
+            state.agent_running = true;
             state.agent_mgr = Some(agent_mgr);
+            set_all_agents_running(&args.data);
+            state.add_log("INFO", "All agent statuses set to running in DB");
+        } else {
+            // Check if ZTM agent is already running
+            let agent_already_running = {
+                let api_lock = state.api.lock().await;
+                api_lock.check_health().await
+            };
+
+            if agent_already_running {
+                state.add_log("INFO", "ZTM Agent is already running");
+                state.agent_running = true;
+            } else {
+                // Start the ZTM agent
+                state.add_log("INFO", &format!("Starting ZTM agent ({})...", pipy_bin));
+                let agent_mgr = AgentManager::new(
+                    pipy_bin.clone(),
+                    args.data.clone(),
+                    args.listen.clone(),
+                    args.token.clone(),
+                    log_tx.clone(),
+                );
+                // Wait for agent to be ready
+                let mut ready = false;
+                for i in 0..20 {
+                    sleep(Duration::from_millis(500)).await;
+                    let api_lock = state.api.lock().await;
+                    if api_lock.check_health().await {
+                        ready = true;
+                        drop(api_lock);
+                        break;
+                    }
+                    drop(api_lock);
+                    if i == 0 {
+                        state.add_log("INFO", "Waiting for ZTM agent to start...");
+                    }
+                }
+                if ready {
+                    state.agent_running = true;
+                    state.add_log("INFO", "ZTM Agent started successfully");
+                    set_all_agents_running(&args.data);
+                    state.add_log("INFO", "All agent statuses set to running in DB");
+                } else {
+                    state.add_log("WARN", "ZTM Agent failed to start (mesh features unavailable)");
+                }
+                state.agent_mgr = Some(agent_mgr);
+            }
         }
 
         // Fetch mesh data if agent is running
@@ -379,9 +396,10 @@ async fn main() -> anyhow::Result<()> {
     // Watchdog task: health-check ZTM agent and auto-restart if hung
     let poll_state = state.clone();
     let watchdog_interval = args.watchdog_interval;
+    let no_health_check = args.no_health_check;
     tokio::spawn(async move {
         loop {
-            if watchdog_interval == 0 {
+            if watchdog_interval == 0 || no_health_check {
                 sleep(Duration::from_secs(60)).await;
                 continue;
             }
@@ -681,6 +699,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, ZeroClawDaemon)> {
+    let _ = env_logger::Builder::from_env("RUST_LOG").try_init();
     println!("🀄 ClawParty Service Mode");
     println!("========================");
     println!("ZeroClaw mode: {}", if args.zeroclaw_only { "Standalone" } else { "With ZTM Agent" });
@@ -776,10 +795,8 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
         });
         println!("📦 ZTM binary: {}", pipy_bin);
 
-        if api.check_health().await {
-            println!("✅ ZTM Agent is already running at {}", args.api_host);
-        } else {
-            println!("\n🔄 Starting ZTM agent ({})...", pipy_bin);
+        if args.no_health_check {
+            println!("\n🔄 Starting ZTM agent ({}) [health check disabled]...", pipy_bin);
             let mgr = AgentManager::new(
                 pipy_bin.clone(),
                 args.data.clone(),
@@ -787,27 +804,45 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
                 args.token.clone(),
                 log_tx.clone(),
             );
-
-            let mut ready = false;
-            for i in 0..20 {
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                if api.check_health().await {
-                    ready = true;
-                    break;
-                }
-                if i == 0 {
-                    eprintln!("Waiting for ZTM agent to start...");
-                }
-            }
-
-            if ready {
-                println!("✅ ZTM Agent started successfully");
-                *agent_mgr_arc.lock().await = Some(mgr);
-                set_all_agents_running(&args.data);
-                println!("✅ All agent statuses updated to running in DB");
+            let mut guard = agent_mgr_arc.lock().await;
+            *guard = Some(mgr);
+            drop(guard);
+            set_all_agents_running(&args.data);
+        } else {
+            if api.check_health().await {
+                println!("✅ ZTM Agent is already running at {}", args.api_host);
             } else {
-                eprintln!("❌ ZTM Agent failed to start within timeout");
-                return Err(anyhow::anyhow!("ZTM Agent startup failed"));
+                println!("\n🔄 Starting ZTM agent ({})...", pipy_bin);
+                let mgr = AgentManager::new(
+                    pipy_bin.clone(),
+                    args.data.clone(),
+                    args.listen.clone(),
+                    args.token.clone(),
+                    log_tx.clone(),
+                );
+
+                let mut ready = false;
+                for i in 0..20 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    if api.check_health().await {
+                        ready = true;
+                        break;
+                    }
+                    if i == 0 {
+                        eprintln!("Waiting for ZTM agent to start...");
+                    }
+                }
+
+                if ready {
+                    println!("✅ ZTM Agent started successfully");
+                    set_all_agents_running(&args.data);
+                } else {
+                    println!("⚠️ ZTM Agent failed to start (mesh features unavailable)");
+                }
+
+                let mut guard = agent_mgr_arc.lock().await;
+                *guard = Some(mgr);
+                drop(guard);
             }
         }
     } else {
@@ -823,7 +858,7 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
     println!("\nPress Ctrl+C to stop...");
 
     // Service-mode watchdog
-    if !args.zeroclaw_only && args.watchdog_interval > 0 {
+    if !args.zeroclaw_only && args.watchdog_interval > 0 && !args.no_health_check {
         let api_watch = api.clone();
         let agent_mgr_watch = agent_mgr_arc.clone();
         let watchdog_interval = args.watchdog_interval;
@@ -906,7 +941,7 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
     let proxy_http_port = args.proxy_http_port;
     let proxy_cert_dir = args.proxy_cert_dir.clone();
     tokio::spawn(async move {
-        proxy::start(proxy_https_port, proxy_http_port, &proxy_cert_dir).await;
+        proxy::start(proxy_https_port, proxy_http_port, &proxy_cert_dir, &args.data).await;
     });
 
     use tokio::signal::unix::{signal, SignalKind};
