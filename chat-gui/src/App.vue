@@ -1,5 +1,29 @@
 <template>
-  <div v-if="showTokenDialog" class="token-dialog-wrap">
+  <div v-if="showLoginDialog" class="login-dialog-wrap">
+    <div class="login-dialog">
+      <h2>Welcome to ClawParty</h2>
+      <p>Please sign in to continue</p>
+      <input
+        v-model="loginUsername"
+        type="text"
+        autocomplete="username"
+        placeholder="Username"
+        @keyup.enter="submitLogin"
+      />
+      <input
+        v-model="loginPassword"
+        type="password"
+        autocomplete="current-password"
+        placeholder="Password"
+        @keyup.enter="submitLogin"
+      />
+      <button :disabled="loginChecking || !loginUsername.trim() || !loginPassword.trim()" @click="submitLogin">
+        {{ loginChecking ? 'Signing in...' : 'Sign In' }}
+      </button>
+      <div v-if="loginError" class="login-error">{{ loginError }}</div>
+    </div>
+  </div>
+  <div v-else-if="showTokenDialog" class="token-dialog-wrap">
     <div class="token-dialog">
       <h2>Enter Access Token</h2>
       <p>Enter the API token for your ztm agent</p>
@@ -236,6 +260,54 @@ const tokenInput = ref('')
 const tokenChecking = ref(false)
 const tokenError = ref('')
 const switchingTo = ref(null)
+
+// Login state
+const LOGIN_KEY = 'clawparty_login'
+const showLoginDialog = ref(false)
+const loginUsername = ref('')
+const loginPassword = ref('')
+const loginChecking = ref(false)
+const loginError = ref('')
+
+const DEFAULT_USERNAME = 'admin'
+const DEFAULT_PASSWORD = 'Flomesh@2026'
+
+const isLoggedIn = () => {
+  if (typeof localStorage === 'undefined') return false
+  return localStorage.getItem(LOGIN_KEY) === '1'
+}
+
+const setLoggedIn = (value) => {
+  if (typeof localStorage === 'undefined') return
+  if (value) {
+    localStorage.setItem(LOGIN_KEY, '1')
+  } else {
+    localStorage.removeItem(LOGIN_KEY)
+  }
+}
+
+const submitLogin = async () => {
+  const username = loginUsername.value.trim()
+  const password = loginPassword.value.trim()
+  if (!username || !password || loginChecking.value) return
+
+  loginChecking.value = true
+  loginError.value = ''
+
+  // Simple client-side authentication with hardcoded credentials
+  if (username === DEFAULT_USERNAME && password === DEFAULT_PASSWORD) {
+    setLoggedIn(true)
+    showLoginDialog.value = false
+    loginUsername.value = ''
+    loginPassword.value = ''
+    // Proceed to token/auth flow
+    initAuth()
+  } else {
+    loginError.value = 'Invalid username or password'
+  }
+
+  loginChecking.value = false
+}
 const isMobile = ref(window.innerWidth <= 768)
 const mobileActiveOrg = ref('agents')
 const users = ref([])
@@ -2989,10 +3061,6 @@ const startZeroClawSessionsPolling = () => {
 
 onMounted(async () => {
 	if(window.__TAURI_OS_PLUGIN_INTERNALS__ && !!platform()){
-		const saved = getApiToken()
-		if (!saved) {
-			showTokenDialog.value = true
-		}
 		setTimeout(()=>{
 			initAuth()
 		},3000)
@@ -3041,6 +3109,12 @@ const verifyToken = async (token) => {
 }
 
 const initAuth = async () => {
+  // Check login first
+  if (!isLoggedIn()) {
+    showLoginDialog.value = true
+    return
+  }
+
   const saved = getApiToken()
   if (!saved) {
     showTokenDialog.value = true
@@ -3049,7 +3123,7 @@ const initAuth = async () => {
 
   try {
     const ok = await verifyToken(saved)
-		
+
     if (ok) {
       showTokenDialog.value = false
       startApp()
@@ -3098,6 +3172,7 @@ const submitToken = async () => {
   background: var(--bg-primary);
 }
 
+.login-dialog-wrap,
 .token-dialog-wrap {
   width: 100%;
   height: 100%;
@@ -3107,6 +3182,7 @@ const submitToken = async () => {
   background: linear-gradient(140deg, #f4f7fb 0%, #e8eef8 100%);
 }
 
+.login-dialog,
 .token-dialog {
   width: min(420px, calc(100% - 32px));
   border-radius: 14px;
@@ -3118,18 +3194,21 @@ const submitToken = async () => {
   gap: 12px;
 }
 
+.login-dialog h2,
 .token-dialog h2 {
   margin: 0;
   font-size: 20px;
   color: #1f2937;
 }
 
+.login-dialog p,
 .token-dialog p {
   margin: 0;
   color: #6b7280;
   font-size: 13px;
 }
 
+.login-dialog input,
 .token-dialog input {
   border: 1px solid #d1d5db;
   border-radius: 10px;
@@ -3138,11 +3217,13 @@ const submitToken = async () => {
   outline: none;
 }
 
+.login-dialog input:focus,
 .token-dialog input:focus {
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
 }
 
+.login-dialog button,
 .token-dialog button {
   border: 0;
   border-radius: 10px;
@@ -3153,11 +3234,13 @@ const submitToken = async () => {
   cursor: pointer;
 }
 
+.login-dialog button:disabled,
 .token-dialog button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
+.login-error,
 .token-error {
   color: #dc2626;
   font-size: 13px;
