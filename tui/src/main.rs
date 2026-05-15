@@ -94,6 +94,11 @@ fn read_agents_from_db(data_dir: &str) -> Vec<AgentConfig> {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
+    // Handle user management subcommands
+    if let Some(args::Command::User { user_command }) = args.command {
+        return handle_user_command(user_command, &args.data);
+    }
+
     if args.service {
         let (_agent_mgr, _zeroclaw_mgr) = run_service_mode(args).await?;
         return Ok(());
@@ -928,4 +933,164 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
 
     let agent_mgr = agent_mgr_arc.lock().await.take();
     Ok((agent_mgr, zeroclaw_mgr))
+}
+
+fn expand_data_dir(data_dir: &str) -> String {
+    data_dir.replace("~", &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+}
+
+fn generate_random_string(len: usize) -> String {
+    use rand::Rng;
+    let chars: Vec<char> = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".chars().collect();
+    let mut rng = rand::rng();
+    (0..len).map(|_| chars[rng.random_range(0..chars.len())]).collect()
+}
+
+fn hash_password(_conn: &rusqlite::Connection, password: &str) -> (String, String, String) {
+    use sha2::{Sha256, Digest};
+    let salt = generate_random_string(16);
+    let mut hasher = Sha256::new();
+    hasher.update(format!("{}{}", salt, password).as_bytes());
+    let hash = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect();
+    let token = generate_random_string(32);
+    (hash, salt, token)
+}
+
+fn default_expire_days(days: Option<u32>) -> f64 {
+    match days {
+        Some(d) => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as f64;
+            now + (d as f64 * 86400.0)
+        }
+        None => 0.0, // 0 = never expire
+    }
+}
+
+fn format_expire(expire: f64) -> String {
+    if expire <= 0.0 {
+        "never".to_string()
+    } else {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as f64;
+        let days_left = ((expire - now) / 86400.0).round();
+        if days_left < 0.0 {
+            format!("expired ({} days ago)", days_left.abs())
+        } else {
+            format!("{} days left", days_left)
+        }
+    }
+}
+
+fn handle_user_command(cmd: args::UserCommands, data_dir: &str) -> anyhow::Result<()> {
+    use args::UserCommands;
+    use std::io::{self, Write};
+
+    let expanded = expand_data_dir(data_dir);
+    let db_path = format!("{}/ztm.db", expanded);
+    let conn = rusqlite::Connection::open(&db_path)
+        .map_err(|e| anyhow::anyhow!("Failed to open database at {}: {}", db_path, e))?;
+
+    match cmd {
+        UserCommands::List => {
+            let mut stmt = conn.prepare("SELECT username, role, created_at, expire FROM users ORDER BY username")
+                .map_err(|e| anyhow::anyhow!("Failed to prepare query: {}", e))?;
+            let rows = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, f64>(2)?,
+                    row.get::<_, f64>(3)?,
+                ))
+            }).map_err(|e| anyhow::anyhow!("Failed to query users: {}", e))?;
+
+            println!("{:<20} {:<10} {:<20} {:<20}", "USERNAME", "ROLE", "CREATED", "EXPIRE");
+            println!("{}", "-".repeat(70));
+            for row in rows {
+                let (username, role, created, expire) = row?;
+                let created_str = chrono::DateTime::from_timestamp(created as i64, 0)
+                    .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                    .unwrap_or_else(|| created.to_string());
+                println!("{:<20} {:<10} {:<20} {:<20}", username, role, created_str, format_expire(expire));
+            }
+        }
+        UserCommands::Add { username, password, role, expire_days } => {
+            let password = match password {
+                Some(p) => p,
+                None => {
+                    print!("Password: ");
+                    io::stdout().flush()?;
+                    let mut input = String::new();
+                    io::stdin().read_line(&mut input)?;
+                    input.trim().to_string()
+                }
+            };
+            if password.is_empty() {
+                anyhow::bail!("Password cannot be empty");
+            }
+            let expire = default_expire_days(expire_days);
+            let (hash, salt, token) = hash_password(&conn, &password);
+            conn.execute(
+                "INSERT INTO users (username, password_hash, salt, api_token, role, expire) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                [&username, &hash, &salt, &token, &role, &expire.to_string()],
+            ).map_err(|e| anyhow::anyhow!("Failed to add user '{}': {}", username, e))?;
+            println!("User '{}' added. Role: {}, Expire: {}", username, role, format_expire(expire));
+            println!("API token: {}", token);
+        }
+        UserCommands::Delete { username } => {
+            let changes = conn.execute("DELETE FROM users WHERE username = ?1", [&username])
+                .map_err(|e| anyhow::anyhow!("Failed to delete user '{}': {}", username, e))?;
+            if changes == 0 {
+                anyhow::bail!("User '{}' not found", username);
+            }
+            println!("User '{}' deleted.", username);
+        }
+        UserCommands::Password { username, password, expire_days } => {
+            let password = match password {
+                Some(p) => p,
+                None => {
+                    print!("New password: ");
+                    io::stdout().flush()?;
+                    let mut input = String::new();
+                    io::stdin().read_line(&mut input)?;
+                    input.trim().to_string()
+                }
+            };
+            if password.is_empty() {
+                anyhow::bail!("Password cannot be empty");
+            }
+            let expire = default_expire_days(expire_days);
+            let (hash, salt, token) = hash_password(&conn, &password);
+            let changes = conn.execute(
+                "UPDATE users SET password_hash = ?1, salt = ?2, api_token = ?3, expire = ?4 WHERE username = ?5",
+                [&hash, &salt, &token, &expire.to_string(), &username],
+            ).map_err(|e| anyhow::anyhow!("Failed to update password for '{}': {}", username, e))?;
+            if changes == 0 {
+                anyhow::bail!("User '{}' not found", username);
+            }
+            println!("Password changed for '{}'.", username);
+            println!("New API token: {}", token);
+            println!("Expire: {}", format_expire(expire));
+        }
+        UserCommands::Token { username, expire_days } => {
+            let new_token = generate_random_string(32);
+            let expire = default_expire_days(expire_days);
+            let changes = conn.execute(
+                "UPDATE users SET api_token = ?1, expire = ?2 WHERE username = ?3",
+                [&new_token, &expire.to_string(), &username],
+            ).map_err(|e| anyhow::anyhow!("Failed to reset token for '{}': {}", username, e))?;
+            if changes == 0 {
+                anyhow::bail!("User '{}' not found", username);
+            }
+            println!("Token reset for '{}'.", username);
+            println!("New API token: {}", new_token);
+            println!("Expire: {}", format_expire(expire));
+        }
+    }
+
+    Ok(())
 }

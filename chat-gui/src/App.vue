@@ -234,6 +234,7 @@ import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
 import TemplatePicker from './components/TemplatePicker.vue'
 import { meshService, chatService, openclawService, zeroclawService, zagentService, groupChatService, taskService, ZeroClawWS, setApiToken, getApiToken } from './services/chatService'
+import { post } from './services/request'
 import ShellService from './services/ShellService'
 import { platform } from '@tauri-apps/plugin-os';
 import { getAvatarColor } from './utils/avatar'
@@ -262,27 +263,24 @@ const tokenError = ref('')
 const switchingTo = ref(null)
 
 // Login state
-const LOGIN_KEY = 'clawparty_login'
+const LOGIN_TOKEN_KEY = 'clawparty_login_token'
 const showLoginDialog = ref(false)
 const loginUsername = ref('')
 const loginPassword = ref('')
 const loginChecking = ref(false)
 const loginError = ref('')
 
-const DEFAULT_USERNAME = 'admin'
-const DEFAULT_PASSWORD = 'Flomesh@2026'
-
-const isLoggedIn = () => {
-  if (typeof localStorage === 'undefined') return false
-  return localStorage.getItem(LOGIN_KEY) === '1'
+const getLoginToken = () => {
+  if (typeof localStorage === 'undefined') return null
+  return localStorage.getItem(LOGIN_TOKEN_KEY)
 }
 
-const setLoggedIn = (value) => {
+const setLoginToken = (token) => {
   if (typeof localStorage === 'undefined') return
-  if (value) {
-    localStorage.setItem(LOGIN_KEY, '1')
+  if (token) {
+    localStorage.setItem(LOGIN_TOKEN_KEY, token)
   } else {
-    localStorage.removeItem(LOGIN_KEY)
+    localStorage.removeItem(LOGIN_TOKEN_KEY)
   }
 }
 
@@ -294,19 +292,28 @@ const submitLogin = async () => {
   loginChecking.value = true
   loginError.value = ''
 
-  // Simple client-side authentication with hardcoded credentials
-  if (username === DEFAULT_USERNAME && password === DEFAULT_PASSWORD) {
-    setLoggedIn(true)
-    showLoginDialog.value = false
-    loginUsername.value = ''
-    loginPassword.value = ''
-    // Proceed to token/auth flow
-    initAuth()
-  } else {
-    loginError.value = 'Invalid username or password'
+  try {
+    const res = await post('/login', { username, password })
+    if (res?.data?.token) {
+      setLoginToken(res.data.token)
+      setApiToken(res.data.token)
+      showLoginDialog.value = false
+      loginUsername.value = ''
+      loginPassword.value = ''
+      startApp()
+    } else {
+      loginError.value = 'Login failed: invalid response from server'
+    }
+  } catch (error) {
+    const msg = error?.response?.data?.message || error?.message || 'Login failed'
+    if (msg === 'account expired') {
+      loginError.value = '账户已过期，请联系管理员重置密码'
+    } else {
+      loginError.value = msg
+    }
+  } finally {
+    loginChecking.value = false
   }
-
-  loginChecking.value = false
 }
 const isMobile = ref(window.innerWidth <= 768)
 const mobileActiveOrg = ref('agents')
@@ -3109,21 +3116,17 @@ const verifyToken = async (token) => {
 }
 
 const initAuth = async () => {
-  // Check login first
-  if (!isLoggedIn()) {
+  // Check login token first
+  const loginToken = getLoginToken()
+  if (!loginToken) {
     showLoginDialog.value = true
     return
   }
 
-  const saved = getApiToken()
-  if (!saved) {
-    showTokenDialog.value = true
-    return
-  }
+  setApiToken(loginToken)
 
   try {
-    const ok = await verifyToken(saved)
-
+    const ok = await verifyToken(loginToken)
     if (ok) {
       showTokenDialog.value = false
       startApp()
@@ -3133,10 +3136,11 @@ const initAuth = async () => {
     console.error('验证 token 失败:', error)
   }
 
+  // Token invalid, clear and show login
+  setLoginToken('')
   setApiToken('')
-  tokenInput.value = ''
-    tokenError.value = 'Invalid token, please try again'
-  showTokenDialog.value = true
+  loginError.value = 'Session expired, please sign in again'
+  showLoginDialog.value = true
 }
 
 const submitToken = async () => {

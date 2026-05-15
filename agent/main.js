@@ -85,6 +85,7 @@ try {
 
         var apiToken = args['--api-token'] || os.env.ZTM_API_TOKEN || 'enjoy-party'
         var noAuth = args['--no-auth'] || false
+        var adminPassword = os.env.ZTM_ADMIN_PASSWORD || 'admin'
 
         db.open(os.path.join(dbPath, 'ztm.db'))
         api.init(dbPath, listen, args['--proxy'], pqc, p2pConfig)
@@ -112,7 +113,7 @@ try {
           })
         }
 
-        main(listen, apiToken, noAuth)
+        main(listen, apiToken, noAuth, adminPassword)
       }
     }]
   })
@@ -128,8 +129,19 @@ function md5(text) {
   return h.digest('hex')
 }
 
-function main(listen, apiToken, noAuth) {
+function main(listen, apiToken, noAuth, adminPassword) {
   var gui = new http.Directory('gui')
+
+  // Initialize default admin user if users table is empty
+  try {
+    if (db.countUsers() === 0) {
+      var defaultAdminPassword = adminPassword || 'admin'
+      db.createUser('admin', defaultAdminPassword, 'admin', 0)
+      console.info('[auth] Created default admin user with password from ZTM_ADMIN_PASSWORD (default: admin)')
+    }
+  } catch (e) {
+    console.error('[auth] Failed to initialize admin user:', e)
+  }
 
   function makeOpenclawPipeline(cmd) {
     var $output
@@ -246,6 +258,30 @@ function main(listen, apiToken, noAuth) {
         return response(200, {
           ztm: data,
           pipy: pipy.version,
+        })
+      },
+    },
+
+    '/api/login': {
+      'POST': function (_, req) {
+        var body = JSON.decode(req.body)
+        var username = body?.username
+        var password = body?.password
+        if (!username || !password) {
+          return response(400, { status: 400, message: 'username and password are required' })
+        }
+        var user = db.verifyUserPassword(username, password)
+        if (!user) {
+          return response(401, { status: 401, message: 'invalid username or password' })
+        }
+        if (db.isUserExpired(user)) {
+          return response(401, { status: 401, message: 'account expired' })
+        }
+        var token = db.updateUserToken(username)
+        return response(200, {
+          username: user.username,
+          role: user.role,
+          token: token,
         })
       },
     },
@@ -2257,17 +2293,32 @@ function main(listen, apiToken, noAuth) {
 
   function isAuthorized(head) {
     if (noAuth) return true
+    // Allow login endpoint without authentication
+    var path = (head && head.path) || ''
+    if (typeof path !== 'string') path = String(path)
+    if (path === '/api/login' || path.startsWith('/api/login?')) return true
     var directToken = getHeader(head, 'x-ztm-token')
-    if (directToken && directToken === apiToken) return true
+    if (directToken) {
+      if (directToken === apiToken) return true
+      var user = db.getUserByToken(directToken)
+      if (user && !db.isUserExpired(user)) return true
+    }
     var authorization = getHeader(head, 'authorization')
     if (typeof authorization === 'string' && authorization.startsWith(authSchemePrefix)) {
-      if (authorization.substring(authSchemePrefix.length) === apiToken) return true
+      var tokenValue = authorization.substring(authSchemePrefix.length)
+      if (tokenValue === apiToken) return true
+      var user = db.getUserByToken(tokenValue)
+      if (user && !db.isUserExpired(user)) return true
     }
     // Allow token as query parameter (for <img src> and other browser-native requests)
     try {
       var url = new URL(head.path, 'http://localhost')
       var qtoken = url.searchParams.get('token')
-      if (qtoken && qtoken === apiToken) return true
+      if (qtoken) {
+        if (qtoken === apiToken) return true
+        var user = db.getUserByToken(qtoken)
+        if (user && !db.isUserExpired(user)) return true
+      }
     } catch {}
     return false
   }

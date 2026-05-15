@@ -93,6 +93,23 @@ function open(pathname) {
   } catch {}
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      username      TEXT PRIMARY KEY,
+      password_hash TEXT NOT NULL,
+      salt          TEXT NOT NULL,
+      api_token     TEXT NOT NULL,
+      role          TEXT NOT NULL DEFAULT 'user',
+      created_at    REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+      expire        REAL NOT NULL DEFAULT 0
+    )
+  `)
+
+  // Migration: add expire column if it doesn't exist
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN expire REAL NOT NULL DEFAULT 0')
+  } catch {}
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS chat_peer (
       mesh               TEXT    NOT NULL,
       peer               TEXT    NOT NULL,
@@ -759,6 +776,109 @@ function setOpenclaw(agentName, templateName, openclaw) {
     .bind(5, token)
     .bind(6, soulContent)
     .exec()
+}
+
+function sha256(text) {
+  var h = new crypto.Hash('sha256')
+  h.update(text)
+  return h.digest('hex')
+}
+
+function hashPassword(password, salt) {
+  return sha256(salt + password)
+}
+
+function generateSalt() {
+  var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  var salt = ''
+  for (var i = 0; i < 16; i++) {
+    salt += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return salt
+}
+
+function generateToken() {
+  var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  var token = ''
+  for (var i = 0; i < 32; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return token
+}
+
+function countUsers() {
+  var result = db.sql('SELECT COUNT(*) as count FROM users').exec()
+  return result[0]?.count || 0
+}
+
+function getUser(username) {
+  return db.sql('SELECT username, password_hash, salt, api_token, role, expire FROM users WHERE username = ?')
+    .bind(1, username)
+    .exec()[0]
+}
+
+function getUserByToken(token) {
+  return db.sql('SELECT username, role, expire FROM users WHERE api_token = ?')
+    .bind(1, token)
+    .exec()[0]
+}
+
+function createUser(username, password, role, expire) {
+  var salt = generateSalt()
+  var passwordHash = hashPassword(password, salt)
+  var apiToken = generateToken()
+  role = role || 'user'
+  expire = expire || 0
+
+  db.sql('INSERT INTO users(username, password_hash, salt, api_token, role, expire) VALUES(?, ?, ?, ?, ?, ?)')
+    .bind(1, username)
+    .bind(2, passwordHash)
+    .bind(3, salt)
+    .bind(4, apiToken)
+    .bind(5, role)
+    .bind(6, expire)
+    .exec()
+
+  return apiToken
+}
+
+function updateUserToken(username, expire) {
+  var newToken = generateToken()
+  if (expire !== undefined && expire !== null) {
+    db.sql('UPDATE users SET api_token = ?, expire = ? WHERE username = ?')
+      .bind(1, newToken)
+      .bind(2, expire)
+      .bind(3, username)
+      .exec()
+  } else {
+    db.sql('UPDATE users SET api_token = ? WHERE username = ?')
+      .bind(1, newToken)
+      .bind(2, username)
+      .exec()
+  }
+  return newToken
+}
+
+function updateUserExpire(username, expire) {
+  db.sql('UPDATE users SET expire = ? WHERE username = ?')
+    .bind(1, expire)
+    .bind(2, username)
+    .exec()
+}
+
+function verifyUserPassword(username, password) {
+  var user = getUser(username)
+  if (!user) return null
+  var hash = hashPassword(password, user.salt)
+  if (hash === user.password_hash) {
+    return user
+  }
+  return null
+}
+
+function isUserExpired(user) {
+  if (!user || !user.expire) return false
+  return user.expire > 0 && user.expire < Date.now() / 1000
 }
 
 function getKey(name) {
@@ -1757,4 +1877,14 @@ export default {
   // Kanban
   getKanbanConfig,
   setKanbanConfig,
+  // Users
+  countUsers,
+  getUser,
+  getUserByToken,
+  createUser,
+  updateUserToken,
+  updateUserExpire,
+  verifyUserPassword,
+  hashPassword,
+  isUserExpired,
 }
