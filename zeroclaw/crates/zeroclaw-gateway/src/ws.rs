@@ -435,9 +435,10 @@ async fn process_chat_message(
 
     // Drive both futures concurrently: the agent turn produces events
     // and we relay them over WebSocket.
+    let turn_id_clone = turn_id.clone();
     let forward_fut = async {
         while let Some(event) = event_rx.recv().await {
-            let ws_msg = match event {
+            let ws_msg = match &event {
                 TurnEvent::Chunk { delta } => {
                     serde_json::json!({ "type": "chunk", "content": delta })
                 }
@@ -445,9 +446,28 @@ async fn process_chat_message(
                     serde_json::json!({ "type": "thinking", "content": delta })
                 }
                 TurnEvent::ToolCall { name, args } => {
+                    if let Some(ref backend) = state.session_backend {
+                        let args_str = args.to_string();
+                        let _ = backend.record_tool_call(
+                            session_key,
+                            Some(turn_id_clone.as_str()),
+                            None,
+                            name,
+                            &args_str,
+                        );
+                    }
                     serde_json::json!({ "type": "tool_call", "name": name, "args": args })
                 }
                 TurnEvent::ToolResult { name, output } => {
+                    if let Some(ref backend) = state.session_backend {
+                        let _ = backend.record_tool_result(
+                            session_key,
+                            Some(turn_id_clone.as_str()),
+                            name,
+                            output,
+                            None,
+                        );
+                    }
                     serde_json::json!({ "type": "tool_result", "name": name, "output": output })
                 }
             };

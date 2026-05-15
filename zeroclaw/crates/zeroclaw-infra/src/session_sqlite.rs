@@ -4,7 +4,7 @@
 //! Provides full-text search via FTS5 and automatic TTL-based cleanup.
 //! Designed as the default backend, replacing JSONL for new installations.
 
-use crate::session_backend::{SessionBackend, SessionMetadata, SessionQuery, SessionState};
+use crate::session_backend::{SessionBackend, SessionMetadata, SessionQuery, SessionState, ToolCallRecord};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use parking_lot::Mutex;
@@ -101,6 +101,28 @@ impl SqliteSessionBackend {
                 [],
             );
         }
+
+        // Create tool_calls table for persisting tool invocations per session.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS tool_calls (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_key   TEXT    NOT NULL,
+                turn_id       TEXT,
+                message_id    INTEGER,
+                tool_name     TEXT    NOT NULL,
+                tool_args     TEXT,
+                tool_output   TEXT,
+                status        TEXT    NOT NULL DEFAULT 'called',
+                called_at     TEXT    NOT NULL,
+                completed_at  TEXT,
+                duration_ms   INTEGER,
+                error_msg     TEXT
+             );
+             CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_key, called_at);
+             CREATE INDEX IF NOT EXISTS idx_tool_calls_turn ON tool_calls(turn_id);
+             CREATE INDEX IF NOT EXISTS idx_tool_calls_msg ON tool_calls(message_id);"
+        )
+        .context("Failed to initialize tool_calls schema")?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -568,6 +590,112 @@ impl SessionBackend for SqliteSessionBackend {
                 .ok()
             })
             .collect()
+    }
+
+    fn record_tool_call(
+        &self,
+        session_key: &str,
+        turn_id: Option<&str>,
+        message_id: Option<i64>,
+        tool_name: &str,
+        tool_args: &str,
+    ) -> std::io::Result<i64> {
+        let conn = self.conn.lock();
+        let called_at = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO tool_calls (session_key, turn_id, message_id, tool_name, tool_args, status, called_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'called', ?6)",
+            params![session_key, turn_id, message_id, tool_name, tool_args, called_at],
+        )
+        .map_err(std::io::Error::other)?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    fn record_tool_result(
+        &self,
+        session_key: &str,
+        turn_id: Option<&str>,
+        tool_name: &str,
+        tool_output: &str,
+        duration_ms: Option<i64>,
+    ) -> std::io::Result<()> {
+        let conn = self.conn.lock();
+        let completed_at = Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE tool_calls
+             SET tool_output = ?1, status = 'completed', completed_at = ?2, duration_ms = ?3
+             WHERE session_key = ?4 AND tool_name = ?5 AND status = 'called'
+               AND (turn_id = ?6 OR (?6 IS NULL AND turn_id IS NULL))
+             ORDER BY called_at DESC LIMIT 1",
+            params![tool_output, completed_at, duration_ms, session_key, tool_name, turn_id],
+        )
+        .map_err(std::io::Error::other)?;
+        Ok(())
+    }
+
+    fn get_tool_calls(
+        &self,
+        session_key: &str,
+        limit: usize,
+    ) -> std::io::Result<Vec<ToolCallRecord>> {
+        let conn = self.conn.lock();
+        #[allow(clippy::cast_possible_wrap)]
+        let limit_i64 = limit as i64;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, session_key, turn_id, message_id, tool_name, tool_args, tool_output,
+                        status, called_at, completed_at, duration_ms, error_msg
+                 FROM tool_calls
+                 WHERE session_key = ?1
+                 ORDER BY called_at DESC
+                 LIMIT ?2",
+            )
+            .map_err(std::io::Error::other)?;
+
+        let rows = stmt
+            .query_map(params![session_key, limit_i64], |row| {
+                let id: i64 = row.get(0)?;
+                let session_key: String = row.get(1)?;
+                let turn_id: Option<String> = row.get(2)?;
+                let message_id: Option<i64> = row.get(3)?;
+                let tool_name: String = row.get(4)?;
+                let tool_args: Option<String> = row.get(5)?;
+                let tool_output: Option<String> = row.get(6)?;
+                let status: String = row.get(7)?;
+                let called_str: String = row.get(8)?;
+                let completed_str: Option<String> = row.get(9)?;
+                let duration_ms: Option<i64> = row.get(10)?;
+                let error_msg: Option<String> = row.get(11)?;
+
+                let called_at = DateTime::parse_from_rfc3339(&called_str)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now());
+                let completed_at = completed_str.and_then(|s| {
+                    DateTime::parse_from_rfc3339(&s)
+                        .ok()
+                        .map(|dt| dt.with_timezone(&Utc))
+                });
+
+                Ok(ToolCallRecord {
+                    id,
+                    session_key,
+                    turn_id,
+                    message_id,
+                    tool_name,
+                    tool_args,
+                    tool_output,
+                    status,
+                    called_at,
+                    completed_at,
+                    duration_ms,
+                    error_msg,
+                })
+            })
+            .map_err(std::io::Error::other)?;
+
+        let mut result: Vec<ToolCallRecord> = rows.filter_map(|r| r.ok()).collect();
+        result.reverse();
+        Ok(result)
     }
 }
 

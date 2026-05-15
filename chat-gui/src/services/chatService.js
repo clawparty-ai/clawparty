@@ -158,13 +158,13 @@ export class ZeroClawWS {
       ? `${protocol}//localhost:${this.wsPort}/ws/chat?agent=${encodeURIComponent(this.agentName)}&session_id=${encodeURIComponent(this.sessionId)}`
       : `${protocol}//${host}/ws/chat?agent=${encodeURIComponent(this.agentName)}&session_id=${encodeURIComponent(this.sessionId)}`
     
-    console.log('[ZeroClawWS] Connecting to:', url)
+    console.log('[zAgentWS] Connecting to:', url)
     
     try {
       this.ws = new WebSocket(url, 'zeroclaw.v1')
       
       this.ws.onopen = () => {
-        console.log('[ZeroClawWS] Connected')
+        console.log('[zAgentWS] Connected')
         this.reconnectAttempts = 0
         this.onOpen?.()
       }
@@ -172,24 +172,24 @@ export class ZeroClawWS {
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
-          console.log('[ZeroClawWS] Received:', data.type)
+          console.log('[zAgentWS] Received:', data.type)
           this.onMessage?.(data)
         } catch (e) {
-          console.error('[ZeroClawWS] Parse error:', e)
+          console.error('[zAgentWS] Parse error:', e)
         }
       }
       
       this.ws.onclose = (event) => {
-        console.log('[ZeroClawWS] Closed:', event.code, event.reason)
+        console.log('[zAgentWS] Closed:', event.code, event.reason)
         this.onClose?.(event)
       }
       
       this.ws.onerror = (error) => {
-        console.error('[ZeroClawWS] Error:', error)
+        console.error('[zAgentWS] Error:', error)
         this.onError?.(error)
       }
     } catch (e) {
-      console.error('[ZeroClawWS] Connection error:', e)
+      console.error('[zAgentWS] Connection error:', e)
       this.onError?.(e)
     }
   }
@@ -197,11 +197,11 @@ export class ZeroClawWS {
   sendMessage(content) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       const msg = JSON.stringify({ type: 'message', content })
-      console.log('[ZeroClawWS] Sending:', msg.substring(0, 100))
+      console.log('[zAgentWS] Sending:', msg.substring(0, 100))
       this.ws.send(msg)
       return true
     } else {
-      console.error('[ZeroClawWS] Cannot send - not connected')
+      console.error('[zAgentWS] Cannot send - not connected')
       return false
     }
   }
@@ -525,6 +525,12 @@ export const groupChatService = {
       content,
       msg_type: msgType || 'user'
     })
+  }
+}
+
+export const toolCallService = {
+  getSessionToolCalls(sessionId) {
+    return api.get(`/sessions/${encodeURIComponent(sessionId)}/tool-calls`)
   }
 }
 

@@ -647,7 +647,7 @@ const createZeroClawMessageHandler = (connectionAgentName) => {
     const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
 
     if (data.type === 'session_start') {
-      console.log('[ZeroClaw] Session started:', data.session_id)
+      console.log('[zAgent] Session started:', data.session_id)
     } else if (data.type === 'chunk' || data.type === 'thinking') {
       let idx = messages.findIndex(m => !!m.isTyping)
       if (idx < 0) {
@@ -728,7 +728,7 @@ const createZeroClawMessageHandler = (connectionAgentName) => {
       }
       sending.value = false
     } else if (data.type === 'error') {
-      console.error('[ZeroClaw] Error:', data.message)
+      console.error('[zAgent] Error:', data.message)
       const typingIdx = messages.findIndex(m => !!m.isTyping)
       if (typingIdx >= 0) {
         messages.splice(typingIdx, 1)
@@ -743,9 +743,9 @@ const createZeroClawMessageHandler = (connectionAgentName) => {
       })
       sending.value = false
     } else if (data.type === 'tool_call') {
-      console.log('[ZeroClaw] Tool call:', data.name, data.args)
+      console.log('[zAgent] Tool call:', data.name, data.args)
     } else if (data.type === 'tool_result') {
-      console.log('[ZeroClaw] Tool result:', data.name, data.output)
+      console.log('[zAgent] Tool result:', data.name, data.output)
     }
   }
 }
@@ -860,7 +860,7 @@ const selectZAgent = async (agent) => {
 }
 
 const handleZeroClawOpen = () => {
-  console.log('[ZeroClaw] WebSocket connected')
+  console.log('[zAgent] WebSocket connected')
   zcReconnectAttempts = 0
   currentZAgentName = null
 }
@@ -870,7 +870,7 @@ const maxZcReconnectAttempts = 5
 let currentZAgentName = null
 
 const handleZeroClawClose = (event) => {
-  console.log('[ZeroClaw] WebSocket closed:', event.code, event.reason)
+  console.log('[zAgent] WebSocket closed:', event.code, event.reason)
   
   const agent = activeZAgent.value
   const session = activeZeroClawSession.value
@@ -878,30 +878,30 @@ const handleZeroClawClose = (event) => {
   
   if (event.code === 1000) return
   if (zeroclawWS && zeroclawWS.reconnectAttempts >= maxZcReconnectAttempts) {
-    console.log('[ZeroClaw] Max reconnection attempts reached')
+    console.log('[zAgent] Max reconnection attempts reached')
     if (zeroclawWS) zeroclawWS.reconnectAttempts = 0
     currentZAgentName = null
     return
   }
   
   if (agent && currentZAgentName !== agent.agent_name) {
-    console.log('[ZeroClaw] Close handler ignored - agent changed')
+    console.log('[zAgent] Close handler ignored - agent changed')
     return
   }
   
   const agentNameToReconnect = agent?.agent_name || ''
   if (zeroclawWS && zeroclawWS._agentName && zeroclawWS._agentName !== agentNameToReconnect) {
-    console.log('[ZeroClaw] Close handler ignored - agent changed')
+    console.log('[zAgent] Close handler ignored - agent changed')
     return
   }
   
   zcReconnectAttempts++
   const delay = 1000 * zcReconnectAttempts
-  console.log('[ZeroClaw] Reconnecting... attempt ' + zcReconnectAttempts + '/' + maxZcReconnectAttempts + ' in ' + delay + 'ms')
+  console.log('[zAgent] Reconnecting... attempt ' + zcReconnectAttempts + '/' + maxZcReconnectAttempts + ' in ' + delay + 'ms')
   
   setTimeout(() => {
     if (currentZAgentName !== agentNameToReconnect) {
-      console.log('[ZeroClaw] Reconnect ignored - agent changed')
+      console.log('[zAgent] Reconnect ignored - agent changed')
       return
     }
     if (zeroclawWS) zeroclawWS.close()
@@ -939,7 +939,7 @@ const handleZeroClawClose = (event) => {
 }
 
 const handleZeroClawError = (error) => {
-  console.error('[ZeroClaw] WebSocket error:', error)
+  console.error('[zAgent] WebSocket error:', error)
   
   const agent = activeZAgent.value
   const session = activeZeroClawSession.value
@@ -947,29 +947,29 @@ const handleZeroClawError = (error) => {
   
   const agentNameToReconnect = agent?.agent_name || ''
   if (zeroclawWS && zeroclawWS._agentName && zeroclawWS._agentName !== agentNameToReconnect) {
-    console.log('[ZeroClaw] Error handler ignored - agent changed')
+    console.log('[zAgent] Error handler ignored - agent changed')
     return
   }
   
   if (zeroclawWS && zeroclawWS.reconnectAttempts >= maxZcReconnectAttempts) {
-    console.log('[ZeroClaw] Max reconnection attempts reached')
+    console.log('[zAgent] Max reconnection attempts reached')
     if (zeroclawWS) zeroclawWS.reconnectAttempts = 0
     currentZAgentName = null
     return
   }
   
   if (agent && currentZAgentName !== agent.agent_name) {
-    console.log('[ZeroClaw] Error handler ignored - agent changed')
+    console.log('[zAgent] Error handler ignored - agent changed')
     return
   }
   
   zcReconnectAttempts++
   const delay = 1000 * zcReconnectAttempts
-  console.log('[ZeroClaw] Reconnecting after error... attempt ' + zcReconnectAttempts + '/' + maxZcReconnectAttempts + ' in ' + delay + 'ms')
+  console.log('[zAgent] Reconnecting after error... attempt ' + zcReconnectAttempts + '/' + maxZcReconnectAttempts + ' in ' + delay + 'ms')
   
   setTimeout(() => {
     if (currentZAgentName !== agentNameToReconnect) {
-      console.log('[ZeroClaw] Error reconnect ignored - agent changed')
+      console.log('[zAgent] Error reconnect ignored - agent changed')
       return
     }
     if (zeroclawWS) zeroclawWS.close()
@@ -1194,7 +1194,7 @@ const handleZeroClawMessage = (data) => {
   const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
 
   if (data.type === 'session_start') {
-    console.log('[ZeroClaw] Session started:', data.session_id)
+    console.log('[zAgent] Session started:', data.session_id)
     if (session) {
       session.session_id = data.session_id || session.session_id
     }
@@ -1277,7 +1277,7 @@ const handleZeroClawMessage = (data) => {
     }
     sending.value = false
   } else if (data.type === 'error') {
-    console.error('[ZeroClaw] Error:', data.message)
+    console.error('[zAgent] Error:', data.message)
     const typingIdx = target.messages?.findIndex(m => m.isTyping)
     if (typingIdx >= 0) {
       target.messages.splice(typingIdx, 1)
@@ -1292,9 +1292,9 @@ const handleZeroClawMessage = (data) => {
     })
     sending.value = false
   } else if (data.type === 'tool_call') {
-    console.log('[ZeroClaw] Tool call:', data.name, data.args)
+    console.log('[zAgent] Tool call:', data.name, data.args)
   } else if (data.type === 'tool_result') {
-    console.log('[ZeroClaw] Tool result:', data.name, data.output)
+    console.log('[zAgent] Tool result:', data.name, data.output)
   }
 }
 
@@ -1645,54 +1645,7 @@ const enterGroupChat = async (groupId) => {
   })
   await Promise.all(startPromises)
 
-  // ── Wait for all members to reach running state ─────────────────────
-  const MAX_WAIT_MS = 15000
-  const POLL_INTERVAL_MS = 1000
-  const waitStart = Date.now()
-  while (Date.now() - waitStart < MAX_WAIT_MS) {
-    await fetchZAgents()
-    const allRunning = allMembers.every(name => {
-      const agent = zAgents.value.find(a => a.agent_name === name)
-      return agent?.status === 'running'
-    })
-    if (allRunning) {
-      console.log('[GroupChat] All members running')
-      break
-    }
-    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
-  }
-
-  // Close old WS connections for this group if any
-  const oldConnections = activeGroupWsMap.get(groupId)
-  if (oldConnections) {
-    for (const conn of oldConnections) {
-      if (conn.ws) conn.ws.close()
-    }
-  }
-
-  const connections = []
-  for (const agentName of allMembers) {
-    const agent = zAgents.value.find(a => a.agent_name === agentName)
-    const wsPort = agent?.port
-
-    const msgHandler = createGroupChatMessageHandler(groupId, agentName)
-
-    const ws = new ZeroClawWS(
-      agentName,
-      groupId,  // use groupId as session_id for shared session context
-      msgHandler,
-      () => { console.log('[GroupChat] WS open:', agentName, groupId) },
-      () => { console.log('[GroupChat] WS close:', agentName, groupId) },
-      (err) => { console.error('[GroupChat] WS error:', agentName, groupId, err) },
-      wsPort
-    )
-    ws.connect()
-    connections.push({ agentName, ws })
-  }
-
-  activeGroupWsMap.set(groupId, connections)
-
-  // Load historical messages from all member agents
+  // Load historical messages
   try {
     const res = await groupChatService.getGroupMessages(group.groupId)
     if (res.data && res.data.messages) {
@@ -1703,11 +1656,6 @@ const enterGroupChat = async (groupId) => {
         let isSent = false
 
         if (msg.role === 'user') {
-          // Parse injected text to recover original message and sender
-          // Formats:
-          //   在群聊"..."里，{sender} 说："..."，如果...
-          //   在群聊"..."里，{sender} @了你并说："..."，请回复。
-          //   在群聊"..."里，{sender} 对其他人说："..."，如果...
           const m = text.match(/在群聊"[^"]*"里，(.+?)(?:@了你并)?(?:对其他人)?说："([\s\S]*?)"[，。]/)
           if (m) {
             sender = m[1].trim()
@@ -1717,10 +1665,8 @@ const enterGroupChat = async (groupId) => {
           }
           isSent = sender === (currentMeshAgentUsername.value || 'You')
         } else {
-          // assistant message — use the tagged agent name
           sender = msg._agentName || group.ownerAgent
-          // Filter out NO_REPLY responses
-          if (text.trim() === 'NO_REPLY' || text.trim() === '不回复') continue
+          if (text.includes('NO_REPLY') || text.includes('不回复')) continue
         }
 
         parsed.push({
@@ -1737,6 +1683,41 @@ const enterGroupChat = async (groupId) => {
   } catch (e) {
     console.error('[GroupChat] Failed to load messages:', e)
   }
+
+  // ── Establish WebSocket connections to all member agents ──────────────────
+  const oldConnections = activeGroupWsMap.get(groupId)
+  if (oldConnections) {
+    for (const conn of oldConnections) {
+      if (conn.ws) conn.ws.close()
+    }
+  }
+
+  const connections = []
+  for (const agentName of allMembers) {
+    const agent = zAgents.value.find(a => a.agent_name === agentName)
+    const wsPort = agent?.port
+    console.log('[GroupChat] agentName=%s port=%s status=%s', agentName, wsPort, agent?.status)
+    if (!wsPort) {
+      console.warn('[GroupChat] No port for agent, skipping WS:', agentName)
+      continue
+    }
+
+    const msgHandler = createGroupChatMessageHandler(groupId, agentName)
+
+    const ws = new ZeroClawWS(
+      agentName,
+      groupId,
+      msgHandler,
+      () => { console.log('[GroupChat] WS open:', agentName, groupId) },
+      () => { console.log('[GroupChat] WS close:', agentName, groupId) },
+      (err) => { console.error('[GroupChat] WS error:', agentName, groupId, err) },
+      wsPort
+    )
+    ws.connect()
+    connections.push({ agentName, ws })
+  }
+
+  activeGroupWsMap.set(groupId, connections)
 }
 
 const leaveGroupChat = (groupId) => {

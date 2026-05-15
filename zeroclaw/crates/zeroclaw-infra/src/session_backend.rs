@@ -120,6 +120,39 @@ pub trait SessionBackend: Send + Sync {
     fn list_stuck_sessions(&self, _threshold_secs: u64) -> Vec<SessionMetadata> {
         Vec::new()
     }
+
+    /// Record a tool call start. Default: no-op.
+    fn record_tool_call(
+        &self,
+        _session_key: &str,
+        _turn_id: Option<&str>,
+        _message_id: Option<i64>,
+        _tool_name: &str,
+        _tool_args: &str,
+    ) -> std::io::Result<i64> {
+        Ok(0)
+    }
+
+    /// Record a tool call result. Default: no-op.
+    fn record_tool_result(
+        &self,
+        _session_key: &str,
+        _turn_id: Option<&str>,
+        _tool_name: &str,
+        _tool_output: &str,
+        _duration_ms: Option<i64>,
+    ) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    /// Get tool calls for a session. Default: empty.
+    fn get_tool_calls(
+        &self,
+        _session_key: &str,
+        _limit: usize,
+    ) -> std::io::Result<Vec<ToolCallRecord>> {
+        Ok(Vec::new())
+    }
 }
 
 /// Session state information.
@@ -131,6 +164,23 @@ pub struct SessionState {
     pub turn_id: Option<String>,
     /// When the current state was entered.
     pub turn_started_at: Option<DateTime<Utc>>,
+}
+
+/// Record of a tool call within a session.
+#[derive(Debug, Clone)]
+pub struct ToolCallRecord {
+    pub id: i64,
+    pub session_key: String,
+    pub turn_id: Option<String>,
+    pub message_id: Option<i64>,
+    pub tool_name: String,
+    pub tool_args: Option<String>,
+    pub tool_output: Option<String>,
+    pub status: String,
+    pub called_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub duration_ms: Option<i64>,
+    pub error_msg: Option<String>,
 }
 
 #[cfg(test)]

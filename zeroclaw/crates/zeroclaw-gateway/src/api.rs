@@ -1518,6 +1518,76 @@ pub async fn handle_api_session_state(
     }
 }
 
+/// GET /api/sessions/{id}/tool-calls — load persisted tool calls for a session
+pub async fn handle_api_session_tool_calls(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    if let Err(e) = require_auth(&state, &headers) {
+        return e.into_response();
+    }
+
+    let Some(ref backend) = state.session_backend else {
+        return Json(serde_json::json!({
+            "session_id": id,
+            "tool_calls": [],
+            "session_persistence": false,
+        }))
+        .into_response();
+    };
+
+    let session_key = format!("gw_{id}");
+    match backend.get_tool_calls(&session_key, 200) {
+        Ok(calls) => {
+            let tool_calls: Vec<serde_json::Value> = calls
+                .into_iter()
+                .map(|c| {
+                    let mut obj = serde_json::json!({
+                        "id": c.id,
+                        "tool_name": c.tool_name,
+                        "status": c.status,
+                        "called_at": c.called_at.to_rfc3339(),
+                    });
+                    if let Some(ref turn_id) = c.turn_id {
+                        obj["turn_id"] = serde_json::Value::String(turn_id.clone());
+                    }
+                    if let Some(message_id) = c.message_id {
+                        obj["message_id"] = serde_json::Value::Number(message_id.into());
+                    }
+                    if let Some(ref args) = c.tool_args {
+                        obj["tool_args"] = serde_json::Value::String(args.clone());
+                    }
+                    if let Some(ref output) = c.tool_output {
+                        obj["tool_output"] = serde_json::Value::String(output.clone());
+                    }
+                    if let Some(ref completed) = c.completed_at {
+                        obj["completed_at"] = serde_json::Value::String(completed.to_rfc3339());
+                    }
+                    if let Some(duration) = c.duration_ms {
+                        obj["duration_ms"] = serde_json::Value::Number(duration.into());
+                    }
+                    if let Some(ref err) = c.error_msg {
+                        obj["error_msg"] = serde_json::Value::String(err.clone());
+                    }
+                    obj
+                })
+                .collect();
+            Json(serde_json::json!({
+                "session_id": id,
+                "tool_calls": tool_calls,
+                "session_persistence": true,
+            }))
+            .into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("Failed to load tool calls: {e}")})),
+        )
+            .into_response(),
+    }
+}
+
 // ── Claude Code hook endpoint ────────────────────────────────────
 
 /// POST /hooks/claude-code — receives HTTP hook events from Claude Code
