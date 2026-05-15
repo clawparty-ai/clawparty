@@ -41,4 +41,14 @@ pub struct Args {
     // Watchdog: interval in seconds to health-check ZTM agent and auto-restart if hung (0 = disabled)
     #[arg(long, default_value = "30")]
     pub watchdog_interval: u64,
+
+    // HTTPS Proxy settings (only active in --service mode)
+    #[arg(long, default_value = "443")]
+    pub proxy_https_port: u16,
+
+    #[arg(long, default_value = "80")]
+    pub proxy_http_port: u16,
+
+    #[arg(long, default_value = "~/.clawparty/certs")]
+    pub proxy_cert_dir: String,
 }

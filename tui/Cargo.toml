@@ -22,3 +22,16 @@ tui-scrollview = "0.6"
 libc = "0.2"
 url = "2"
 rusqlite = { version = "0.39.0", features = ["bundled"] }
+
+# HTTPS proxy
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
+tokio-rustls = "0.26"
+rustls-pemfile = "2"
+rcgen = "0.13"
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+tower-service = "0.3"
+sha1 = "0.10"
+base64 = "0.22"

@@ -1,4 +1,6 @@
-const WS_URL = 'ws://127.0.0.1:18789/'
+const WS_URL = window.location.protocol === 'https:'
+  ? `wss://${window.location.host}/ws/`
+  : `ws://${window.location.host}/ws/`
 
 class WSService {
   constructor() {

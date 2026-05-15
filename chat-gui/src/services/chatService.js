@@ -123,7 +123,7 @@ export const picoclawService = {
 
 export const zeroclawService = {
   checkHealth() {
-    return api.get('http://localhost:42617/api/health')
+    return api.get('/api/zeroclaw/health')
   },
   
   getSessions() {
@@ -154,7 +154,9 @@ export class ZeroClawWS {
   connect() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
-    const url = this.wsPort
+    const isTauri = !!window.__TAURI_INTERNALS__
+    const shouldUseDirectPort = isTauri && this.wsPort
+    const url = shouldUseDirectPort
       ? `${protocol}//localhost:${this.wsPort}/ws/chat?agent=${encodeURIComponent(this.agentName)}&session_id=${encodeURIComponent(this.sessionId)}`
       : `${protocol}//${host}/ws/chat?agent=${encodeURIComponent(this.agentName)}&session_id=${encodeURIComponent(this.sessionId)}`
     

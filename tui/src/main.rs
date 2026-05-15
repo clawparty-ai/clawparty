@@ -5,6 +5,7 @@ mod api;
 mod app;
 mod ui;
 mod zeroclaw;
+mod proxy;
 
 use agent::AgentManager;
 use args::Args;
@@ -894,6 +895,14 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
             let _ = Command::new("start").arg(if args.zeroclaw_only { "http://localhost:42617" } else { &args.api_host }).spawn();
         }
     }
+
+    // Start HTTPS proxy in service mode
+    let proxy_https_port = args.proxy_https_port;
+    let proxy_http_port = args.proxy_http_port;
+    let proxy_cert_dir = args.proxy_cert_dir.clone();
+    tokio::spawn(async move {
+        proxy::start(proxy_https_port, proxy_http_port, &proxy_cert_dir).await;
+    });
 
     use tokio::signal::unix::{signal, SignalKind};
     let mut sigint = signal(SignalKind::interrupt())?;
