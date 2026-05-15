@@ -418,18 +418,15 @@ function main(listen, apiToken, noAuth) {
         groupId = URL.decodeComponent(groupId)
         var gc = db.getGroupChat(groupId)
         if (!gc) return response(404, { error: 'Group chat not found: ' + groupId })
-
-        // Try chat_log first
         var logs = db.getChatLog('', 'group_local', groupId, 500, ['user', 'response', 'system'])
         if (logs && logs.length > 0) {
           var messages = []
-          // getChatLog returns DESC order; iterate backwards for ASC
           for (var i = logs.length - 1; i >= 0; i--) {
             var log = logs[i]
             messages.push({
               role: log.msgType === 'user' ? 'user' : (log.msgType === 'system' ? 'system' : 'assistant'),
               content: log.content || '',
-              created_at: log.time ? new Date(log.time * 1000).toISOString() : '',
+              created_at: log.time ? formatUTCDate(log.time) : '',
               _agentName: log.msgType === 'user' ? null : log.sender
             })
           }
@@ -440,8 +437,10 @@ function main(listen, apiToken, noAuth) {
         var allAgentNames = [gc.owner_agent].concat(gc.members || [])
         var allMessages = []
         var seenUserKeys = {}
+        var sessionId = gc.session_id
 
-        var promises = allAgentNames.map(function(agentName) {
+        function makePromise(agentName) {
+          if (!sessionId) return Promise.resolve()
           var agentStatus
           try {
             agentStatus = api.getAgentStatus(agentName)
@@ -450,38 +449,55 @@ function main(listen, apiToken, noAuth) {
             return Promise.resolve()
           }
           if (!agentStatus || agentStatus.status !== 'running') return Promise.resolve()
-          var zeroclawAgent = new http.Agent('localhost:' + agentStatus.port)
-          return zeroclawAgent.request('GET', '/api/sessions/' + gc.session_id + '/messages').then(
-            function(res) {
-              if (res.head.status !== 200) return
-              try {
-                var data = JSON.decode(res.body)
-                var messages = data.messages || []
-                messages.forEach(function(msg) {
-                  if (msg.role === 'assistant') {
-                    allMessages.push(Object.assign({}, msg, { _agentName: agentName }))
-                  } else if (msg.role === 'user') {
-                    // Deduplicate: same injected text appears in every agent's session
-                    var key = (msg.content || '') + '|' + (msg.created_at || '')
-                    if (!seenUserKeys[key]) {
-                      seenUserKeys[key] = true
-                      allMessages.push(msg)
+          var port = agentStatus.port
+          if (typeof port !== 'number' || port <= 0 || port > 65535) {
+            console.error('[GroupChat] Invalid port for agent:', agentName, port)
+            return Promise.resolve()
+          }
+          try {
+            var zeroclawAgent = new http.Agent('localhost:' + port)
+            return zeroclawAgent.request('GET', '/api/sessions/' + sessionId + '/messages').then(
+              function(res) {
+                if (res.head.status !== 200) return
+                try {
+                  var bodyStr = res.body && res.body.toString ? res.body.toString() : String(res.body)
+                  try { os.write('/tmp/ztm_resbody.log', 'agent=' + agentName + ' status=' + res.head.status + ' body=' + bodyStr.substring(0, 500) + '\n') } catch(e) {}
+                  var data = JSON.decode(res.body)
+                  var messages = data.messages || []
+                  for (var j = 0; j < messages.length; j++) {
+                    var msg = messages[j]
+                    if (msg.role === 'assistant') {
+                      allMessages.push(Object.assign({}, msg, { _agentName: agentName }))
+                    } else if (msg.role === 'user') {
+                      var key = (msg.content || '') + '|' + (msg.created_at || '')
+                      if (!seenUserKeys[key]) {
+                        seenUserKeys[key] = true
+                        allMessages.push(msg)
+                      }
                     }
                   }
-                })
-              } catch(e) {}
-            }
-          ).catch(function() {})
-        })
+                 } catch(e) {
+                    try { os.write('/tmp/ztm_resbody.log', 'PARSE ERROR agent=' + agentName + ' ' + (e && (e.message || String(e))) + '\n') } catch(e2) {}
+                  }
+                }
+              ).catch(function(err) {
+                try { os.write('/tmp/ztm_resbody.log', 'REQUEST FAILED agent=' + agentName + ' ' + (err && (err.message || String(err))) + '\n') } catch(e2) {}
+              })
+          } catch(e) {
+            try { os.write('/tmp/ztm_resbody.log', 'HTTP AGENT ERROR agent=' + agentName + ' ' + (e && (e.message || String(e))) + '\n') } catch(e2) {}
+            console.error('[GroupChat] Failed to create agent request:', agentName, e)
+            return Promise.resolve()
+          }
+        }
+
+        var promises = []
+        for (var idx = 0; idx < allAgentNames.length; idx++) {
+          promises.push(makePromise(allAgentNames[idx]))
+        }
 
         return Promise.all(promises).then(function() {
-          allMessages.sort(function(a, b) {
-            var ta = a.created_at ? new Date(a.created_at).getTime() : 0
-            var tb = b.created_at ? new Date(b.created_at).getTime() : 0
-            return ta - tb
-          })
           return response(200, JSON.encode({ messages: allMessages }))
-        })
+        }).catch(responseError)
       },
 
       'POST': function ({ groupId }, req) {
@@ -621,11 +637,22 @@ function main(listen, apiToken, noAuth) {
 
     '/api/tasks': {
       'GET': function (_, req) {
-        var url = new URL(req.head.path, 'http://localhost')
+        try { os.write('/tmp/ztm_debug.log', 'TASKS GET STARTED\n') } catch (e) {}
+        var url
+        try {
+          url = new URL(req.head.path, 'http://localhost')
+        } catch (e) { try { os.write('/tmp/ztm_debug.log', 'URL ERROR: ' + e + '\n') } catch (e2) {} return response(500, { error: 'url' }) }
         var agentName = url.searchParams.get('agent')
         var groupId = url.searchParams.get('group')
         if (!agentName) return response(400, { error: 'agent parameter required' })
-        var tasks = db.getAgentTasks(agentName)
+        var tasks
+        try {
+          tasks = db.getAgentTasks(agentName)
+        } catch (e) {
+          try { os.write('/tmp/ztm_debug.log', 'getAgentTasks error: ' + (e && (e.stack || e.message || String(e))) + '\n') } catch (e2) {}
+          return response(500, { error: 'getAgentTasks failed' })
+        }
+        try { os.write('/tmp/ztm_debug.log', 'TASKS got ' + tasks.length + ' tasks\n') } catch (e) {}
         // Filter by group_id if specified
         if (groupId) {
           var filtered = []
@@ -634,7 +661,15 @@ function main(listen, apiToken, noAuth) {
           }
           tasks = filtered
         }
-        return response(200, { agent_name: agentName, group_id: groupId || null, tasks: tasks })
+        var responseBody
+        try {
+          responseBody = JSON.encode({ agent_name: agentName, group_id: groupId || null, tasks: tasks })
+        } catch (e) {
+          try { os.write('/tmp/ztm_debug.log', 'JSON.encode error: ' + (e && (e.stack || e.message || String(e))) + '\n') } catch (e2) {}
+          return response(500, { error: 'JSON.encode failed' })
+        }
+        try { os.write('/tmp/ztm_debug.log', 'TASKS GET done, body len=' + responseBody.length + '\n') } catch (e) {}
+        return response(200, responseBody)
       },
 
       'POST': function (_, req) {
@@ -2426,6 +2461,18 @@ function formatLocalTime() {
   var ss = String(d.getSeconds()).padStart(2, '0')
   var ms = String(d.getMilliseconds()).padStart(3, '0')
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}.${ms}`
+}
+
+function formatUTCDate(timestamp) {
+  var d = new Date(timestamp * 1000)
+  var yyyy = d.getUTCFullYear()
+  var mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  var dd = String(d.getUTCDate()).padStart(2, '0')
+  var hh = String(d.getUTCHours()).padStart(2, '0')
+  var mi = String(d.getUTCMinutes()).padStart(2, '0')
+  var ss = String(d.getUTCSeconds()).padStart(2, '0')
+  var ms = String(d.getUTCMilliseconds()).padStart(3, '0')
+  return yyyy + '-' + mm + '-' + dd + 'T' + hh + ':' + mi + ':' + ss + '.' + ms + 'Z'
 }
 
 function validateName(name, msg) {
