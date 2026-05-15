@@ -597,6 +597,8 @@ const formatChatTime = (rfc3339) => {
 
 const loadZAgentHistory = async (agentName, messages) => {
   if (messages.length > 0) return
+  // 0#Agent is a virtual agent with no REST API history; skip loading
+  if (agentName === '0#Agent') return
   try {
     const response = await zeroclawService.getMessages(agentName, 'me')
     const history = response.data?.messages || []
