@@ -118,27 +118,29 @@ if [ "$BUILD_TUI" = true ]; then
   echo "TUI built: $ZTM_DIR/bin/clawparty"
 fi
 
-# Build plain pipy + pipy.sh
+# Build ZTM agent (via pipy.sh which bundles agent JS into bin/ztm)
+# NOTE: plain pipy build is skipped, but pipy.sh (which builds the packaged ztm binary) is preserved.
 if [ "$BUILD_PIPY" = true ]; then
-  cd "$ZTM_DIR"
-
-  echo "Building plain pipy..."
-  mkdir -p "$ZTM_DIR/pipy/build-plain"
-  cd "$ZTM_DIR/pipy/build-plain"
-  cmake .. \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_COMPILER=clang \
-    -DCMAKE_CXX_COMPILER=clang++ \
-    -DPIPY_GUI=OFF \
-    -DPIPY_SAMPLE_CODEBASES=OFF
-  make -j2
-  mkdir -p "$ZTM_DIR/bin"
-  cp -f "$ZTM_DIR/pipy/bin/pipy" "$ZTM_DIR/bin/pipy"
-  echo "Plain pipy built: $ZTM_DIR/bin/pipy"
-  rm -rf "$ZTM_DIR/pipy/build-plain"
-
   cd "$ZTM_DIR"
   build/pipy.sh
 fi
+
+# # Build plain pipy binary (disabled — not needed for ZTM agent)
+# if [ "$BUILD_PIPY" = true ]; then
+#   echo "Building plain pipy..."
+#   mkdir -p "$ZTM_DIR/pipy/build-plain"
+#   cd "$ZTM_DIR/pipy/build-plain"
+#   cmake .. \
+#     -DCMAKE_BUILD_TYPE=Release \
+#     -DCMAKE_C_COMPILER=clang \
+#     -DCMAKE_CXX_COMPILER=clang++ \
+#     -DPIPY_GUI=OFF \
+#     -DPIPY_SAMPLE_CODEBASES=OFF
+#   make -j2
+#   mkdir -p "$ZTM_DIR/bin"
+#   cp -f "$ZTM_DIR/pipy/bin/pipy" "$ZTM_DIR/bin/pipy"
+#   echo "Plain pipy built: $ZTM_DIR/bin/pipy"
+#   rm -rf "$ZTM_DIR/pipy/build-plain"
+# fi
 
 echo "=== Build complete ==="
