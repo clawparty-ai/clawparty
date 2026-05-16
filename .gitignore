@@ -44,6 +44,7 @@ console-log*.log
 node_modules/
 session-recorder/
 tui/target/
+tui/gui/
 zeroclaw/target/
 
 # Playwright test files
