@@ -2440,7 +2440,7 @@ function main(listen, apiToken, noAuth, adminPassword) {
                 match = mdLinkPattern.exec(content)
                 for (var _mi = 0; match !== null; _mi++) {
                   var targetPath = match[2].trim()
-                  var targetName = targetPath.replace(/^.*\//, '').replace('.md', '')
+                  var targetName = targetPath.split('/').pop().replace('.md', '')
                   var targetId = getNodeId(targetName, 'page')
                   links.push({ source: pageId, target: targetId })
                   match = mdLinkPattern.exec(content)
