@@ -415,8 +415,75 @@ async fn convert_file(raw_path: &std::path::Path, pages_dir: &std::path::Path, f
     Ok(md_filename)
 }
 
+/// Scan pages/ and build index of all markdown files.
+async fn ingest_pages(pages_dir: &std::path::Path, wiki_dir: &std::path::Path) -> anyhow::Result<(Vec<serde_json::Value>, usize)> {
+    let mut pages: Vec<serde_json::Value> = Vec::new();
+    let mut total_links = 0usize;
+    let wiki_link_re = Regex::new(r"\[\[([^\]]+)\]\]").unwrap();
+    
+    if let Ok(mut entries) = tokio::fs::read_dir(pages_dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".md") {
+                continue;
+            }
+            let path = entry.path();
+            let content = tokio::fs::read_to_string(&path).await.unwrap_or_default();
+            if content.is_empty() {
+                continue;
+            }
+            
+            // Extract title from first H1
+            let mut title = name.trim_end_matches(".md").to_string();
+            for line in content.lines() {
+                if line.starts_with("# ") {
+                    title = line[2..].trim().to_string();
+                    break;
+                }
+            }
+            
+            // Extract summary (first non-empty non-header paragraph)
+            let mut summary = String::new();
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with("[") {
+                    summary = trimmed.chars().take(120).collect();
+                    break;
+                }
+            }
+            
+            // Count wiki links
+            let links: Vec<String> = wiki_link_re.captures_iter(&content)
+                .filter_map(|cap| cap.get(1).map(|m| m.as_str().trim().to_string()))
+                .collect();
+            total_links += links.len();
+            
+            pages.push(serde_json::json!({
+                "name": name,
+                "title": title,
+                "summary": summary,
+                "links": links,
+                "size": content.len()
+            }));
+        }
+    }
+    
+    // Save index
+    let index_path = wiki_dir.join("index.json");
+    let index = serde_json::json!({
+        "pages": &pages,
+        "total_pages": pages.len(),
+        "total_links": total_links,
+        "updated_at": chrono::Utc::now().to_rfc3339()
+    });
+    let _ = tokio::fs::write(&index_path, serde_json::to_string_pretty(&index).unwrap_or_default()).await;
+    
+    Ok((pages, total_links))
+}
+
 /// POST /api/wiki/{agent}/refresh
-/// Refresh wiki and auto-convert any unconverted non-markdown files in raw/.
+/// 1. Convert unconverted non-markdown files in raw/ → pages/
+/// 2. Ingest all pages/ files (build index, extract metadata)
 pub async fn refresh(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
     let workspace = match get_agent_workspace(data_dir, agent_name) {
         Ok(w) => w,
@@ -433,9 +500,8 @@ pub async fn refresh(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes
         Err(_) => return error_response(StatusCode::NOT_FOUND, "Wiki not initialized"),
     }
 
-    // Auto-convert non-markdown files in raw/ that don't have a corresponding .md in pages/
+    // Phase 1: Convert non-markdown files in raw/ that don't have a corresponding .md in pages/
     let mut converted = Vec::new();
-    let mut ingested = Vec::new();
     let mut failed = Vec::new();
 
     if let Ok(mut entries) = tokio::fs::read_dir(&raw_dir).await {
@@ -449,43 +515,38 @@ pub async fn refresh(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes
                 .unwrap_or_else(|| format!("{}.md", name));
             let md_path = pages_dir.join(&md_name);
             
-            // Check if already converted
+            // Skip if already has corresponding .md
             if let Ok(true) = tokio::fs::try_exists(&md_path).await {
                 continue;
             }
 
-            // Convert this file
             let raw_file_path = raw_dir.join(&name);
             match convert_file(&raw_file_path, &pages_dir, &name).await {
                 Ok(md_filename) => converted.push(md_filename),
                 Err(e) => {
-                    eprintln!("[Wiki] Auto-convert failed for {}: {}, falling back to raw ingest", name, e);
-                    // Fallback: ingest raw content as-is even if convert failed
-                    let raw_content = tokio::fs::read_to_string(&raw_file_path).await.unwrap_or_default();
-                    if raw_content.is_empty() {
-                        failed.push(name);
-                        continue;
-                    }
-                    let md_filename = name.rsplit_once('.')
-                        .map(|(n, _)| format!("{}.md", n))
-                        .unwrap_or_else(|| format!("{}.md", name));
-                    let md_path = pages_dir.join(&md_filename);
-                    let wrapped = format!("# {}\n\n> 原始文件 (转换失败，以原始格式显示)\n\n{}", name, raw_content);
-                    match tokio::fs::write(&md_path, wrapped).await {
-                        Ok(_) => ingested.push(md_filename),
-                        Err(_) => failed.push(name),
-                    }
+                    eprintln!("[Wiki] Convert failed for {}: {}", name, e);
+                    failed.push(name);
                 }
             }
         }
     }
 
+    // Phase 2: Ingest all pages/ (including newly converted + existing)
+    let (pages, total_links) = match ingest_pages(&pages_dir, &wiki_dir).await {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("[Wiki] Ingest failed: {}", e);
+            (Vec::new(), 0)
+        }
+    };
+
     ok_response(&serde_json::json!({
         "message": "Wiki refreshed",
         "agent": agent_name,
         "converted": converted,
-        "ingested": ingested,
-        "failed": failed
+        "failed": failed,
+        "ingested_pages": pages.len(),
+        "total_links": total_links
     }))
 }
 

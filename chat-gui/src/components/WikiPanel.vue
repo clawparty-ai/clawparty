@@ -471,27 +471,27 @@ const onRefresh = async () => {
     const res = await wikiService.refresh(props.agentName)
     const data = res.data || {}
     const converted = data.converted || []
-    const ingested = data.ingested || []
     const failed = data.failed || []
+    const ingestedPages = data.ingested_pages || 0
+    const totalLinks = data.total_links || 0
+    
     if (converted.length > 0) {
       addRefreshLog('info', '已转换 ' + converted.length + ' 个文件')
       for (const f of converted) {
         addRefreshLog('info', '  ✓ ' + f)
       }
     }
-    if (ingested.length > 0) {
-      addRefreshLog('warn', '已摄取(原始格式) ' + ingested.length + ' 个文件')
-      for (const f of ingested) {
-        addRefreshLog('warn', '  ⚠ ' + f)
-      }
-    }
     if (failed.length > 0) {
-      addRefreshLog('error', '摄取失败 ' + failed.length + ' 个文件')
+      addRefreshLog('error', '转换失败 ' + failed.length + ' 个文件')
       for (const f of failed) {
         addRefreshLog('error', '  ✗ ' + f)
       }
     }
-    if (converted.length === 0 && ingested.length === 0 && failed.length === 0) {
+    
+    // Always show ingest summary (even if some converts failed)
+    addRefreshLog('info', '已摄取 ' + ingestedPages + ' 个页面, ' + totalLinks + ' 个链接')
+    
+    if (converted.length === 0 && failed.length === 0) {
       addRefreshLog('info', '没有需要转换的新文件')
     }
   } catch (e) {
