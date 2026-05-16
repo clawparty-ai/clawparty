@@ -2112,8 +2112,8 @@ const getStatusText = (agent) => {
   height: 36px;
   border-radius: 10px;
   border: none;
-  background: rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.8);
+  background: #4095fe;
+  color: #fff;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -2124,7 +2124,7 @@ const getStatusText = (agent) => {
 }
 
 .sidebar-toggle-btn:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: #1d6cff;
   color: #fff;
 }
 
