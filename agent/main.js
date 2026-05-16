@@ -2426,7 +2426,7 @@ function main(listen, apiToken, noAuth, adminPassword) {
                 var pageId = getNodeId(pageName, category)
 
                 // Parse [[WikiLink]]
-                var wikiLinkPattern = /\[\[([^\]]+)\]\]/g
+                var wikiLinkPattern = new RegExp('\\[\\[([^\\]]+)\\]\\]', 'g')
                 var match
                 while ((match = wikiLinkPattern.exec(content)) !== null) {
                   var targetName = match[1].trim()
@@ -2435,7 +2435,7 @@ function main(listen, apiToken, noAuth, adminPassword) {
                 }
 
                 // Parse [text](path.md)
-                var mdLinkPattern = /\[([^\]]+)\]\(([^)]+\.md)\)/g
+                var mdLinkPattern = new RegExp('\\[([^\\]]+)\\]\\(([^)]+\\.md)\\)', 'g')
                 while ((match = mdLinkPattern.exec(content)) !== null) {
                   var targetPath = match[2].trim()
                   var targetName = targetPath.replace(/^.*\//, '').replace('.md', '')
