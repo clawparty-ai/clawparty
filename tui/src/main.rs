@@ -7,6 +7,7 @@ mod ui;
 mod zeroclaw;
 mod proxy;
 mod static_files;
+mod wiki;
 
 use agent::AgentManager;
 use args::Args;

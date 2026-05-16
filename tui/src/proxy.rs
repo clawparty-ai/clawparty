@@ -75,7 +75,7 @@ fn load_tls_config(cert_pem: &[u8], key_pem: &[u8]) -> anyhow::Result<ServerConf
 }
 
 /// Build a boxed body from bytes.
-fn box_body(bytes: Bytes) -> BoxBody {
+pub(crate) fn box_body(bytes: Bytes) -> BoxBody {
     Full::new(bytes).map_err(|never| match never {}).boxed()
 }
 
@@ -396,6 +396,9 @@ async fn bridge_websocket(
 /// DB path for authentication (set once at startup).
 static DB_PATH: OnceLock<String> = OnceLock::new();
 
+/// Data directory for wiki file operations (set once at startup).
+static DATA_DIR: OnceLock<String> = OnceLock::new();
+
 fn generate_random_string(len: usize) -> String {
     use rand::Rng;
     let chars: Vec<char> = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".chars().collect();
@@ -577,6 +580,65 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
         }
     }
 
+    // Wiki API routes — handled locally by Rust (not forwarded to ztm agent)
+    if path.starts_with("/api/wiki/") {
+        if let Some(data_dir) = DATA_DIR.get() {
+            let wiki_path = &path["/api/wiki/".len()..];
+            if let Some(slash_idx) = wiki_path.find('/') {
+                let agent_name = &wiki_path[..slash_idx];
+                let action = &wiki_path[slash_idx + 1..];
+
+                // Decode URL-encoded agent name
+                let agent_decoded = urlencoding::decode(agent_name).unwrap_or_else(|_| agent_name.into()).to_string();
+
+                let query = req.uri().query().unwrap_or("");
+                let resp = match action {
+                    "init" if method == hyper::Method::POST => {
+                        crate::wiki::init(data_dir, &agent_decoded).await
+                    }
+                    "tree" if method == hyper::Method::GET => {
+                        let sub_path = url::form_urlencoded::parse(query.as_bytes())
+                            .find(|(k, _)| k == "path")
+                            .map(|(_, v)| v.to_string())
+                            .unwrap_or_default();
+                        crate::wiki::tree(data_dir, &agent_decoded, &sub_path).await
+                    }
+                    action if action.starts_with("file/") && method == hyper::Method::GET => {
+                        let name_encoded = &action["file/".len()..];
+                        let name = urlencoding::decode(name_encoded).unwrap_or_else(|_| name_encoded.into()).to_string();
+                        let sub_path = url::form_urlencoded::parse(query.as_bytes())
+                            .find(|(k, _)| k == "path")
+                            .map(|(_, v)| v.to_string())
+                            .unwrap_or_default();
+                        crate::wiki::file(data_dir, &agent_decoded, &name, &sub_path).await
+                    }
+                    "search" if method == hyper::Method::GET => {
+                        let q = url::form_urlencoded::parse(query.as_bytes())
+                            .find(|(k, _)| k == "q")
+                            .map(|(_, v)| v.to_string())
+                            .unwrap_or_default();
+                        crate::wiki::search(data_dir, &agent_decoded, &q).await
+                    }
+                    "graph" if method == hyper::Method::GET => {
+                        crate::wiki::graph(data_dir, &agent_decoded).await
+                    }
+                    "refresh" if method == hyper::Method::POST => {
+                        crate::wiki::refresh(data_dir, &agent_decoded).await
+                    }
+                    _ => {
+                        let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Wiki route not found"}"#)));
+                        *resp.status_mut() = StatusCode::NOT_FOUND;
+                        resp
+                    }
+                };
+                return Ok(resp);
+            }
+        }
+        let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Service Unavailable"}"#)));
+        *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+        return Ok(resp);
+    }
+
     if is_websocket_request(&req) {
         match proxy_websocket(req).await {
             Ok(resp) => Ok(resp),
@@ -720,6 +782,7 @@ async fn run_https_proxy(port: u16, cert_dir: &str) -> anyhow::Result<()> {
 pub async fn start(https_port: u16, http_port: u16, cert_dir: &str, data_dir: &str) {
     let expanded = data_dir.replace("~", &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
     let _ = DB_PATH.get_or_init(|| format!("{}/ztm.db", expanded));
+    let _ = DATA_DIR.get_or_init(|| expanded.clone());
 
     let redirect = run_http_redirect(http_port);
     let proxy = run_https_proxy(https_port, cert_dir);
