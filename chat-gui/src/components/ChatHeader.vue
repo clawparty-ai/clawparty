@@ -84,6 +84,15 @@
         >
           <span style="font-size: 13px; font-weight: 600;">🎯</span>
         </button>
+        <button
+          v-if="showWikiButton"
+          class="header-btn"
+          :class="{ active: wikiPanelVisible }"
+          title="Wiki"
+          @click="emit('toggleWikiPanel')"
+        >
+          <span style="font-size: 13px;">📖</span>
+        </button>
         <button class="header-btn" title="Settings">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
             <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z"/>
@@ -140,10 +149,18 @@ const props = defineProps({
   webSharePanelVisible: {
     type: Boolean,
     default: false
+  },
+  showWikiButton: {
+    type: Boolean,
+    default: false
+  },
+  wikiPanelVisible: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload', 'toggleTaskPanel', 'toggleWebSharePanel', 'showMembers'])
+const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload', 'toggleTaskPanel', 'toggleWebSharePanel', 'toggleWikiPanel', 'showMembers'])
 </script>
 
 <style scoped>

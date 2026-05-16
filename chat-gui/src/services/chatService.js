@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { get, post, del, put, setToken, getToken, getMetaUrl } from './request'
+import { wikiService } from './wikiService.js'
 export function setApiToken(token) {
   return setToken(token)
 }
@@ -535,5 +536,7 @@ export const toolCallService = {
     return api.get(`/sessions/${encodeURIComponent(sessionId)}/tool-calls`)
   }
 }
+
+export { wikiService }
 
 export default api
