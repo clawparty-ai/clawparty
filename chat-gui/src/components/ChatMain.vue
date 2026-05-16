@@ -9,6 +9,8 @@
       :taskPanelVisible="showTaskPanel"
       :showWebShareButton="chat.isZeroClaw || chat.isGroupChat"
       :webSharePanelVisible="showWebSharePanel"
+      :showWikiButton="chat.isZeroClaw"
+      :wikiPanelVisible="showWikiPanel"
       @switchSession="$emit('switchSession', $event)"
       @deleteGroup="$emit('deleteGroup', $event)"
       @leaveGroup="$emit('leaveGroup', $event)"
@@ -19,6 +21,7 @@
       @reload="fetchMessages"
       @toggleTaskPanel="showTaskPanel = !showTaskPanel"
       @toggleWebSharePanel="showWebSharePanel = !showWebSharePanel"
+      @toggleWikiPanel="showWikiPanel = !showWikiPanel"
       @showMembers="showMembersPanel = !showMembersPanel"
     />
     <div class="chat-body-wrapper">
@@ -55,6 +58,15 @@
       @togglePipelinePanel="handleTogglePipelinePanel"
       @updateKanbanConfig="handleUpdateKanbanConfig"
       @generateChart="handleGenerateChart"
+    />
+    <WikiPanel
+      v-if="chat.isZeroClaw && showWikiPanel"
+      :agentName="agentName || chat.display_name || chat.agent_name"
+      :expanded="wikiPanelBodyExpanded"
+      :initialHeight="wikiPanelInitialHeight"
+      :refreshing="isWikiRefreshing"
+      @toggle="wikiPanelBodyExpanded = !wikiPanelBodyExpanded"
+      @refresh="handleWikiRefresh"
     />
     <div class="messages" ref="messagesContainer">
       <div class="date-divider">
@@ -241,7 +253,8 @@ import HalfAutomationInput from './HalfAutomationInput.vue'
 import ConfigTable from './ConfigTable.vue'
 import TaskPanel from './TaskPanel.vue'
 import WebSharePanel from './WebSharePanel.vue'
-import { chatService, taskService, kanbanService, ZeroClawWS, zagentService, groupChatService, webshareService } from '../services/chatService'
+import WikiPanel from './WikiPanel.vue'
+import { chatService, taskService, kanbanService, ZeroClawWS, zagentService, groupChatService, webshareService, wikiService } from '../services/chatService'
 import { getAvatarColor } from '../utils/avatar'
 
 marked.setOptions({
@@ -354,6 +367,25 @@ const addRefreshLog = (level, msg) => {
   if (refreshLogs.value.length > 80) refreshLogs.value.shift()
 }
 
+// Wiki panel state
+const showWikiPanel = ref(false)
+const wikiPanelBodyExpanded = ref(true)
+const wikiPanelInitialHeight = ref(200)
+const isWikiRefreshing = ref(false)
+
+const handleWikiRefresh = async () => {
+  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
+  if (!agentName) return
+  isWikiRefreshing.value = true
+  try {
+    await wikiService.refresh(agentName)
+  } catch (e) {
+    console.error('[Wiki] Refresh failed:', e)
+  } finally {
+    isWikiRefreshing.value = false
+  }
+}
+
 // Pipeline management
 const showPipelinePanel = ref(false)
 
@@ -440,12 +472,21 @@ const loadWebShareFiles = async (path) => {
 watch(showWebSharePanel, (visible) => {
   if (visible) {
     showTaskPanel.value = false
+    showWikiPanel.value = false
     loadWebShareFiles()
   }
 })
 
 watch(showTaskPanel, (visible) => {
   if (visible) {
+    showWebSharePanel.value = false
+    showWikiPanel.value = false
+  }
+})
+
+watch(showWikiPanel, (visible) => {
+  if (visible) {
+    showTaskPanel.value = false
     showWebSharePanel.value = false
   }
 })
