@@ -2428,20 +2428,22 @@ function main(listen, apiToken, noAuth, adminPassword) {
                 // Parse [[WikiLink]]
                 var wikiLinkPattern = new RegExp('\\[\\[([^\\]]+)\\]\\]', 'g')
                 var match = wikiLinkPattern.exec(content)
-                for (; match !== null; match = wikiLinkPattern.exec(content)) {
+                for (var _wi = 0; match !== null; _wi++) {
                   var targetName = match[1].trim()
                   var targetId = getNodeId(targetName, 'page')
                   links.push({ source: pageId, target: targetId })
+                  match = wikiLinkPattern.exec(content)
                 }
 
                 // Parse [text](path.md)
                 var mdLinkPattern = new RegExp('\\[([^\\]]+)\\]\\(([^)]+\\.md)\\)', 'g')
                 match = mdLinkPattern.exec(content)
-                for (; match !== null; match = mdLinkPattern.exec(content)) {
+                for (var _mi = 0; match !== null; _mi++) {
                   var targetPath = match[2].trim()
                   var targetName = targetPath.replace(/^.*\//, '').replace('.md', '')
                   var targetId = getNodeId(targetName, 'page')
                   links.push({ source: pageId, target: targetId })
+                  match = mdLinkPattern.exec(content)
                 }
               }
             }
