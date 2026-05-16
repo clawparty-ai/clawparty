@@ -1,5 +1,5 @@
 <template>
-  <div class="wiki-panel" :style="{ height: panelHeight + 'px' }">
+  <div class="wiki-panel" :class="{ fullscreen: isFullscreen }" :style="{ height: isFullscreen ? '100vh' : panelHeight + 'px' }">
     <div class="wiki-panel-header">
       <span class="wiki-panel-icon">📖</span>
       <span class="wiki-panel-title">Wiki</span>
@@ -43,11 +43,7 @@
       </button>
     </div>
     
-    <div v-show="expanded" class="wiki-panel-body" :class="{ fullscreen: isFullscreen }">
-      <!-- Fullscreen exit button -->
-      <button v-if="isFullscreen" class="wiki-exit-fullscreen-btn" @click="toggleFullscreen" title="退出全屏">
-        ✕ 退出全屏
-      </button>
+    <div v-show="expanded" class="wiki-panel-body">
       <!-- Pages Tab -->
       <div v-if="activeTab === 'pages'" class="wiki-pages-layout">
         <div class="wiki-sidebar">
@@ -134,8 +130,8 @@
       
       <!-- Graph Tab -->
       <div v-else-if="activeTab === 'graph'" class="wiki-graph-container">
-        <div v-if="graphLoading" class="wiki-loading">加载关系图中...</div>
-        <canvas v-else ref="graphCanvas" class="wiki-graph-canvas"></canvas>
+        <div v-show="graphLoading" class="wiki-loading">加载关系图中...</div>
+        <canvas ref="graphCanvas" class="wiki-graph-canvas"></canvas>
         
         <div v-if="graphError" class="wiki-graph-error">{{ graphError }}</div>
         
@@ -556,20 +552,33 @@ const renderGraph = async () => {
   try {
     const res = await wikiService.getGraph(props.agentName)
     const { nodes, links } = res.data || { nodes: [], links: [] }
+    console.log('[Wiki] Graph data:', nodes.length, 'nodes,', links.length, 'links')
     
-    if (nodes.length === 0) {
+    if (!nodes || nodes.length === 0) {
       graphError.value = '暂无关系数据'
       graphLoading.value = false
       return
     }
     
+    // Hide loading, show canvas
+    graphLoading.value = false
     await nextTick()
     
     const canvas = graphCanvas.value
-    if (!canvas) return
+    if (!canvas) {
+      console.error('[Wiki] Canvas ref not found')
+      return
+    }
     
     const ctx = canvas.getContext('2d')
     const rect = canvas.parentElement.getBoundingClientRect()
+    console.log('[Wiki] Canvas parent size:', rect.width, 'x', rect.height)
+    
+    if (rect.width === 0 || rect.height === 0) {
+      console.error('[Wiki] Canvas parent has zero size')
+      return
+    }
+    
     canvas.width = rect.width
     canvas.height = rect.height - 40 // Leave space for legend
     
@@ -851,7 +860,7 @@ watch(() => props.agentName, () => {
   flex-direction: column;
 }
 
-.wiki-panel-body.fullscreen {
+.wiki-panel.fullscreen {
   position: fixed;
   top: 0;
   left: 0;
@@ -859,28 +868,6 @@ watch(() => props.agentName, () => {
   bottom: 0;
   z-index: 1000;
   background: var(--bg-secondary);
-}
-
-.wiki-exit-fullscreen-btn {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 1001;
-  padding: 6px 14px;
-  border: none;
-  border-radius: 6px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: 13px;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.wiki-exit-fullscreen-btn:hover {
-  background: var(--bg-hover);
 }
 
 .wiki-pages-layout {
