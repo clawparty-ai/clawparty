@@ -465,7 +465,7 @@ const startResize = (e) => {
 
 const onResizeMove = (e) => {
   if (!isResizing) return
-  const delta = startY - e.clientY
+  const delta = e.clientY - startY
   panelHeight.value = Math.max(60, Math.min(600, startHeight + delta))
 }
 
