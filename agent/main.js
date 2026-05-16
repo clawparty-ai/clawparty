@@ -2427,20 +2427,23 @@ function main(listen, apiToken, noAuth, adminPassword) {
 
                 // Parse [[WikiLink]]
                 var wikiLinkPattern = new RegExp('\\[\\[([^\\]]+)\\]\\]', 'g')
-                var match
-                while ((match = wikiLinkPattern.exec(content)) !== null) {
+                var match = wikiLinkPattern.exec(content)
+                while (match !== null) {
                   var targetName = match[1].trim()
                   var targetId = getNodeId(targetName, 'page')
                   links.push({ source: pageId, target: targetId })
+                  match = wikiLinkPattern.exec(content)
                 }
 
                 // Parse [text](path.md)
                 var mdLinkPattern = new RegExp('\\[([^\\]]+)\\]\\(([^)]+\\.md)\\)', 'g')
-                while ((match = mdLinkPattern.exec(content)) !== null) {
+                match = mdLinkPattern.exec(content)
+                while (match !== null) {
                   var targetPath = match[2].trim()
                   var targetName = targetPath.replace(/^.*\//, '').replace('.md', '')
                   var targetId = getNodeId(targetName, 'page')
                   links.push({ source: pageId, target: targetId })
+                  match = mdLinkPattern.exec(content)
                 }
               }
             }
