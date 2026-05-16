@@ -379,3 +379,40 @@ pub async fn refresh(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes
         "agent": agent_name
     }))
 }
+
+/// POST /api/wiki/{agent}/upload?name={filename}
+/// Upload a file to wiki/raw/ directory.
+pub async fn upload_raw(data_dir: &str, agent_name: &str, filename: &str, data: Bytes) -> Response<BoxBody<Bytes, hyper::Error>> {
+    let workspace = match get_agent_workspace(data_dir, agent_name) {
+        Ok(w) => w,
+        Err(_) => return error_response(StatusCode::NOT_FOUND, "Agent not found"),
+    };
+
+    // Security checks
+    if filename.is_empty() || filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return error_response(StatusCode::FORBIDDEN, "Forbidden filename");
+    }
+
+    let raw_dir = workspace.join("wiki").join("raw");
+
+    // Ensure raw directory exists
+    if let Err(e) = tokio::fs::create_dir_all(&raw_dir).await {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to create raw dir: {}", e));
+    }
+
+    let file_path = raw_dir.join(filename);
+
+    // Ensure still within raw dir after join
+    if !file_path.starts_with(&raw_dir) {
+        return error_response(StatusCode::FORBIDDEN, "Forbidden path");
+    }
+
+    match tokio::fs::write(&file_path, data).await {
+        Ok(_) => ok_response(&serde_json::json!({
+            "message": "File uploaded",
+            "filename": filename,
+            "path": format!("raw/{}", filename)
+        })),
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to write file: {}", e)),
+    }
+}

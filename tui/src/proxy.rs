@@ -625,6 +625,21 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
                     "refresh" if method == hyper::Method::POST => {
                         crate::wiki::refresh(data_dir, &agent_decoded).await
                     }
+                    "upload" if method == hyper::Method::POST => {
+                        let name = url::form_urlencoded::parse(query.as_bytes())
+                            .find(|(k, _)| k == "name")
+                            .map(|(_, v)| v.to_string())
+                            .unwrap_or_default();
+                        let body_bytes = match req.collect().await {
+                            Ok(body) => body.to_bytes(),
+                            Err(_) => {
+                                let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#)));
+                                *resp.status_mut() = StatusCode::BAD_REQUEST;
+                                return Ok(resp);
+                            }
+                        };
+                        crate::wiki::upload_raw(data_dir, &agent_decoded, &name, body_bytes).await
+                    }
                     _ => {
                         let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Wiki route not found"}"#)));
                         *resp.status_mut() = StatusCode::NOT_FOUND;
