@@ -800,6 +800,48 @@ function startAgent(agentName) {
   )
   console.log('[AGENT] Detected platform: ' + platform + ', isWin=' + isWin)
   var zeroclawPath = isWin ? zeroclawBase + '.exe' : zeroclawBase
+
+  // 1. Ensure require_pairing is disabled in config.toml
+  var configPath = os.path.join(agent.directory, 'config.toml')
+  try {
+    var configContent = os.read(configPath).toString()
+    if (configContent.indexOf('require_pairing = true') >= 0) {
+      configContent = configContent.replaceAll('require_pairing = true', 'require_pairing = false')
+      os.write(configPath, configContent)
+      console.log('[AGENT] Disabled require_pairing in ' + configPath)
+    } else if (configContent.indexOf('require_pairing') < 0) {
+      configContent = configContent + '\n[gateway]\nrequire_pairing = false\n'
+      os.write(configPath, configContent)
+      console.log('[AGENT] Added require_pairing = false to ' + configPath)
+    }
+  } catch (e) {
+    console.warn('[AGENT] Failed to patch config for require_pairing:', e)
+  }
+
+  // 2. For 0#Agent: create symlink to ~/.clawparty/.zeroclaw if directory missing
+  if (agentName === '0#Agent') {
+    var agentsDir = os.path.join(rootDir, 'agents')
+    var zeroAgentDir = os.path.join(agentsDir, '0#Agent')
+    var zeroclawDir = os.path.join(rootDir, '.zeroclaw')
+
+    try {
+      os.stat(zeroAgentDir)
+    } catch (e) {
+      // Directory does not exist — try creating a symlink
+      try {
+        os.stat(zeroclawDir)
+        if (!isWin) {
+          os.exec(['ln', '-s', zeroclawDir, zeroAgentDir])
+          console.log('[AGENT] Created symlink: ' + zeroAgentDir + ' -> ' + zeroclawDir)
+        } else {
+          console.warn('[AGENT] Skipping symlink on Windows for 0#Agent')
+        }
+      } catch (e2) {
+        console.warn('[AGENT] Failed to create symlink for 0#Agent:', e2)
+      }
+    }
+  }
+
   var cmd = [zeroclawPath, 'daemon', '--config-dir', agent.directory, '-p', agent.port.toString()]
   console.log('[AGENT] Command: ' + cmd.join(' '))
   

@@ -621,6 +621,12 @@ const fetchZAgents = async () => {
   try {
     const response = await zagentService.getAgents()
     const agents = response.data || []
+    // Ensure 0#Agent displays as Zerus
+    for (var zi = 0; zi < agents.length; zi++) {
+      if (agents[zi].agent_name === '0#Agent' && !agents[zi].display_name) {
+        agents[zi].display_name = 'Zerus'
+      }
+    }
     // Move 0#Agent to the top of the list
     var zeroAgentIndex = -1
     for (var i = 0; i < agents.length; i++) {
@@ -853,6 +859,10 @@ const selectZAgent = async (agent) => {
       port: cached.port
     }
     zcReconnectAttempts = 0
+    // If cached but no messages loaded yet, try to load history
+    if (!cached.messages || cached.messages.length === 0) {
+      await loadZAgentHistory(agentName, cached.messages)
+    }
     return
   }
 
@@ -864,8 +874,20 @@ const selectZAgent = async (agent) => {
     await fetchZAgents()
   }
 
-  const latestAgent = zAgents.value.find(a => a.agent_name === agent.agent_name)
-  const wsPort = latestAgent?.port
+  var latestAgent = zAgents.value.find(a => a.agent_name === agent.agent_name)
+  var wsPort = latestAgent?.port
+
+  if (!wsPort) {
+    var retries = 10
+    while (retries > 0 && (!latestAgent || latestAgent.status !== 'running' || !latestAgent.port)) {
+      console.log('[zAgent] Waiting for agent to be running... retries left:', retries)
+      await new Promise(r => setTimeout(r, 2000))
+      await fetchZAgents()
+      latestAgent = zAgents.value.find(a => a.agent_name === agent.agent_name)
+      retries--
+    }
+    wsPort = latestAgent?.port
+  }
   zcReconnectAttempts = 0
 
   // Create agent-specific message handler
@@ -935,7 +957,7 @@ const selectZAgent = async (agent) => {
   }
 
   // Load historical messages (oldest first) for display
-  loadZAgentHistory(agentName, wsConnections[agentName].messages)
+  await loadZAgentHistory(agentName, wsConnections[agentName].messages)
 }
 
 const handleZeroClawOpen = () => {
