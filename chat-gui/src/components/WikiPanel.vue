@@ -29,7 +29,6 @@
         />
       </div>
       <button
-        v-if="activeTab === 'pages'"
         class="wiki-fullscreen-btn"
         :class="{ active: isFullscreen }"
         @click="toggleFullscreen"
@@ -435,8 +434,24 @@ const toggleFullscreen = () => {
   isFullscreen.value = !isFullscreen.value
 }
 
-const onRefresh = () => {
+const onRefresh = async () => {
   emit('refresh')
+  try {
+    const res = await wikiService.refresh(props.agentName)
+    const data = res.data || {}
+    const converted = data.converted || []
+    const failed = data.failed || []
+    if (converted.length > 0) {
+      console.log('[Wiki] Converted', converted.length, 'file(s):', converted)
+      // Show a simple alert/notification via a temporary message
+      alert('已转换 ' + converted.length + ' 个文件:\n' + converted.join('\n') + 
+            (failed.length > 0 ? '\n\n失败 ' + failed.length + ' 个:\n' + failed.join('\n') : ''))
+    } else if (failed.length > 0) {
+      alert('转换失败 ' + failed.length + ' 个文件:\n' + failed.join('\n'))
+    }
+  } catch (e) {
+    console.error('[Wiki] Refresh failed:', e)
+  }
   loadTree()
 }
 
