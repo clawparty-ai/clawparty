@@ -435,6 +435,7 @@ pub async fn refresh(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes
 
     // Auto-convert non-markdown files in raw/ that don't have a corresponding .md in pages/
     let mut converted = Vec::new();
+    let mut ingested = Vec::new();
     let mut failed = Vec::new();
 
     if let Ok(mut entries) = tokio::fs::read_dir(&raw_dir).await {
@@ -458,8 +459,22 @@ pub async fn refresh(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes
             match convert_file(&raw_file_path, &pages_dir, &name).await {
                 Ok(md_filename) => converted.push(md_filename),
                 Err(e) => {
-                    eprintln!("[Wiki] Auto-convert failed for {}: {}", name, e);
-                    failed.push(name);
+                    eprintln!("[Wiki] Auto-convert failed for {}: {}, falling back to raw ingest", name, e);
+                    // Fallback: ingest raw content as-is even if convert failed
+                    let raw_content = tokio::fs::read_to_string(&raw_file_path).await.unwrap_or_default();
+                    if raw_content.is_empty() {
+                        failed.push(name);
+                        continue;
+                    }
+                    let md_filename = name.rsplit_once('.')
+                        .map(|(n, _)| format!("{}.md", n))
+                        .unwrap_or_else(|| format!("{}.md", name));
+                    let md_path = pages_dir.join(&md_filename);
+                    let wrapped = format!("# {}\n\n> 原始文件 (转换失败，以原始格式显示)\n\n{}", name, raw_content);
+                    match tokio::fs::write(&md_path, wrapped).await {
+                        Ok(_) => ingested.push(md_filename),
+                        Err(_) => failed.push(name),
+                    }
                 }
             }
         }
@@ -469,6 +484,7 @@ pub async fn refresh(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes
         "message": "Wiki refreshed",
         "agent": agent_name,
         "converted": converted,
+        "ingested": ingested,
         "failed": failed
     }))
 }

@@ -107,9 +107,23 @@
         </div>
         
         <div class="wiki-viewer" ref="viewerRef">
-          <div v-if="!activePage" class="wiki-empty">
+          <div v-if="!activePage && refreshLogs.length === 0" class="wiki-empty">
             <span class="wiki-empty-icon">📖</span>
             <span class="wiki-empty-text">选择一个页面查看内容</span>
+          </div>
+          <div v-else-if="refreshLogs.length > 0 && !activePage" class="wiki-log-panel">
+            <div class="wiki-log-header">🪵 Wiki 刷新日志</div>
+            <div class="wiki-log-body" ref="logBodyRef">
+              <div
+                v-for="(log, idx) in refreshLogs"
+                :key="idx"
+                class="wiki-log-line"
+                :class="'log-' + log.level"
+              >
+                <span v-if="log.time" class="wiki-log-time">{{ log.time }}</span>
+                <span class="wiki-log-msg">{{ log.msg }}</span>
+              </div>
+            </div>
           </div>
           <div v-else class="wiki-page-content">
             <div class="wiki-page-title">{{ activePageTitle }}</div>
@@ -185,6 +199,22 @@ const graphError = ref('')
 // Raw files state
 const rawFiles = ref([])
 const rawFilesLoading = ref(false)
+
+// Refresh logs state
+const refreshLogs = ref([])
+const logBodyRef = ref(null)
+
+const addRefreshLog = (level, msg) => {
+  const t = new Date()
+  const hh = t.getHours().toString().padStart(2, '0')
+  const mm = t.getMinutes().toString().padStart(2, '0')
+  const ss = t.getSeconds().toString().padStart(2, '0')
+  refreshLogs.value.push({ time: hh + ':' + mm + ':' + ss, level, msg })
+  if (refreshLogs.value.length > 80) refreshLogs.value.shift()
+  nextTick(() => {
+    if (logBodyRef.value) logBodyRef.value.scrollTop = logBodyRef.value.scrollHeight
+  })
+}
 
 // Upload state
 const isDragOver = ref(false)
@@ -436,20 +466,36 @@ const toggleFullscreen = () => {
 
 const onRefresh = async () => {
   emit('refresh')
+  addRefreshLog('info', '开始刷新 Wiki...')
   try {
     const res = await wikiService.refresh(props.agentName)
     const data = res.data || {}
     const converted = data.converted || []
+    const ingested = data.ingested || []
     const failed = data.failed || []
     if (converted.length > 0) {
-      console.log('[Wiki] Converted', converted.length, 'file(s):', converted)
-      // Show a simple alert/notification via a temporary message
-      alert('已转换 ' + converted.length + ' 个文件:\n' + converted.join('\n') + 
-            (failed.length > 0 ? '\n\n失败 ' + failed.length + ' 个:\n' + failed.join('\n') : ''))
-    } else if (failed.length > 0) {
-      alert('转换失败 ' + failed.length + ' 个文件:\n' + failed.join('\n'))
+      addRefreshLog('info', '已转换 ' + converted.length + ' 个文件')
+      for (const f of converted) {
+        addRefreshLog('info', '  ✓ ' + f)
+      }
+    }
+    if (ingested.length > 0) {
+      addRefreshLog('warn', '已摄取(原始格式) ' + ingested.length + ' 个文件')
+      for (const f of ingested) {
+        addRefreshLog('warn', '  ⚠ ' + f)
+      }
+    }
+    if (failed.length > 0) {
+      addRefreshLog('error', '摄取失败 ' + failed.length + ' 个文件')
+      for (const f of failed) {
+        addRefreshLog('error', '  ✗ ' + f)
+      }
+    }
+    if (converted.length === 0 && ingested.length === 0 && failed.length === 0) {
+      addRefreshLog('info', '没有需要转换的新文件')
     }
   } catch (e) {
+    addRefreshLog('error', '刷新失败: ' + (e?.message || e))
     console.error('[Wiki] Refresh failed:', e)
   }
   loadTree()
@@ -993,6 +1039,50 @@ watch(() => props.agentName, () => {
   overflow-y: auto;
   padding: 16px;
 }
+
+.wiki-log-panel {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.wiki-log-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.wiki-log-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.wiki-log-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 1px;
+}
+
+.wiki-log-time {
+  color: var(--text-tertiary);
+  margin-right: 6px;
+}
+
+.wiki-log-line.log-info  { color: #337ab7; }
+.wiki-log-line.log-warn  { color: #f0ad4e; }
+.wiki-log-line.log-error { color: #d9534f; }
+.wiki-log-line.log-debug { color: #888888; }
 
 .wiki-empty {
   display: flex;
