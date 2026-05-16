@@ -625,6 +625,13 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
                     "refresh" if method == hyper::Method::POST => {
                         crate::wiki::refresh(data_dir, &agent_decoded).await
                     }
+                    "convert" if method == hyper::Method::POST => {
+                        let filename = url::form_urlencoded::parse(query.as_bytes())
+                            .find(|(k, _)| k == "filename")
+                            .map(|(_, v)| v.to_string())
+                            .unwrap_or_default();
+                        crate::wiki::convert(data_dir, &agent_decoded, &filename).await
+                    }
                     "upload" if method == hyper::Method::POST => {
                         let name = url::form_urlencoded::parse(query.as_bytes())
                             .find(|(k, _)| k == "name")

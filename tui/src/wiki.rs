@@ -380,6 +380,97 @@ pub async fn refresh(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes
     }))
 }
 
+/// POST /api/wiki/{agent}/convert?filename={name}
+/// Convert a non-markdown file in wiki/raw/ to markdown using zeroclaw LLM.
+pub async fn convert(data_dir: &str, agent_name: &str, filename: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
+    let workspace = match get_agent_workspace(data_dir, agent_name) {
+        Ok(w) => w,
+        Err(_) => return error_response(StatusCode::NOT_FOUND, "Agent not found"),
+    };
+
+    if filename.is_empty() || filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return error_response(StatusCode::FORBIDDEN, "Forbidden filename");
+    }
+
+    let raw_path = workspace.join("wiki").join("raw").join(filename);
+    if !raw_path.starts_with(workspace.join("wiki").join("raw")) {
+        return error_response(StatusCode::FORBIDDEN, "Forbidden path");
+    }
+
+    // Check file size (max 500KB for LLM context)
+    let metadata = match tokio::fs::metadata(&raw_path).await {
+        Ok(m) => m,
+        Err(_) => return error_response(StatusCode::NOT_FOUND, "File not found"),
+    };
+    if metadata.len() > 500 * 1024 {
+        return error_response(StatusCode::PAYLOAD_TOO_LARGE, "File too large for conversion (max 500KB)");
+    }
+
+    // Read file content as text
+    let content = match tokio::fs::read_to_string(&raw_path).await {
+        Ok(c) => c,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "File is not a valid text file"),
+    };
+
+    // Truncate if too long (approximate token limit)
+    let content = if content.len() > 100_000 {
+        content[..100_000].to_string() + "\n\n...[内容过长，已截断]"
+    } else {
+        content
+    };
+
+    let prompt = format!(
+        "请将以下文件内容转换为 markdown 格式。保持原有的结构和信息，添加适当的标题、列表、代码块等 markdown 语法。文件名为: {}\n\n```\n{}\n```",
+        filename, content
+    );
+
+    // Call zeroclaw API
+    let client = reqwest::Client::new();
+    let body = serde_json::json!({ "message": prompt });
+    
+    let result = match client
+        .post("http://127.0.0.1:42617/api/sessions/me/chat")
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                match resp.json::<serde_json::Value>().await {
+                    Ok(json) => json["response"].as_str().unwrap_or("").to_string(),
+                    Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to parse LLM response: {}", e)),
+                }
+            } else {
+                return error_response(StatusCode::BAD_GATEWAY, "LLM service returned error");
+            }
+        }
+        Err(e) => return error_response(StatusCode::BAD_GATEWAY, &format!("Failed to connect to LLM service: {}", e)),
+    };
+
+    if result.is_empty() {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "LLM returned empty response");
+    }
+
+    // Save as markdown in pages/
+    let pages_dir = workspace.join("wiki").join("pages");
+    let _ = tokio::fs::create_dir_all(&pages_dir).await;
+    
+    let md_filename = filename.rsplit_once('.')
+        .map(|(name, _)| format!("{}.md", name))
+        .unwrap_or_else(|| format!("{}.md", filename));
+    let md_path = pages_dir.join(&md_filename);
+
+    match tokio::fs::write(&md_path, result).await {
+        Ok(_) => ok_response(&serde_json::json!({
+            "message": "Converted to markdown",
+            "filename": md_filename,
+            "path": format!("pages/{}", md_filename)
+        })),
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to save markdown: {}", e)),
+    }
+}
+
 /// POST /api/wiki/{agent}/upload?name={filename}
 /// Upload a file to wiki/raw/ directory.
 pub async fn upload_raw(data_dir: &str, agent_name: &str, filename: &str, data: Bytes) -> Response<BoxBody<Bytes, hyper::Error>> {

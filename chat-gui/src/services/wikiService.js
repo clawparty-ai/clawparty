@@ -35,5 +35,9 @@ export const wikiService = {
       headers: { 'Content-Type': 'application/octet-stream' },
       transformRequest: [function(data) { return data }]
     })
+  },
+
+  convert(agentName, fileName) {
+    return post(`/wiki/${encodeURIComponent(agentName)}/convert?filename=${encodeURIComponent(fileName)}`)
   }
 }
