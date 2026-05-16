@@ -623,7 +623,7 @@ const fetchZAgents = async () => {
     const agents = response.data || []
     // Ensure 0#Agent displays as Zerus
     for (var zi = 0; zi < agents.length; zi++) {
-      if (agents[zi].agent_name === '0#Agent' && !agents[zi].display_name) {
+      if (agents[zi].agent_name === '0#Agent') {
         agents[zi].display_name = 'Zerus'
       }
     }

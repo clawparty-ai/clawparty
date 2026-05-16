@@ -45,6 +45,10 @@
     </div>
     
     <div v-show="expanded" class="wiki-panel-body" :class="{ fullscreen: isFullscreen }">
+      <!-- Fullscreen exit button -->
+      <button v-if="isFullscreen" class="wiki-exit-fullscreen-btn" @click="toggleFullscreen" title="退出全屏">
+        ✕ 退出全屏
+      </button>
       <!-- Pages Tab -->
       <div v-if="activeTab === 'pages'" class="wiki-pages-layout">
         <div class="wiki-sidebar">
@@ -77,6 +81,29 @@
               :activePath="activePagePath"
               @select="handleSelectPage"
             />
+          </div>
+          <!-- Raw files section -->
+          <div class="wiki-raw-section">
+            <div class="wiki-raw-header">
+              <span class="wiki-raw-icon">📁</span>
+              <span class="wiki-raw-title">raw/</span>
+              <span v-if="rawFiles.length > 0" class="wiki-raw-count">{{ rawFiles.length }}</span>
+            </div>
+            <div v-if="rawFilesLoading" class="wiki-raw-loading">加载中...</div>
+            <div v-else-if="rawFiles.length === 0" class="wiki-raw-empty">暂无文件</div>
+            <div v-else class="wiki-raw-list">
+              <div
+                v-for="file in rawFiles"
+                :key="file.name"
+                class="wiki-raw-item"
+                :class="{ 'is-dir': file.type === 'dir' }"
+                @click="file.type === 'file' && previewRawFile(file.name)"
+              >
+                <span class="wiki-raw-item-icon">{{ file.type === 'dir' ? '📁' : '📄' }}</span>
+                <span class="wiki-raw-item-name" :title="file.name">{{ file.name }}</span>
+                <span v-if="file.type === 'file' && file.size" class="wiki-raw-item-size">{{ formatSize(file.size) }}</span>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -155,6 +182,10 @@ const viewerRef = ref(null)
 const graphCanvas = ref(null)
 const graphLoading = ref(false)
 const graphError = ref('')
+
+// Raw files state
+const rawFiles = ref([])
+const rawFilesLoading = ref(false)
 
 // Upload state
 const isDragOver = ref(false)
@@ -255,6 +286,25 @@ const loadTree = async () => {
     console.error('[Wiki] Failed to load tree:', e)
   } finally {
     treeLoading.value = false
+  }
+  // Also load raw files
+  loadRawFiles()
+}
+
+const loadRawFiles = async () => {
+  rawFilesLoading.value = true
+  try {
+    const res = await wikiService.getTree(props.agentName, 'raw')
+    if (res.data && res.data.files) {
+      rawFiles.value = res.data.files
+    } else {
+      rawFiles.value = []
+    }
+  } catch (e) {
+    console.error('[Wiki] Failed to load raw files:', e)
+    rawFiles.value = []
+  } finally {
+    rawFilesLoading.value = false
   }
 }
 
@@ -378,6 +428,26 @@ const toggleFullscreen = () => {
 const onRefresh = () => {
   emit('refresh')
   loadTree()
+}
+
+const formatSize = (bytes) => {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB'
+}
+
+const previewRawFile = async (filename) => {
+  try {
+    const res = await wikiService.getPage(props.agentName, filename, 'raw')
+    pageContent.value = res.data || ''
+    activePageTitle.value = filename
+    activePagePath.value = 'raw/' + filename
+    activePage.value = { name: filename, type: 'file', path: 'raw/' + filename }
+    nextTick(() => setupWikiLinks())
+  } catch (e) {
+    console.error('[Wiki] Failed to preview raw file:', e)
+  }
 }
 
 // Resize handling
@@ -720,6 +790,28 @@ watch(() => props.agentName, () => {
   background: var(--bg-secondary);
 }
 
+.wiki-exit-fullscreen-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1001;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wiki-exit-fullscreen-btn:hover {
+  background: var(--bg-hover);
+}
+
 .wiki-pages-layout {
   display: flex;
   flex: 1;
@@ -786,6 +878,89 @@ watch(() => props.agentName, () => {
 
 .wiki-tree {
   font-size: 12px;
+}
+
+.wiki-raw-section {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+}
+
+.wiki-raw-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.wiki-raw-icon {
+  font-size: 12px;
+}
+
+.wiki-raw-title {
+  flex: 1;
+}
+
+.wiki-raw-count {
+  background: var(--bg-hover);
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.wiki-raw-loading,
+.wiki-raw-empty {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding: 4px 0;
+}
+
+.wiki-raw-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.wiki-raw-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-primary);
+  transition: background 0.15s;
+}
+
+.wiki-raw-item:hover {
+  background: var(--bg-hover);
+}
+
+.wiki-raw-item.is-dir {
+  cursor: default;
+}
+
+.wiki-raw-item-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.wiki-raw-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wiki-raw-item-size {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
 }
 
 .wiki-viewer {
