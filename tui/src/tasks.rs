@@ -240,8 +240,9 @@ async fn save_tasks_md(data_dir: &str, agent_name: &str, group_id: Option<&str>)
         agent_name, gid_str, ts, total, completed, running, pending, failed, render_tasks(&tasks, 0)
     );
 
-    // Write to workspace via existing save_workspace_file logic
-    wiki::save_workspace_file(data_dir, agent_name, "TASKS.md", Bytes::from(content)).await;
+    // Write to workspace via write_workspace_file so errors propagate
+    wiki::write_workspace_file(data_dir, agent_name, "TASKS.md", Bytes::from(content)).await
+        .map_err(|e| anyhow::anyhow!("Failed to save TASKS.md: {}", e))?;
 
     Ok(())
 }

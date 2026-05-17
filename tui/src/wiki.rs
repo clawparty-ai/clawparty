@@ -670,32 +670,33 @@ pub async fn upload_raw(data_dir: &str, agent_name: &str, filename: &str, data: 
     }
 }
 
-/// POST /api/agents/{agent}/workspace/{filename}
-/// Write a file into the agent's workspace directory.
-pub async fn save_workspace_file(data_dir: &str, agent_name: &str, filename: &str, data: Bytes) -> Response<BoxBody<Bytes, hyper::Error>> {
-    let workspace = match get_agent_workspace(data_dir, agent_name) {
-        Ok(w) => w,
-        Err(_) => return error_response(StatusCode::NOT_FOUND, "Agent not found"),
-    };
+/// Internal helper: write a file into the agent's workspace directory.
+/// Returns Err if the agent is not found or the write fails.
+pub async fn write_workspace_file(data_dir: &str, agent_name: &str, filename: &str, data: Bytes) -> anyhow::Result<()> {
+    let workspace = get_agent_workspace(data_dir, agent_name)?;
 
-    // Security checks
     if filename.is_empty() || filename.contains("..") || filename.contains('/') || filename.contains('\\') {
-        return error_response(StatusCode::FORBIDDEN, "Forbidden filename");
+        anyhow::bail!("Forbidden filename");
     }
 
     let file_path = workspace.join(filename);
-
-    // Ensure still within workspace after join
     if !file_path.starts_with(&workspace) {
-        return error_response(StatusCode::FORBIDDEN, "Forbidden path");
+        anyhow::bail!("Forbidden path");
     }
 
-    match tokio::fs::write(&file_path, data).await {
+    tokio::fs::write(&file_path, data).await
+        .map_err(|e| anyhow::anyhow!("Failed to write file: {}", e))?;
+    Ok(())
+}
+
+/// POST /api/agents/{agent}/workspace/{filename}
+/// Write a file into the agent's workspace directory.
+pub async fn save_workspace_file(data_dir: &str, agent_name: &str, filename: &str, data: Bytes) -> Response<BoxBody<Bytes, hyper::Error>> {
+    match write_workspace_file(data_dir, agent_name, filename, data).await {
         Ok(_) => ok_response(&serde_json::json!({
             "message": "File saved",
             "filename": filename,
-            "path": file_path.to_string_lossy().to_string()
         })),
-        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to write file: {}", e)),
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("{}", e)),
     }
 }

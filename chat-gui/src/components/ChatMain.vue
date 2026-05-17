@@ -370,7 +370,7 @@ const addRefreshLog = (level, msg) => {
 // Wiki panel state
 const showWikiPanel = ref(false)
 const wikiPanelBodyExpanded = ref(true)
-const wikiPanelInitialHeight = ref(200)
+const wikiPanelInitialHeight = ref(180)
 const isWikiRefreshing = ref(false)
 
 const handleWikiRefresh = async () => {
