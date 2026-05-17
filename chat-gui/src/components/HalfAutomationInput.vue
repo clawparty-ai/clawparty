@@ -174,7 +174,7 @@ async function rewrite() {
       hintText.value = ''
     }
   } catch (e) {
-    console.error('Rewrite failed:', e)
+    console.error('[HalfAutomationInput] Rewrite failed:', e)
   } finally {
     rewriting.value = false
   }

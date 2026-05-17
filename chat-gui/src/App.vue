@@ -468,7 +468,7 @@ const fetchMeshes = async () => {
       await fetchUsers()
     }
   } catch (error) {
-    console.error('Failed to fetch meshes:', error)
+    console.error('[App] Failed to fetch meshes:', error)
   }
 }
 
@@ -487,7 +487,7 @@ const fetchOpenclawAgents = async () => {
     }))
   } catch (error) {
     localOpenclawAvailable.value = false
-    console.error('Failed to fetch OpenClaw agents:', error)
+    console.error('[App] Failed to fetch OpenClaw agents:', error)
   }
 }
 
@@ -538,7 +538,7 @@ const fetchChats = async () => {
       }
     }
   } catch (error) {
-    console.error('Failed to fetch chats:', error)
+    console.error('[App] Failed to fetch chats:', error)
   }
 }
 
@@ -581,7 +581,7 @@ const loadZeroClawChatHistory = async (session) => {
       session.isZeroClaw = true
     }
   } catch (error) {
-    console.error('Failed to load zeroclaw chat history:', error)
+    console.error('[App] Failed to load zeroclaw chat history:', error)
   }
 }
 
@@ -641,7 +641,7 @@ const fetchZAgents = async () => {
     }
     zAgents.value = agents
   } catch (error) {
-    console.error('Failed to fetch zAgents:', error)
+    console.error('[App] Failed to fetch zAgents:', error)
   }
 }
 
@@ -661,7 +661,7 @@ const fetchLocalGroupChats = async () => {
         name: c.group_name
       }))
   } catch (error) {
-    console.error('Failed to fetch local group chats:', error)
+    console.error('[App] Failed to fetch local group chats:', error)
   }
 }
 
@@ -674,7 +674,7 @@ const createZAgent = async (agentConfig) => {
     await zagentService.startAgent(config.agent_name)
     await fetchZAgents()
   } catch (error) {
-    console.error('Failed to create zAgent:', error)
+    console.error('[App] Failed to create zAgent:', error)
     throw error
   }
 }
@@ -687,7 +687,7 @@ const deleteZAgent = async (agentName) => {
       activeZAgent.value = null
     }
   } catch (error) {
-    console.error('Failed to delete zAgent:', error)
+    console.error('[App] Failed to delete zAgent:', error)
     throw error
   }
 }
@@ -708,7 +708,7 @@ const handleStartZAgent = async () => {
       await selectZAgent(updatedAgent)
     }
   } catch (error) {
-    console.error('Failed to start zAgent:', error)
+    console.error('[App] Failed to start zAgent:', error)
   }
 }
 
@@ -1406,7 +1406,7 @@ const fetchZeroClawSessions = async () => {
       zeroclawSessions.value = response.data.sessions
     }
   } catch (error) {
-    console.error('Failed to fetch zeroclaw sessions:', error)
+    console.error('[App] Failed to fetch zeroclaw sessions:', error)
   }
 }
 
@@ -1431,7 +1431,7 @@ const createSession = async (sessionName) => {
       selectZeroClawSession(newSession)
     }
   } catch (error) {
-    console.error('Failed to create session:', error)
+    console.error('[App] Failed to create session:', error)
     throw error
   }
 }
@@ -1994,7 +1994,7 @@ const sendMessage = async () => {
   // Safety timeout: reset sending state after 30 seconds to prevent permanent UI freeze
   const sendingTimeout = setTimeout(() => {
     if (sending.value) {
-      console.warn('[sendMessage] Timeout: resetting sending state')
+      console.warn('[App] Timeout: resetting sending state')
       sending.value = false
     }
   }, 30000)
@@ -2164,7 +2164,7 @@ const sendMessage = async () => {
         if (targetGroup && cleanText && currentMesh.value) {
           chatService.sendGroupMessageAsAgent(
             currentMesh.value, targetGroup.gcid, chat.agentId, cleanText
-          ).catch(err => console.error('Failed to send to group as agent:', err))
+          ).catch(err => console.error('[App] Failed to send to group as agent:', err))
         }
       }
 
@@ -2221,7 +2221,7 @@ const sendMessage = async () => {
       await chatService.sendMessage(currentMesh.value, chat.name, text, peerSessionId)
     }
   } catch (error) {
-    console.error('Failed to send message:', error)
+    console.error('[App] Failed to send message:', error)
   } finally {
     sending.value = false
   }
@@ -2322,7 +2322,7 @@ const handleSendImages = async (imageFiles) => {
         sending.value = false
       })
     } catch (error) {
-      console.error('Failed to send images to openclaw agent:', error)
+      console.error('[App] Failed to send images to openclaw agent:', error)
     }
     return
   }
@@ -2377,7 +2377,7 @@ const handleSendImages = async (imageFiles) => {
       })
     }
   } catch (error) {
-    console.error('Failed to send images:', error)
+    console.error('[App] Failed to send images:', error)
   }
 }
 
@@ -2418,7 +2418,7 @@ const handleSendFiles = async (files) => {
             })
           }
         } catch (error) {
-          console.error('Failed to upload image:', error)
+          console.error('[App] Failed to upload image:', error)
         }
       }
       if (picturePaths.length > 0) {
@@ -2450,7 +2450,7 @@ const handleSendFiles = async (files) => {
             savedPaths.push(data.path)
           }
         } catch (error) {
-          console.error('Failed to upload file:', error)
+          console.error('[App] Failed to upload file:', error)
         }
       }
       if (savedPaths.length > 0) {
@@ -2496,7 +2496,7 @@ const handleSendFiles = async (files) => {
           })
         }
       } catch (error) {
-        console.error('Failed to upload file:', fileName, error)
+        console.error('[App] Failed to upload file:', fileName, error)
       }
     }
 
@@ -2555,7 +2555,7 @@ const fetchUsers = async () => {
     // Exclude own endpoint(s)
     users.value = (response.data || []).filter(ep => ep.username !== currentMeshAgentUsername.value)
   } catch (error) {
-    console.error('[fetchUsers] error:', error)
+    console.error('[App] error:', error)
   }
 }
 
@@ -2616,7 +2616,7 @@ const selectOpenclawAgent = async (agent) => {
         const parsed = typeof rawData === 'string' ? JSON.parse(rawData) : rawData
         sessions = parsed?.sessions || []
       } catch (e) {
-        console.error('Failed to parse sessions:', e)
+        console.error('[App] Failed to parse sessions:', e)
       }
       openclawSessions.value = sessions
       chat.sessions = sessions
@@ -2626,7 +2626,7 @@ const selectOpenclawAgent = async (agent) => {
       }
       chat.isTemp = false
     } catch (error) {
-      console.error('Failed to fetch sessions:', error)
+      console.error('[App] Failed to fetch sessions:', error)
     }
   } else if (!chat.messages || chat.messages.length === 0) {
     const defaultSessionId = chat.sessions.length > 0 ? String(chat.sessions[0].sessionId) : null
@@ -2644,7 +2644,7 @@ const loadSessionHistory = async (chat, agentId, sessionId) => {
     
     // Fallback to session file if chat_log returns less than 10 messages
     if (messages.length < 10) {
-      console.log('[loadSessionHistory] chat_log has only', messages.length, 'messages, falling back to session file')
+      console.log('[App] chat_log has only', messages.length, 'messages, falling back to session file')
       await loadFromSessionFile(chat, agentId, sessionId)
       return
     }
@@ -2658,7 +2658,7 @@ const loadSessionHistory = async (chat, agentId, sessionId) => {
     }))
     chat.sessionId = sessionId
   } catch (error) {
-    console.error('Failed to load chat log:', error)
+    console.error('[App] Failed to load chat log:', error)
     // Fallback: try session history if chat-log fails
     await loadFromSessionFile(chat, agentId, sessionId)
   }
@@ -2671,7 +2671,7 @@ const loadFromSessionFile = async (chat, agentId, sessionId) => {
     try {
       historyData = JSON.parse(`[${historyResponse.data.replaceAll('\n',',')}{}]`)
     } catch (e) {
-      console.error('Failed to parse history:', e)
+      console.error('[App] Failed to parse history:', e)
     }
     chat.messages = [];
     if (historyData) {
@@ -2694,7 +2694,7 @@ const loadFromSessionFile = async (chat, agentId, sessionId) => {
     }
     chat.sessionId = sessionId
   } catch (fallbackError) {
-    console.error('Failed to load session history fallback:', fallbackError)
+    console.error('[App] Failed to load session history fallback:', fallbackError)
   }
 }
 
@@ -2705,7 +2705,7 @@ const switchOpenclawSession = async (chat, sessionId) => {
     const messages = Array.isArray(response.data) ? response.data : []
     
     if (messages.length < 10) {
-      console.log('[switchOpenclawSession] chat_log has only', messages.length, 'messages, falling back to session file')
+      console.log('[App] chat_log has only', messages.length, 'messages, falling back to session file')
       await loadFromSessionFile(chat, chat.agentId, sessionId)
       return
     }
@@ -2719,7 +2719,7 @@ const switchOpenclawSession = async (chat, sessionId) => {
     }))
     chat.sessionId = sessionId
   } catch (error) {
-    console.error('Failed to fetch chat log:', error)
+    console.error('[App] Failed to fetch chat log:', error)
     await loadFromSessionFile(chat, chat.agentId, sessionId)
   }
 }
@@ -2759,7 +2759,7 @@ const handleDeleteGroup = async (chat) => {
   try {
     await chatService.deleteGroup(currentMesh.value, chat.creator, chat.groupId)
   } catch (error) {
-    console.error('Failed to delete group:', error)
+    console.error('[App] Failed to delete group:', error)
   }
   // Remove from local list immediately regardless of API result
   const idx = chats.value.indexOf(chat)
@@ -2772,19 +2772,19 @@ const handleLeaveGroup = async (chat) => {
   const confirmed = window.confirm ? window.confirm(`Leave group "${chat.name}"?`) : true
   if (!confirmed) return
   
-  console.log('[handleLeaveGroup] Leaving group:', { creator: chat.creator, groupId: chat.groupId, name: chat.name })
+  console.log('[App] Leaving group:', { creator: chat.creator, groupId: chat.groupId, name: chat.name })
   
   try {
     const result = await chatService.leaveGroup(currentMesh.value, chat.creator, chat.groupId)
-    console.log('[handleLeaveGroup] API result:', result)
+    console.log('[App] API result:', result)
   } catch (error) {
-    console.error('[handleLeaveGroup] API error:', error)
+    console.error('[App] API error:', error)
     return
   }
   
   // Remove from local list immediately regardless of API result
   const idx = chats.value.findIndex(c => c.id === chat.id)
-  console.log('[handleLeaveGroup] Removing from local list, idx:', idx)
+  console.log('[App] Removing from local list, idx:', idx)
   if (idx >= 0) chats.value.splice(idx, 1)
   if (activeChat.value === idx) {
     activeChat.value = null
@@ -2813,7 +2813,7 @@ const renameGroupChat = async (chat, newName) => {
   if (!currentMesh.value || !newName.trim()) return
   
   if (chat.creator !== currentMeshAgentUsername.value) {
-    console.error('Failed to rename group: Only the group creator can rename the group')
+    console.error('[App] Failed to rename group: Only the group creator can rename the group')
     return
   }
   
@@ -2824,7 +2824,7 @@ const renameGroupChat = async (chat, newName) => {
     })
     await fetchChats()
   } catch (error) {
-    console.error('Failed to rename group:', error)
+    console.error('[App] Failed to rename group:', error)
   }
 }
 
@@ -2832,7 +2832,7 @@ const updateGroupMembers = async (chat, members) => {
   if (!currentMesh.value) return
   
   if (chat.creator !== currentMeshAgentUsername.value) {
-    console.error('Failed to update group members: Only the group creator can update members')
+    console.error('[App] Failed to update group members: Only the group creator can update members')
     return
   }
   
@@ -2843,7 +2843,7 @@ const updateGroupMembers = async (chat, members) => {
     )
     await fetchChats()
   } catch (error) {
-    console.error('Failed to update group members:', error)
+    console.error('[App] Failed to update group members:', error)
   }
 }
 
@@ -2860,7 +2860,7 @@ const openSharedTemplates = () => {
 const openMainChatForInstall = () => {
   const mainAgent = openclawAgents.value.find(a => a.id === 'main')
   if (!mainAgent) {
-    console.error('[openMainChatForInstall] main agent not found')
+    console.error('[App] main agent not found')
     return
   }
   
@@ -2879,7 +2879,7 @@ const openMainChatForInstall = () => {
 const handleSendMessages = async (messages) => {
   const mainAgent = openclawAgents.value.find(a => a.id === 'main')
   if (!mainAgent) {
-    console.error('[handleSendMessages] main agent not found')
+    console.error('[App] main agent not found')
     return
   }
   
@@ -2936,7 +2936,7 @@ const handleSendMessages = async (messages) => {
         })
       }
     } catch (e) {
-      console.error(`[handleSendMessages] Error sending message ${i + 1}:`, e)
+      console.error(`[App] Error sending message ${i + 1}:`, e)
     }
     
     // Delay between messages
@@ -2953,13 +2953,13 @@ const handleTemplateInstalled = async (data) => {
   showSharedTemplates.value = false
   
   if (!data || !data.agentName || !data.soulContent) {
-    console.warn('[handleTemplateInstalled] missing data, skipping auto-send')
+    console.warn('[App] missing data, skipping auto-send')
     return
   }
   
   const mainAgent = openclawAgents.value.find(a => a.id === 'main')
   if (!mainAgent) {
-    console.error('[handleTemplateInstalled] main agent not found')
+    console.error('[App] main agent not found')
     return
   }
   
@@ -3155,7 +3155,7 @@ const initAuth = async () => {
       return
     }
   } catch (error) {
-    console.error('验证 token 失败:', error)
+    console.error('[App] 验证 token 失败:', error)
   }
 
   // Token invalid, clear and show login
@@ -3181,7 +3181,7 @@ const submitToken = async () => {
     showTokenDialog.value = false
     startApp()
   } catch (error) {
-    console.error('验证 token 失败:', error)
+    console.error('[App] 验证 token 失败:', error)
     tokenError.value = '无法连接 agent，请检查服务状态'
   } finally {
     tokenChecking.value = false

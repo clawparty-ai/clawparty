@@ -1,15 +1,25 @@
 <template>
-  <div class="webshare-panel" :style="{ height: panelHeight + 'px' }">
+  <div class="webshare-panel" :class="{ fullscreen: isFullscreen }" :style="{ height: isFullscreen ? '100vh' : panelHeight + 'px' }">
     <div class="webshare-panel-header" @click="toggleExpanded">
       <span class="webshare-panel-icon">📁</span>
       <span class="webshare-panel-title">共享文件</span>
       <span class="webshare-panel-breadcrumb" v-if="currentPath">{{ currentPath }}</span>
       <span class="webshare-panel-count" v-if="files.length > 0">{{ files.length }}</span>
-      <button class="refresh-btn" :class="{ spinning: refreshing }" @click.stop="onRefresh" title="刷新文件列表">
+      <div class="webshare-panel-actions">
+        <button
+          class="webshare-fullscreen-btn"
+          :class="{ active: isFullscreen }"
+          @click.stop="toggleFullscreen"
+          title="全屏"
+        >
+          <span>⛶</span>
+        </button>
+        <button class="refresh-btn" :class="{ spinning: refreshing }" @click.stop="onRefresh" title="刷新文件列表">
         <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
           <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
         </svg>
       </button>
+      </div>
     </div>
     <div v-show="expanded" class="webshare-panel-body">
       <div class="webshare-layout">
@@ -219,6 +229,11 @@ const currentPath = ref('')
 const previewUrl = ref('')
 const previewName = ref('')
 const fullPreview = ref(false)
+const isFullscreen = ref(false)
+
+const toggleFullscreen = () => {
+  isFullscreen.value = !isFullscreen.value
+}
 const markdownContent = ref('')
 const textContent = ref('')
 
@@ -466,7 +481,7 @@ const copyFileUrl = async (filename) => {
   try {
     await navigator.clipboard.writeText(window.location.origin + url)
   } catch (e) {
-    console.error('复制失败:', e)
+    console.error('[WebShare] 复制失败:', e)
   }
 }
 
@@ -641,6 +656,43 @@ const stopResize = () => {
   background: rgba(0, 0, 0, 0.02);
 }
 
+.webshare-panel.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+}
+
+.webshare-panel-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.webshare-fullscreen-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim, #797979);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.webshare-fullscreen-btn:hover,
+.webshare-fullscreen-btn.active {
+  background: rgba(64, 149, 254, 0.1);
+  color: #4095fe;
+}
+
 .webshare-panel-icon {
   font-size: 14px;
 }
@@ -664,7 +716,6 @@ const stopResize = () => {
 .webshare-panel-count {
   font-size: 12px;
   color: var(--text-dim, #797979);
-  margin-left: auto;
 }
 
 .webshare-panel-body {

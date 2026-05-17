@@ -41,7 +41,7 @@ export const openclawService = {
           try {
             response.data = JSON.parse(jsonStr)
           } catch (e) {
-            console.error('解析agents数据失败:', e)
+            console.error('[ChatService] 解析agents数据失败:', e)
             response.data = []
           }
         } else {

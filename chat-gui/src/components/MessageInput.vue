@@ -357,7 +357,7 @@ async function openWebcam() {
       }, 'image/jpeg', 0.9)
     }
   } catch (err) {
-    console.error('打开摄像头失败:', err)
+    console.error('[MessageInput] 打开摄像头失败:', err)
     alert('无法打开摄像头: ' + err.message)
   }
 }

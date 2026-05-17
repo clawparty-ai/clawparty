@@ -15,12 +15,12 @@ export default class ShellService {
 	}
 	async startPipy (callError){
 		const pm = window.__TAURI_OS_PLUGIN_INTERNALS__ && platform();
-		console.log(pm)
+		console.log('[ShellService]', pm)
 		const port = 6789;
 		let resourceDirPath = '';
 		if(pm == "android" ){
 			let resourceDirPath = await documentDir();//appLocalDataDir();
-			console.log(resourceDirPath);
+			console.log('[ShellService]', resourceDirPath);
 			const args = [
 				"./main",
 				"--pipy",
@@ -33,7 +33,7 @@ export default class ShellService {
 				"--pipy-options",
 				`--log-file=${resourceDirPath}/ztm.log`,
 			];
-			console.log(args)
+			console.log('[ShellService]', args)
 			const filePath = await appLocalDataDir();
 			invoke('pipylib', {
 				lib:`${filePath}/files/libztm.so`,

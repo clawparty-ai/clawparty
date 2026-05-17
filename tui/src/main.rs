@@ -10,6 +10,7 @@ mod static_files;
 mod wiki;
 mod db;
 mod tasks;
+mod webshare;
 
 use agent::AgentManager;
 use args::Args;

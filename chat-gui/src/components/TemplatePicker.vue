@@ -57,7 +57,7 @@ const loadTemplates = async () => {
       selectedIndustry.value = industries.value[0]
     }
   } catch (e) {
-    console.error('Failed to load templates:', e)
+    console.error('[TemplatePicker] Failed to load templates:', e)
     error.value = 'Failed to load templates'
   } finally {
     loading.value = false
@@ -135,7 +135,7 @@ const handleInstallAll = async () => {
         openclawAgents.value = response.data || []
       }, 500)
     } catch (e) {
-      console.error(`[Install All] Failed to refresh agents:`, e)
+      console.error('[TemplatePicker] Failed to refresh agents:', e)
     }
   }, 3000)
   installAllLoading.value = false
@@ -183,7 +183,7 @@ const handleInstall = async (agent) => {
       })
       emit('close')
     } catch (e) {
-      console.error('Failed to create zAgent from template:', e)
+      console.error('[TemplatePicker] Failed to create zAgent from template:', e)
       error.value = '创建失败: ' + (e.message || e)
     } finally {
       installing.value[agent.slug] = false

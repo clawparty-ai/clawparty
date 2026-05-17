@@ -925,7 +925,7 @@ const handleLeaveMesh = async (meshName) => {
     await leaveMesh(meshName)
     activeOrg.value = 'agents'
   } catch (err) {
-    console.error('Failed to leave mesh:', err)
+    console.error('[ChatSidebar] Failed to leave mesh:', err)
   }
 }
 
@@ -1047,7 +1047,7 @@ const handleCreateSession = async () => {
     showCreateSessionDialog.value = false
     newSessionName.value = ''
   } catch (error) {
-    console.error('Failed to create session:', error)
+    console.error('[ChatSidebar] Failed to create session:', error)
   }
 }
 
@@ -1071,7 +1071,7 @@ onMounted(async () => {
     const response = await zagentService.getGlobalConfig()
     globalConfig.value = response.data
   } catch (error) {
-    console.log('No global config found:', error)
+    console.log('[ChatSidebar] No global config found:', error)
   }
 })
 
@@ -1131,7 +1131,7 @@ const handleCreateZAgent = async () => {
     newZAgentModel.value = ''
     modelConfigError.value = ''
   } catch (error) {
-    console.error('Failed to create zAgent:', error)
+    console.error('[ChatSidebar] Failed to create zAgent:', error)
   }
 }
 
@@ -1140,7 +1140,7 @@ const handleDeleteZAgent = async (agentName) => {
   try {
     await deleteZAgent(agentName)
   } catch (error) {
-    console.error('Failed to delete zAgent:', error)
+    console.error('[ChatSidebar] Failed to delete zAgent:', error)
   }
 }
 
@@ -1152,7 +1152,7 @@ const handleStartAgent = async (agentName) => {
     startPolling()
     await fetchZAgents()
   } catch (error) {
-    console.error('Failed to start zAgent:', error)
+    console.error('[ChatSidebar] Failed to start zAgent:', error)
     alert(`启动 Agent "${agentName}" 失败: ${error?.response?.data?.message || error?.message || '未知错误'}`)
   }
 }
@@ -1164,7 +1164,7 @@ const handleStopAgent = async (agentName) => {
     await zagentService.stopAgent(agentName)
     await fetchZAgents()
   } catch (error) {
-    console.error('Failed to stop zAgent:', error)
+    console.error('[ChatSidebar] Failed to stop zAgent:', error)
     alert(`停止 Agent "${agentName}" 失败: ${error?.response?.data?.message || error?.message || '未知错误'}`)
   }
 }
@@ -1240,7 +1240,7 @@ const handleDeleteAgent = async (agent) => {
       await openclawService.sendMessage('main', `/agent delete ${agent.id}`)
     }, 300)
   } catch (err) {
-    console.error('Failed to send delete command:', err)
+    console.error('[ChatSidebar] Failed to send delete command:', err)
     alert('Failed to delete agent: ' + (err?.response?.data?.message || err?.message || 'Unknown error'))
   }
 }
@@ -1280,7 +1280,7 @@ const openEditor = async (agent, filename) => {
       fileOriginalContent.value = ''
     } else {
       fileError.value = 'Failed to load file'
-      console.error('Failed to load file:', err)
+      console.error('[ChatSidebar] Failed to load file:', err)
     }
   } finally {
     loadingFile.value = false
@@ -1305,7 +1305,7 @@ const saveFile = async () => {
     alert('File saved successfully')
   } catch (err) {
     fileError.value = err?.response?.data?.message || 'Failed to save file'
-    console.error('Failed to save file:', err)
+    console.error('[ChatSidebar] Failed to save file:', err)
   } finally {
     savingFile.value = false
   }

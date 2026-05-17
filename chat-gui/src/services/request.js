@@ -116,7 +116,7 @@ function fetchAsStream() {
 				const { done,value } = await reader.read();
 				if (done) {
 					// 处理缓冲区中剩余的数据
-					console.log('Stream complete');
+					console.log('[Request] Stream complete');
 					if (!response.ok) {
 						const _msg = `HTTP error! status: ${response.status}`
 						throw new Error(buffer || _msg || response);
@@ -155,7 +155,7 @@ function fetchAsStream() {
 								lastData = data;
 								processMessage(data, false);
 							} catch (e) {
-								console.error('JSON parse error:', e, 'on data:', jsonStr);
+								console.error('[Request] JSON parse error:', e, 'on data:', jsonStr);
 							}
 						}
 					}
@@ -164,10 +164,10 @@ function fetchAsStream() {
     } catch (error) {
       if (error?.name === 'AbortError') {
 				processMessage("请求已被取消", true);
-        console.log('请求已被取消');
+        console.log('[Request] 请求已被取消');
       } else {
 				processMessage(error?.message || error?.stack || error, true);
-        console.error('Fetch error:', error);
+        console.error('[Request] Fetch error:', error);
       }
     }
   }
@@ -355,7 +355,7 @@ async function request(url, method, params, config) {
 					return res.text();
 				}
 			}).catch((e)=>{
-				console.log(e)
+				console.log('[Request]', e)
 				toastMessage(e);
 				throw e;
 			});
@@ -373,7 +373,7 @@ async function request(url, method, params, config) {
 					return res.text();
 				}
 			}).catch((e)=>{
-				console.log(e)
+				console.log('[Request]', e)
 			});
 		}
 	}

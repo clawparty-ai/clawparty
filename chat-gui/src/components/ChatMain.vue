@@ -552,7 +552,7 @@ const loadKanbanConfig = async () => {
       }
     }
   } catch (e) {
-    console.error('Failed to load kanban config:', e)
+    console.error('[ChatMain] Failed to load kanban config:', e)
   }
 }
 
@@ -576,14 +576,14 @@ const handleUpdateKanbanConfig = async (config) => {
       }
     }
   } catch (e) {
-    console.error('Failed to save kanban config:', e)
+    console.error('[ChatMain] Failed to save kanban config:', e)
   }
 }
 
 const handleGenerateChart = async (chartInfo) => {
   // TODO: Implement AI chart generation
   // This would send the chart prompt to 0#Agent and update the chart data
-  console.log('Generate chart:', chartInfo)
+  console.log('[ChatMain] Generate chart:', chartInfo)
 }
 
 const handleTaskRefresh = async () => {
@@ -940,7 +940,7 @@ const copyMessage = async (msg) => {
   try {
     await navigator.clipboard.writeText(msg.text || '')
   } catch (e) {
-    console.error('拷贝到剪切板失败:', e)
+    console.error('[ChatMain] 拷贝到剪切板失败:', e)
   }
 }
 
@@ -992,7 +992,7 @@ const handleAddMember = async (agentName) => {
       if (fetchZAgents) await fetchZAgents()
     }
   } catch (e) {
-    console.error('Failed to add member:', e)
+    console.error('[ChatMain] Failed to add member:', e)
     alert('添加成员失败: ' + (e.message || e))
   }
 }
@@ -1005,7 +1005,7 @@ const handleRemoveMember = async (agentName) => {
     const idx = props.chat.members.indexOf(agentName)
     if (idx !== -1) props.chat.members.splice(idx, 1)
   } catch (e) {
-    console.error('Failed to remove member:', e)
+    console.error('[ChatMain] Failed to remove member:', e)
     alert('移除成员失败: ' + (e.message || e))
   }
 }
@@ -1873,7 +1873,7 @@ const approveGroupRequest = async (msg) => {
       msg.text = `Auto-reply approved for agent "${msg.agentName}" in group "${msg.groupName || msg.gcid}".`
     }
   } catch (err) {
-    console.error('Failed to approve auto-reply:', err)
+    console.error('[ChatMain] Failed to approve auto-reply:', err)
   }
 }
 
@@ -1909,7 +1909,7 @@ const fetchMessages = async () => {
     if (error.response?.status === 404) {
       // No new messages, keep existing
     } else {
-      console.error('获取消息失败:', error)
+      console.error('[ChatMain] 获取消息失败:', error)
     }
   }
 }
@@ -1954,7 +1954,7 @@ const pollMessages = async () => {
     }
   } catch (error) {
     if (error.response?.status !== 404) {
-      console.error('轮询消息失败:', error)
+      console.error('[ChatMain] 轮询消息失败:', error)
     }
   }
 }
@@ -2050,7 +2050,7 @@ async function handlePeerModeChange(mode) {
       }
     }
   } catch (e) {
-    console.error('Failed to update peer mode:', e)
+    console.error('[ChatMain] Failed to update peer mode:', e)
   }
 }
 
@@ -2086,7 +2086,7 @@ async function handleHalfSend(text) {
     // Remove the half draft messages
     props.chat.messages = props.chat.messages.filter(m => !m.isHalfDraft)
   } catch (e) {
-    console.error('Failed to send half automation message:', e)
+    console.error('[ChatMain] Failed to send half automation message:', e)
   }
 }
 
