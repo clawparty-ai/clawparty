@@ -40,9 +40,9 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['select'])
+const emit = defineEmits(['select', 'expand'])
 
-const isExpanded = ref(props.level < 1)
+const isExpanded = ref(false)
 
 const isActive = computed(() => {
   return props.item.path === props.activePath
@@ -51,6 +51,7 @@ const isActive = computed(() => {
 const handleClick = () => {
   if (props.item.type === 'dir') {
     isExpanded.value = !isExpanded.value
+    emit('expand', props.item)
   } else {
     emit('select', props.item)
   }

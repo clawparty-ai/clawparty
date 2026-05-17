@@ -59,7 +59,7 @@ struct TaskChange {
 pub async fn batch_refresh(data_dir: &str, body_bytes: Bytes) -> Response<BoxBody<Bytes, hyper::Error>> {
     // Ensure db is initialized
     if let Err(e) = db::init_clawparty_db(data_dir) {
-        eprintln!("[Tasks] Failed to init clawparty.db: {}", e);
+        ts_eprint!("[Tasks] Failed to init clawparty.db: {}", e);
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("DB init failed: {}", e));
     }
 
@@ -105,7 +105,7 @@ pub async fn batch_refresh(data_dir: &str, body_bytes: Bytes) -> Response<BoxBod
 
                         match db::create_task(&tx, &task_data) {
                             Ok(_) => created += 1,
-                            Err(e) => { eprintln!("[Tasks] Create failed: {}", e); failed_tasks.push(format!("create: {}", e)); }
+                            Err(e) => { ts_eprint!("[Tasks] Create failed: {}", e); failed_tasks.push(format!("create: {}", e)); }
                         }
                     }
                 }
@@ -125,7 +125,7 @@ pub async fn batch_refresh(data_dir: &str, body_bytes: Bytes) -> Response<BoxBod
                         match db::update_task(&tx, task_id, &updates) {
                             Ok(Some(_)) => updated += 1,
                             Ok(None) => { failed_tasks.push(format!("update {}: not found", task_id)); }
-                            Err(e) => { eprintln!("[Tasks] Update failed: {}", e); failed_tasks.push(format!("update {}: {}", task_id, e)); }
+                            Err(e) => { ts_eprint!("[Tasks] Update failed: {}", e); failed_tasks.push(format!("update {}: {}", task_id, e)); }
                         }
                     }
                 }
@@ -137,12 +137,12 @@ pub async fn batch_refresh(data_dir: &str, body_bytes: Bytes) -> Response<BoxBod
                         }
                     }
                 }
-                _ => { eprintln!("[Tasks] Unknown change type: {}", change.change_type); }
+                _ => { ts_eprint!("[Tasks] Unknown change type: {}", change.change_type); }
             }
         }
 
         if let Err(e) = db::set_analysis_log(&tx, agent_name, group_id, req.last_analyzed_at) {
-            eprintln!("[Tasks] Failed to set analysis log: {}", e);
+            ts_eprint!("[Tasks] Failed to set analysis log: {}", e);
         }
 
         tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
@@ -158,7 +158,7 @@ pub async fn batch_refresh(data_dir: &str, body_bytes: Bytes) -> Response<BoxBod
     let task_save_result = save_tasks_md(data_dir, agent_name, group_id).await;
     let tasks_saved = task_save_result.is_ok();
     if let Err(e) = &task_save_result {
-        eprintln!("[Tasks] Failed to save TASKS.md: {}", e);
+        ts_eprint!("[Tasks] Failed to save TASKS.md: {}", e);
     }
 
     ok_response(&serde_json::json!({

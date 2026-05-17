@@ -91,12 +91,12 @@ impl ZeroClawDaemon {
         let agent_dir = format!("{}/agents/0#Agent", expanded_data);
         let old_config_dir = format!("{}/.zeroclaw", expanded_data);
         if std::fs::metadata(&old_config_dir).is_ok() && std::fs::metadata(&agent_dir).is_err() {
-            eprintln!("[ZeroClawDaemon] Migrating config: {} -> {}", old_config_dir, agent_dir);
+            ts_eprint!("[ZeroClawDaemon] Migrating config: {} -> {}", old_config_dir, agent_dir);
             if let Some(parent) = std::path::Path::new(&agent_dir).parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
             if let Err(e) = std::fs::rename(&old_config_dir, &agent_dir) {
-                eprintln!("[ZeroClawDaemon] Migration failed: {}", e);
+                ts_eprint!("[ZeroClawDaemon] Migration failed: {}", e);
             }
         }
         let config_dir = agent_dir;
@@ -155,9 +155,9 @@ impl ZeroClawDaemon {
             let pid = child.id() as i32;
             // Kill the entire process group (parent + all children)
             let _ = unsafe { libc::kill(-pid, libc::SIGKILL) };
-            eprintln!("ZeroClawDaemon: killed daemon process group {}", pid);
+            ts_eprint!("ZeroClawDaemon: killed daemon process group {}", pid);
         } else {
-            eprintln!("ZeroClawDaemon: no process to kill");
+            ts_eprint!("ZeroClawDaemon: no process to kill");
         }
     }
 }

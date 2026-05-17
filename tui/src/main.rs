@@ -1,3 +1,5 @@
+#[macro_use]
+mod log_macros;
 mod agent;
 mod args;
 mod models;
@@ -37,7 +39,7 @@ fn set_all_agents_running(data_dir: &str) {
     let conn = match rusqlite::Connection::open(&db_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("DB open for update error: {}", e);
+            ts_eprint!("DB open for update error: {}", e);
             return;
         }
     };
@@ -51,10 +53,10 @@ fn set_all_agents_running(data_dir: &str) {
     ) {
         Ok(n) => {
             if n > 0 {
-                println!("Updated {} agent(s) status to running", n);
+                ts_print!("Updated {} agent(s) status to running", n);
             }
         }
-        Err(e) => eprintln!("DB update error: {}", e),
+        Err(e) => ts_eprint!("DB update error: {}", e),
     }
 }
 
@@ -64,14 +66,14 @@ fn read_agents_from_db(data_dir: &str) -> Vec<AgentConfig> {
     let conn = match rusqlite::Connection::open(&db_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("DB open error: {}", e);
+            ts_eprint!("DB open error: {}", e);
             return vec![];
         }
     };
     let mut stmt = match conn.prepare("SELECT agent_name, directory, port, status FROM agents WHERE deleted = 0") {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("DB prepare error: {}", e);
+            ts_eprint!("DB prepare error: {}", e);
             return vec![];
         }
     };
@@ -85,7 +87,7 @@ fn read_agents_from_db(data_dir: &str) -> Vec<AgentConfig> {
     }) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("DB query error: {}", e);
+            ts_eprint!("DB query error: {}", e);
             return vec![];
         }
     };
@@ -111,8 +113,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Check if we have a TTY
     if !io::stdin().is_terminal() {
-        eprintln!("Error: TUI requires a terminal (TTY).");
-        eprintln!("This program should be run interactively, not piped.");
+        ts_eprint!("Error: TUI requires a terminal (TTY).");
+        ts_eprint!("This program should be run interactively, not piped.");
         return Err(anyhow::anyhow!("Not a TTY"));
     }
 
@@ -692,7 +694,7 @@ async fn main() -> anyhow::Result<()> {
     // Stop the agent before exiting
     if let Ok(mut s) = state.try_write() {
         if let Some(mut mgr) = s.agent_mgr.take() {
-            eprintln!("TUI: stopping agent process");
+            ts_eprint!("TUI: stopping agent process");
             mgr.stop();
             drop(s);
             drop(mgr);
@@ -703,10 +705,15 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, ZeroClawDaemon)> {
-    let _ = env_logger::Builder::from_env("RUST_LOG").try_init();
-    println!("🀄 ClawParty Service Mode");
-    println!("========================");
-    println!("ZeroClaw mode: {}", if args.zeroclaw_only { "Standalone" } else { "With ZTM Agent" });
+    let _ = env_logger::Builder::from_env("RUST_LOG")
+        .format(|buf, record| {
+            use std::io::Write;
+            writeln!(buf, "{} [{}] {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), record.level(), record.args())
+        })
+        .try_init();
+    ts_print!("🀄 ClawParty Service Mode");
+    ts_print!("========================");
+    ts_print!("ZeroClaw mode: {}", if args.zeroclaw_only { "Standalone" } else { "With ZTM Agent" });
 
     let zeroclaw_bin = args.zeroclaw_bin.clone().unwrap_or_else(|| {
         if let Ok(exe) = std::env::current_exe() {
@@ -719,11 +726,11 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
         }
         "zeroclaw".to_string()
     });
-    println!("🦀 ZeroClaw binary: {}", zeroclaw_bin);
+    ts_print!("🦀 ZeroClaw binary: {}", zeroclaw_bin);
 
     let (log_tx, mut log_rx) = mpsc::channel::<String>(100);
 
-    println!("\n🔄 Starting ZeroClaw daemon...");
+    ts_print!("\n🔄 Starting ZeroClaw daemon...");
     let zeroclaw_bin_for_service = zeroclaw_bin.clone();
     let zeroclaw_mgr = zeroclaw::ZeroClawDaemon::new(
         zeroclaw_bin_for_service,
@@ -743,23 +750,23 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
             }
         }
         if i == 0 {
-            eprintln!("Waiting for ZeroClaw Gateway...");
+            ts_eprint!("Waiting for ZeroClaw Gateway...");
         }
     }
 
     if !zeroclaw_ready {
-        eprintln!("❌ ZeroClaw daemon failed to start within timeout");
+        ts_eprint!("❌ ZeroClaw daemon failed to start within timeout");
         return Err(anyhow::anyhow!("ZeroClaw startup failed"));
     }
-    println!("✅ ZeroClaw daemon started successfully on port 42617");
+    ts_print!("✅ ZeroClaw daemon started successfully on port 42617");
 
     // Start all ZeroClaw agents from DB before ZTM
     let agent_configs = read_agents_from_db(&args.data);
     if !agent_configs.is_empty() {
-        println!("📋 Found {} agent(s) in DB, starting zeroclaw daemons...", agent_configs.len());
+        ts_print!("📋 Found {} agent(s) in DB, starting zeroclaw daemons...", agent_configs.len());
     }
     for agent_cfg in &agent_configs {
-        println!("🔄 Starting agent {} on port {}...", agent_cfg.agent_name, agent_cfg.port);
+        ts_print!("🔄 Starting agent {} on port {}...", agent_cfg.agent_name, agent_cfg.port);
         match std::process::Command::new(&zeroclaw_bin)
             .args([
                 "daemon",
@@ -774,10 +781,10 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
             .spawn()
         {
             Ok(child) => {
-                println!("✅ Agent {} started (pid {})", agent_cfg.agent_name, child.id());
+                ts_print!("✅ Agent {} started (pid {})", agent_cfg.agent_name, child.id());
             }
             Err(e) => {
-                eprintln!("❌ Failed to start agent {}: {}", agent_cfg.agent_name, e);
+                ts_eprint!("❌ Failed to start agent {}: {}", agent_cfg.agent_name, e);
             }
         }
     }
@@ -797,10 +804,10 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
             }
             "ztm".to_string()
         });
-        println!("📦 ZTM binary: {}", pipy_bin);
+        ts_print!("📦 ZTM binary: {}", pipy_bin);
 
         if args.no_health_check {
-            println!("\n🔄 Starting ZTM agent ({}) [health check disabled]...", pipy_bin);
+            ts_print!("\n🔄 Starting ZTM agent ({}) [health check disabled]...", pipy_bin);
             let mgr = AgentManager::new(
                 pipy_bin.clone(),
                 args.data.clone(),
@@ -814,9 +821,9 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
             set_all_agents_running(&args.data);
         } else {
             if api.check_health().await {
-                println!("✅ ZTM Agent is already running at {}", args.api_host);
+                ts_print!("✅ ZTM Agent is already running at {}", args.api_host);
             } else {
-                println!("\n🔄 Starting ZTM agent ({})...", pipy_bin);
+                ts_print!("\n🔄 Starting ZTM agent ({})...", pipy_bin);
                 let mgr = AgentManager::new(
                     pipy_bin.clone(),
                     args.data.clone(),
@@ -833,15 +840,15 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
                         break;
                     }
                     if i == 0 {
-                        eprintln!("Waiting for ZTM agent to start...");
+                        ts_eprint!("Waiting for ZTM agent to start...");
                     }
                 }
 
                 if ready {
-                    println!("✅ ZTM Agent started successfully");
+                    ts_print!("✅ ZTM Agent started successfully");
                     set_all_agents_running(&args.data);
                 } else {
-                    println!("⚠️ ZTM Agent failed to start (mesh features unavailable)");
+                    ts_print!("⚠️ ZTM Agent failed to start (mesh features unavailable)");
                 }
 
                 let mut guard = agent_mgr_arc.lock().await;
@@ -850,16 +857,16 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
             }
         }
     } else {
-        println!("ZTM Agent disabled (--zeroclaw-only mode)");
+        ts_print!("ZTM Agent disabled (--zeroclaw-only mode)");
     }
 
-    println!("\n📋 Service Mode Ready");
-    println!("========================");
-    println!("ZeroClaw Gateway: http://localhost:42617");
+    ts_print!("\n📋 Service Mode Ready");
+    ts_print!("========================");
+    ts_print!("ZeroClaw Gateway: http://localhost:42617");
     if !args.zeroclaw_only {
-        println!("ZTM Agent API: {}", args.api_host);
+        ts_print!("ZTM Agent API: {}", args.api_host);
     }
-    println!("\nPress Ctrl+C to stop...");
+    ts_print!("\nPress Ctrl+C to stop...");
 
     // Service-mode watchdog
     if !args.zeroclaw_only && args.watchdog_interval > 0 && !args.no_health_check {
@@ -890,7 +897,7 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
                     continue;
                 }
 
-                eprintln!("Watchdog: ZTM Agent health check failed, restarting...");
+                ts_eprint!("Watchdog: ZTM Agent health check failed, restarting...");
 
                 let mut guard = agent_mgr_watch.lock().await;
                 if let Some(ref mut mgr) = *guard {
@@ -911,13 +918,13 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                     if api_watch.check_health().await {
                         ready = true;
-                        eprintln!("Watchdog: ZTM Agent restarted successfully");
+                        ts_eprint!("Watchdog: ZTM Agent restarted successfully");
                         break;
                     }
                 }
 
                 if !ready {
-                    eprintln!("Watchdog: ZTM Agent restart failed");
+                    ts_eprint!("Watchdog: ZTM Agent restart failed");
                 }
             }
         });
@@ -925,7 +932,7 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
 
     // Open browser if requested
     if args.open {
-        println!("🌐 Opening browser to http://{}", if args.zeroclaw_only { "localhost:42617" } else { &args.api_host });
+        ts_print!("🌐 Opening browser to http://{}", if args.zeroclaw_only { "localhost:42617" } else { &args.api_host });
         #[cfg(target_os = "macos")]
         {
             let _ = Command::new("open").arg(if args.zeroclaw_only { "http://localhost:42617" } else { &args.api_host }).spawn();
@@ -955,15 +962,15 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
     loop {
         tokio::select! {
             Some(log_msg) = log_rx.recv() => {
-                println!("{}", log_msg);
+                ts_print!("{}", log_msg);
             }
             _ = sigint.recv() => {
-                println!("\nReceived SIGINT, shutting down...");
+                ts_print!("\nReceived SIGINT, shutting down...");
                 let _ = Command::new("pkill").args(["-9", "-f", "zeroclaw"]).spawn();
                 break;
             }
             _ = sigterm.recv() => {
-                println!("\nReceived SIGTERM, shutting down...");
+                ts_print!("\nReceived SIGTERM, shutting down...");
                 let _ = Command::new("pkill").args(["-9", "-f", "zeroclaw"]).spawn();
                 break;
             }
@@ -1047,14 +1054,14 @@ fn handle_user_command(cmd: args::UserCommands, data_dir: &str) -> anyhow::Resul
                 ))
             }).map_err(|e| anyhow::anyhow!("Failed to query users: {}", e))?;
 
-            println!("{:<20} {:<10} {:<20} {:<20}", "USERNAME", "ROLE", "CREATED", "EXPIRE");
-            println!("{}", "-".repeat(70));
+            ts_print!("{:<20} {:<10} {:<20} {:<20}", "USERNAME", "ROLE", "CREATED", "EXPIRE");
+            ts_print!("{}", "-".repeat(70));
             for row in rows {
                 let (username, role, created, expire) = row?;
                 let created_str = chrono::DateTime::from_timestamp(created as i64, 0)
                     .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
                     .unwrap_or_else(|| created.to_string());
-                println!("{:<20} {:<10} {:<20} {:<20}", username, role, created_str, format_expire(expire));
+                ts_print!("{:<20} {:<10} {:<20} {:<20}", username, role, created_str, format_expire(expire));
             }
         }
         UserCommands::Add { username, password, role, expire_days } => {
@@ -1077,8 +1084,8 @@ fn handle_user_command(cmd: args::UserCommands, data_dir: &str) -> anyhow::Resul
                 "INSERT INTO users (username, password_hash, salt, api_token, role, expire) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 [&username, &hash, &salt, &token, &role, &expire.to_string()],
             ).map_err(|e| anyhow::anyhow!("Failed to add user '{}': {}", username, e))?;
-            println!("User '{}' added. Role: {}, Expire: {}", username, role, format_expire(expire));
-            println!("API token: {}", token);
+            ts_print!("User '{}' added. Role: {}, Expire: {}", username, role, format_expire(expire));
+            ts_print!("API token: {}", token);
         }
         UserCommands::Delete { username } => {
             let changes = conn.execute("DELETE FROM users WHERE username = ?1", [&username])
@@ -1086,7 +1093,7 @@ fn handle_user_command(cmd: args::UserCommands, data_dir: &str) -> anyhow::Resul
             if changes == 0 {
                 anyhow::bail!("User '{}' not found", username);
             }
-            println!("User '{}' deleted.", username);
+            ts_print!("User '{}' deleted.", username);
         }
         UserCommands::Password { username, password, expire_days } => {
             let password = match password {
@@ -1111,9 +1118,9 @@ fn handle_user_command(cmd: args::UserCommands, data_dir: &str) -> anyhow::Resul
             if changes == 0 {
                 anyhow::bail!("User '{}' not found", username);
             }
-            println!("Password changed for '{}'.", username);
-            println!("New API token: {}", token);
-            println!("Expire: {}", format_expire(expire));
+            ts_print!("Password changed for '{}'.", username);
+            ts_print!("New API token: {}", token);
+            ts_print!("Expire: {}", format_expire(expire));
         }
         UserCommands::Token { username, expire_days } => {
             let new_token = generate_random_string(32);
@@ -1125,9 +1132,9 @@ fn handle_user_command(cmd: args::UserCommands, data_dir: &str) -> anyhow::Resul
             if changes == 0 {
                 anyhow::bail!("User '{}' not found", username);
             }
-            println!("Token reset for '{}'.", username);
-            println!("New API token: {}", new_token);
-            println!("Expire: {}", format_expire(expire));
+            ts_print!("Token reset for '{}'.", username);
+            ts_print!("New API token: {}", new_token);
+            ts_print!("Expire: {}", format_expire(expire));
         }
     }
 

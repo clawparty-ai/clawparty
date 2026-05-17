@@ -507,7 +507,7 @@ pub fn migrate_from_ztm_db(data_dir: &str) -> anyhow::Result<usize> {
         )?;
     }
 
-    eprintln!("[clawparty.db] Migrated {} task(s) from ztm.db", migrated);
+    ts_eprint!("[clawparty.db] Migrated {} task(s) from ztm.db", migrated);
     Ok(migrated)
 }
 

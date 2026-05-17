@@ -63,7 +63,7 @@
       v-if="chat.isZeroClaw && showWikiPanel"
       :agentName="agentName || chat.display_name || chat.agent_name"
       :expanded="wikiPanelBodyExpanded"
-      :initialHeight="wikiPanelInitialHeight"
+      :initialHeight="taskPanelInitialHeight"
       :refreshing="isWikiRefreshing"
       @toggle="wikiPanelBodyExpanded = !wikiPanelBodyExpanded"
       @refresh="handleWikiRefresh"

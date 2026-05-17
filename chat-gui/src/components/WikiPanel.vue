@@ -77,30 +77,8 @@
               :level="0"
               :activePath="activePagePath"
               @select="handleSelectPage"
+              @expand="handleExpandDir"
             />
-          </div>
-          <!-- Raw files section -->
-          <div class="wiki-raw-section">
-            <div class="wiki-raw-header">
-              <span class="wiki-raw-icon">📁</span>
-              <span class="wiki-raw-title">raw/</span>
-              <span v-if="rawFiles.length > 0" class="wiki-raw-count">{{ rawFiles.length }}</span>
-            </div>
-            <div v-if="rawFilesLoading" class="wiki-raw-loading">加载中...</div>
-            <div v-else-if="rawFiles.length === 0" class="wiki-raw-empty">暂无文件</div>
-            <div v-else class="wiki-raw-list">
-              <div
-                v-for="file in rawFiles"
-                :key="file.name"
-                class="wiki-raw-item"
-                :class="{ 'is-dir': file.type === 'dir' }"
-                @click="file.type === 'file' && previewRawFile(file.name)"
-              >
-                <span class="wiki-raw-item-icon">{{ file.type === 'dir' ? '📁' : '📄' }}</span>
-                <span class="wiki-raw-item-name" :title="file.name">{{ file.name }}</span>
-                <span v-if="file.type === 'file' && file.size" class="wiki-raw-item-size">{{ formatSize(file.size) }}</span>
-              </div>
-            </div>
           </div>
         </div>
         
@@ -193,10 +171,6 @@ const viewerRef = ref(null)
 const graphCanvas = ref(null)
 const graphLoading = ref(false)
 const graphError = ref('')
-
-// Raw files state
-const rawFiles = ref([])
-const rawFilesLoading = ref(false)
 
 // Refresh logs state
 const refreshLogs = ref([])
@@ -329,39 +303,19 @@ const loadTree = async () => {
   } finally {
     treeLoading.value = false
   }
-  // Also load raw files
-  loadRawFiles()
-}
-
-const loadRawFiles = async () => {
-  rawFilesLoading.value = true
-  try {
-    const res = await wikiService.getTree(props.agentName, 'raw')
-    if (res.data && res.data.files) {
-      rawFiles.value = res.data.files
-    } else {
-      rawFiles.value = []
-    }
-  } catch (e) {
-    console.error('[Wiki] Failed to load raw files:', e)
-    rawFiles.value = []
-  } finally {
-    rawFilesLoading.value = false
-  }
 }
 
 const buildTree = (files, basePath) => {
-  // Group files by directory
   const root = []
   const dirs = {}
-  
+
   for (const file of files) {
     if (file.type === 'dir') {
       dirs[file.name] = {
         name: file.name,
         type: 'dir',
         path: basePath ? basePath + '/' + file.name : file.name,
-        children: []
+        children: file.children ? buildTree(file.children, basePath ? basePath + '/' + file.name : file.name) : []
       }
       root.push(dirs[file.name])
     } else {
@@ -372,7 +326,7 @@ const buildTree = (files, basePath) => {
       })
     }
   }
-  
+
   return root
 }
 
@@ -395,6 +349,20 @@ const handleSelectPage = async (item) => {
   } catch (e) {
     console.error('[Wiki] Failed to load page:', e)
     pageContent.value = '加载失败'
+  }
+}
+
+const handleExpandDir = async (item) => {
+  if (item.type !== 'dir') return
+  if (item.children && item.children.length > 0) return
+  
+  try {
+    const res = await wikiService.getTree(props.agentName, item.path)
+    if (res.data && res.data.files) {
+      item.children = buildTree(res.data.files, item.path)
+    }
+  } catch (e) {
+    console.error('[Wiki] Failed to load dir:', e)
   }
 }
 
@@ -502,26 +470,6 @@ const onRefresh = async () => {
     console.error('[Wiki] Refresh failed:', e)
   }
   loadTree()
-}
-
-const formatSize = (bytes) => {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-  return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB'
-}
-
-const previewRawFile = async (filename) => {
-  try {
-    const res = await wikiService.getPage(props.agentName, filename, 'raw')
-    pageContent.value = res.data || ''
-    activePageTitle.value = filename
-    activePagePath.value = 'raw/' + filename
-    activePage.value = { name: filename, type: 'file', path: 'raw/' + filename }
-    nextTick(() => setupWikiLinks())
-  } catch (e) {
-    console.error('[Wiki] Failed to preview raw file:', e)
-  }
 }
 
 // Resize handling
@@ -812,6 +760,12 @@ watch(() => props.agentName, () => {
   border-color: var(--slack-blue);
 }
 
+.wiki-panel-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
 .wiki-fullscreen-btn {
   width: 28px;
   height: 28px;
@@ -945,88 +899,6 @@ watch(() => props.agentName, () => {
   font-size: 12px;
 }
 
-.wiki-raw-section {
-  margin-top: 12px;
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 8px;
-}
-
-.wiki-raw-header {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.wiki-raw-icon {
-  font-size: 12px;
-}
-
-.wiki-raw-title {
-  flex: 1;
-}
-
-.wiki-raw-count {
-  background: var(--bg-hover);
-  padding: 1px 6px;
-  border-radius: 10px;
-  font-size: 10px;
-  color: var(--text-tertiary);
-}
-
-.wiki-raw-loading,
-.wiki-raw-empty {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  padding: 4px 0;
-}
-
-.wiki-raw-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.wiki-raw-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 11px;
-  color: var(--text-primary);
-  transition: background 0.15s;
-}
-
-.wiki-raw-item:hover {
-  background: var(--bg-hover);
-}
-
-.wiki-raw-item.is-dir {
-  cursor: default;
-}
-
-.wiki-raw-item-icon {
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.wiki-raw-item-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wiki-raw-item-size {
-  font-size: 10px;
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-}
 
 .wiki-viewer {
   flex: 1;

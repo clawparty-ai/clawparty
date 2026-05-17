@@ -60,7 +60,7 @@ impl Drop for AgentProcess {
         if let Some(ref mut child) = self.child {
             let pid = child.id() as i32;
             let _ = unsafe { libc::kill(-pid, libc::SIGKILL) };
-            eprintln!("AgentProcess: killed {} (pid {})", self.agent_name, pid);
+            ts_eprint!("AgentProcess: killed {} (pid {})", self.agent_name, pid);
         }
     }
 }

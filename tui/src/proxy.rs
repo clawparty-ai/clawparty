@@ -47,11 +47,11 @@ fn ensure_cert(cert_dir: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     std::fs::write(&cert_path, &cert_pem)?;
     std::fs::write(&key_path, &key_pem)?;
 
-    eprintln!(
+    ts_eprint!(
         "[Proxy] Generated self-signed certificate at {}",
         cert_path.display()
     );
-    eprintln!("[Proxy] Add {} to browser trust store if needed", cert_path.display());
+    ts_eprint!("[Proxy] Add {} to browser trust store if needed", cert_path.display());
 
     Ok((cert_pem.into_bytes(), key_pem.into_bytes()))
 }
@@ -186,7 +186,7 @@ async fn proxy_http(req: Request<Incoming>) -> anyhow::Result<Response<BoxBody>>
             Ok(Response::from_parts(parts, box_body(collected)))
         }
         Err(e) => {
-            eprintln!("[Proxy] Backend request failed: {}", e);
+            ts_eprint!("[Proxy] Backend request failed: {}", e);
             let mut resp = Response::new(box_body(Bytes::from(
                 "Backend service unavailable".to_string(),
             )));
@@ -233,7 +233,7 @@ async fn proxy_websocket(
                 log::debug!("[Proxy][WS] Frontend upgrade success, spawning bridge");
                 let frontend_io = TokioIo::new(upgraded);
                 if let Err(e) = bridge_websocket(frontend_io, &ws_url, sec_protocol_for_spawn).await {
-                    eprintln!("[Proxy] WebSocket bridge error: {}", e);
+                    ts_eprint!("[Proxy] WebSocket bridge error: {}", e);
                 }
             }
             Err(e) => {
@@ -425,7 +425,7 @@ fn verify_token(token: &str, db_path: &str) -> bool {
     let conn = match rusqlite::Connection::open(db_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[Proxy] DB open error: {}", e);
+            ts_eprint!("[Proxy] DB open error: {}", e);
             return false;
         }
     };
@@ -551,7 +551,7 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
             match handle_login(req, db_path).await {
                 Ok(resp) => return Ok(resp),
                 Err(e) => {
-                    eprintln!("[Proxy] Login error: {}", e);
+                    ts_eprint!("[Proxy] Login error: {}", e);
                     let mut resp = Response::new(box_body(Bytes::from("Internal Server Error")));
                     *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     return Ok(resp);
@@ -665,15 +665,15 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
     }
 
     // Wiki API routes — handled locally by Rust (not forwarded to ztm agent)
-    eprintln!("[Proxy] Checking path: '{}' for wiki routes", path);
+    ts_eprint!("[Proxy] Checking path: '{}' for wiki routes", path);
     if path.starts_with("/api/wiki/") {
         if let Some(data_dir) = DATA_DIR.get() {
             let wiki_path = &path["/api/wiki/".len()..];
-            eprintln!("[Proxy] wiki_path: '{}'", wiki_path);
+            ts_eprint!("[Proxy] wiki_path: '{}'", wiki_path);
             if let Some(slash_idx) = wiki_path.find('/') {
                 let agent_name = &wiki_path[..slash_idx];
                 let action = &wiki_path[slash_idx + 1..];
-                eprintln!("[Proxy] agent_name: '{}', action: '{}'", agent_name, action);
+                ts_eprint!("[Proxy] agent_name: '{}', action: '{}'", agent_name, action);
 
                 // Decode URL-encoded agent name
                 let agent_decoded = urlencoding::decode(agent_name).unwrap_or_else(|_| agent_name.into()).to_string();
@@ -788,7 +788,7 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
         match proxy_websocket(req).await {
             Ok(resp) => Ok(resp),
             Err(e) => {
-                eprintln!("[Proxy] WebSocket proxy error: {}", e);
+                ts_eprint!("[Proxy] WebSocket proxy error: {}", e);
                 let mut resp = Response::new(box_body(Bytes::from("WebSocket proxy error")));
                 *resp.status_mut() = StatusCode::BAD_GATEWAY;
                 Ok(resp)
@@ -801,7 +801,7 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
             match proxy_http(req).await {
                 Ok(resp) => Ok(resp),
                 Err(e) => {
-                    eprintln!("[Proxy] HTTP proxy error: {}", e);
+                    ts_eprint!("[Proxy] HTTP proxy error: {}", e);
                     let mut resp = Response::new(box_body(Bytes::from("Proxy error")));
                     *resp.status_mut() = StatusCode::BAD_GATEWAY;
                     Ok(resp)
@@ -812,7 +812,7 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
             match crate::static_files::serve(req).await {
                 Ok(resp) => Ok(resp),
                 Err(e) => {
-                    eprintln!("[Proxy] Static file error: {}", e);
+                    ts_eprint!("[Proxy] Static file error: {}", e);
                     let mut resp = Response::new(box_body(Bytes::from("Internal Server Error")));
                     *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     Ok(resp)
@@ -828,18 +828,18 @@ async fn run_http_redirect(port: u16) {
     let listener = match TcpListener::bind(&addr).await {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("[Proxy] WARN: Failed to bind HTTP redirect port {}: {}", port, e);
+            ts_eprint!("[Proxy] WARN: Failed to bind HTTP redirect port {}: {}", port, e);
             return;
         }
     };
 
-    println!("[Proxy] HTTP redirect listening on http://{}", addr);
+    ts_print!("[Proxy] HTTP redirect listening on http://{}", addr);
 
     loop {
         let (stream, peer_addr) = match listener.accept().await {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("[Proxy] HTTP accept error: {}", e);
+                ts_eprint!("[Proxy] HTTP accept error: {}", e);
                 continue;
             }
         };
@@ -870,7 +870,7 @@ async fn run_http_redirect(port: u16) {
                 .serve_connection(io, service)
                 .await
             {
-                eprintln!("[Proxy] HTTP redirect connection error from {}: {}", peer_addr, e);
+                ts_eprint!("[Proxy] HTTP redirect connection error from {}: {}", peer_addr, e);
             }
         });
     }
@@ -886,7 +886,7 @@ async fn run_https_proxy(port: u16, cert_dir: &str) -> anyhow::Result<()> {
     let listener = match TcpListener::bind(&addr).await {
         Ok(l) => l,
         Err(e) => {
-            eprintln!(
+            ts_eprint!(
                 "[Proxy] WARN: Failed to bind HTTPS proxy port {}: {}. Proxy disabled.",
                 port, e
             );
@@ -894,7 +894,7 @@ async fn run_https_proxy(port: u16, cert_dir: &str) -> anyhow::Result<()> {
         }
     };
 
-    println!("[Proxy] HTTPS proxy listening on https://{}", addr);
+    ts_print!("[Proxy] HTTPS proxy listening on https://{}", addr);
 
     loop {
         let (stream, peer_addr) = listener.accept().await?;
@@ -904,7 +904,7 @@ async fn run_https_proxy(port: u16, cert_dir: &str) -> anyhow::Result<()> {
             let tls_stream = match acceptor.accept(stream).await {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("[Proxy] TLS accept error from {}: {}", peer_addr, e);
+                    ts_eprint!("[Proxy] TLS accept error from {}: {}", peer_addr, e);
                     return;
                 }
             };
@@ -917,7 +917,7 @@ async fn run_https_proxy(port: u16, cert_dir: &str) -> anyhow::Result<()> {
                 .with_upgrades()
                 .await
             {
-                eprintln!("[Proxy] HTTPS connection error from {}: {}", peer_addr, e);
+                ts_eprint!("[Proxy] HTTPS connection error from {}: {}", peer_addr, e);
             }
         });
     }

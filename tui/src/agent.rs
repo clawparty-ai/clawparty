@@ -96,9 +96,9 @@ impl AgentManager {
             let pid = child.id() as i32;
             // Kill the entire process group (parent + all children)
             let _ = unsafe { libc::kill(-pid, libc::SIGKILL) };
-            eprintln!("AgentManager: killed agent process group {}", pid);
+            ts_eprint!("AgentManager: killed agent process group {}", pid);
         } else {
-            eprintln!("AgentManager: no process to kill");
+            ts_eprint!("AgentManager: no process to kill");
         }
     }
 }

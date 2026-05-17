@@ -288,7 +288,7 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
     };
 
     let wiki_dir = workspace.join("wiki");
-    eprintln!("[Wiki::graph] agent={}, wiki_dir={:?}", agent_name, wiki_dir);
+    ts_eprint!("[Wiki::graph] agent={}, wiki_dir={:?}", agent_name, wiki_dir);
 
     let mut nodes: Vec<serde_json::Value> = Vec::new();
     let mut links: Vec<serde_json::Value> = Vec::new();
@@ -321,7 +321,7 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
         let mut entries = match tokio::fs::read_dir(&dir).await {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("[Wiki::graph] read_dir failed for {:?}: {}", dir, e);
+                ts_eprint!("[Wiki::graph] read_dir failed for {:?}: {}", dir, e);
                 continue;
             }
         };
@@ -341,7 +341,7 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
                     "pages" => "page",
                     _ => category,
                 };
-                eprintln!("[Wiki::graph] push dir {:?} category={}", path, sub_category);
+                ts_eprint!("[Wiki::graph] push dir {:?} category={}", path, sub_category);
                 dirs.push((path, sub_category));
             } else if name.ends_with(".md") {
                 scanned_files += 1;
@@ -349,10 +349,10 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
                 let content = tokio::fs::read_to_string(&path).await.unwrap_or_default();
                 if content.is_empty() {
                     skipped_empty += 1;
-                    eprintln!("[Wiki::graph] skip empty file {:?}", path);
+                    ts_eprint!("[Wiki::graph] skip empty file {:?}", path);
                     continue;
                 }
-                eprintln!("[Wiki::graph] scan {} bytes from {:?}", content.len(), path);
+                ts_eprint!("[Wiki::graph] scan {} bytes from {:?}", content.len(), path);
                 let page_id = get_node_id(page_name, category);
 
                 // Parse [[WikiLink]]
@@ -385,7 +385,7 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
         }
     }
 
-    eprintln!(
+    ts_eprint!(
         "[Wiki::graph] done: {} nodes, {} links (scanned {} files, {} empty)",
         nodes.len(), links.len(), scanned_files, skipped_empty
     );
@@ -574,7 +574,7 @@ pub async fn refresh(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes
             match convert_file(&raw_file_path, &pages_dir, &name).await {
                 Ok(md_filename) => converted.push(md_filename),
                 Err(e) => {
-                    eprintln!("[Wiki] Convert failed for {}: {}", name, e);
+                    ts_eprint!("[Wiki] Convert failed for {}: {}", name, e);
                     failed.push(name);
                 }
             }
@@ -585,7 +585,7 @@ pub async fn refresh(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes
     let (pages, total_links) = match ingest_pages(&pages_dir, &wiki_dir).await {
         Ok(result) => result,
         Err(e) => {
-            eprintln!("[Wiki] Ingest failed: {}", e);
+            ts_eprint!("[Wiki] Ingest failed: {}", e);
             (Vec::new(), 0)
         }
     };
