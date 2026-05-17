@@ -109,12 +109,10 @@
       </div>
       
       <!-- Graph Tab -->
-      <div v-else-if="activeTab === 'graph'" class="wiki-graph-container">
+      <div v-else-if="activeTab === 'graph'" class="wiki-graph-wrapper">
         <div v-show="graphLoading" class="wiki-loading">加载关系图中...</div>
-        <canvas ref="graphCanvas" class="wiki-graph-canvas"></canvas>
-        
+        <div ref="graphContainer" class="wiki-graph-container-inner"></div>
         <div v-if="graphError" class="wiki-graph-error">{{ graphError }}</div>
-        
         <div class="wiki-graph-legend">
           <div class="legend-item"><span class="legend-dot" style="background: #2eb67d;"></span> 实体</div>
           <div class="legend-item"><span class="legend-dot" style="background: #1d9bd1;"></span> 概念</div>
@@ -132,6 +130,7 @@
 <script setup>
 import { ref, watch, computed, onMounted, nextTick } from 'vue'
 import { marked } from 'marked'
+import cytoscape from 'cytoscape'
 import { wikiService } from '../services/chatService'
 import WikiTreeNode from './WikiTreeNode.vue'
 
@@ -168,9 +167,10 @@ const searchQuery = ref('')
 const searchTimeout = ref(null)
 const isFullscreen = ref(false)
 const viewerRef = ref(null)
-const graphCanvas = ref(null)
+const graphContainer = ref(null)
 const graphLoading = ref(false)
 const graphError = ref('')
+let cyInstance = null
 
 // Refresh logs state
 const refreshLogs = ref([])
@@ -497,165 +497,107 @@ const stopResize = () => {
   document.removeEventListener('mouseup', stopResize)
 }
 
-// Graph rendering with d3-force
-let simulation = null
-
+// Graph rendering with Cytoscape.js
 const renderGraph = async () => {
   graphLoading.value = true
   graphError.value = ''
-  
+
   try {
     const res = await wikiService.getGraph(props.agentName)
     const { nodes, links } = res.data || { nodes: [], links: [] }
     console.log('[Wiki] Graph data:', nodes.length, 'nodes,', links.length, 'links')
-    
+
     if (!nodes || nodes.length === 0) {
       graphError.value = '暂无关系数据'
       graphLoading.value = false
       return
     }
-    
-    // Hide loading, show canvas
-    graphLoading.value = false
+
     await nextTick()
-    
-    const canvas = graphCanvas.value
-    if (!canvas) {
-      console.error('[Wiki] Canvas ref not found')
+
+    const container = graphContainer.value
+    if (!container) {
+      console.error('[Wiki] Graph container not found')
       return
     }
-    
-    const ctx = canvas.getContext('2d')
-    const rect = canvas.parentElement.getBoundingClientRect()
-    console.log('[Wiki] Canvas parent size:', rect.width, 'x', rect.height)
-    
-    if (rect.width === 0 || rect.height === 0) {
-      console.error('[Wiki] Canvas parent has zero size')
-      return
+
+    if (cyInstance) {
+      cyInstance.destroy()
+      cyInstance = null
     }
-    
-    canvas.width = rect.width
-    canvas.height = rect.height - 40 // Leave space for legend
-    
-    const width = canvas.width
-    const height = canvas.height
-    
-    // Color mapping
+
     const colors = {
       entity: '#2eb67d',
       concept: '#1d9bd1',
       page: '#797979',
       raw: '#ecb22e'
     }
-    
-    // Initialize node positions
-    nodes.forEach(node => {
-      node.x = width / 2 + (Math.random() - 0.5) * 200
-      node.y = height / 2 + (Math.random() - 0.5) * 200
-      node.vx = 0
-      node.vy = 0
-    })
-    
-    // Simple force simulation
-    const k = Math.sqrt((width * height) / nodes.length) * 0.8
-    const maxIterations = 300
-    
-    for (let i = 0; i < maxIterations; i++) {
-      // Repulsion
-      for (let a = 0; a < nodes.length; a++) {
-        for (let b = a + 1; b < nodes.length; b++) {
-          const dx = nodes[b].x - nodes[a].x
-          const dy = nodes[b].y - nodes[a].y
-          let dist = Math.sqrt(dx * dx + dy * dy)
-          if (dist < 1) dist = 1
-          const force = (k * k) / dist
-          const fx = (dx / dist) * force
-          const fy = (dy / dist) * force
-          nodes[a].vx -= fx
-          nodes[a].vy -= fy
-          nodes[b].vx += fx
-          nodes[b].vy += fy
+
+    const nodeSize = (cat) => cat === 'entity' ? 16 : 12
+
+    cyInstance = cytoscape({
+      container: container,
+      elements: [
+        ...nodes.map((node, idx) => ({
+          data: {
+            id: String(idx),
+            label: node.name,
+            color: colors[node.category] || colors.page,
+            size: nodeSize(node.category)
+          }
+        })),
+        ...links.map(link => ({
+          data: {
+            source: String(link.source),
+            target: String(link.target)
+          }
+        }))
+      ],
+      layout: {
+        name: 'cose',
+        padding: 10,
+        nodeRepulsion: 400000,
+        idealEdgeLength: 100,
+        animate: false
+      },
+      style: [
+        {
+          selector: 'node',
+          style: {
+            'background-color': 'data(color)',
+            'label': 'data(label)',
+            'width': 'data(size)',
+            'height': 'data(size)',
+            'font-size': '11px',
+            'color': '#4d4d4d',
+            'text-valign': 'bottom',
+            'text-halign': 'center',
+            'text-margin-y': 4,
+            'text-background-color': 'rgba(255,255,255,0.8)',
+            'text-background-opacity': 0.8,
+            'text-background-padding': '2px',
+            'text-background-shape': 'roundrectangle'
+          }
+        },
+        {
+          selector: 'edge',
+          style: {
+            'width': 1,
+            'line-color': 'rgba(0,0,0,0.15)',
+            'curve-style': 'bezier',
+            'target-arrow-shape': 'none'
+          }
         }
-      }
-      
-      // Attraction (links)
-      for (const link of links) {
-        const source = nodes[link.source]
-        const target = nodes[link.target]
-        if (!source || !target) continue
-        const dx = target.x - source.x
-        const dy = target.y - source.y
-        let dist = Math.sqrt(dx * dx + dy * dy)
-        if (dist < 1) dist = 1
-        const force = (dist * dist) / k
-        const fx = (dx / dist) * force * 0.05
-        const fy = (dy / dist) * force * 0.05
-        source.vx += fx
-        source.vy += fy
-        target.vx -= fx
-        target.vy -= fy
-      }
-      
-      // Center gravity
-      for (const node of nodes) {
-        const dx = width / 2 - node.x
-        const dy = height / 2 - node.y
-        node.vx += dx * 0.01
-        node.vy += dy * 0.01
-      }
-      
-      // Update positions
-      for (const node of nodes) {
-        node.vx *= 0.5 // Damping
-        node.vy *= 0.5
-        node.x += node.vx
-        node.y += node.vy
-        
-        // Keep in bounds
-        const margin = 20
-        node.x = Math.max(margin, Math.min(width - margin, node.x))
-        node.y = Math.max(margin, Math.min(height - margin, node.y))
-      }
-    }
-    
-    // Draw
-    ctx.clearRect(0, 0, width, height)
-    
-    // Draw links
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)'
-    ctx.lineWidth = 1
-    for (const link of links) {
-      const source = nodes[link.source]
-      const target = nodes[link.target]
-      if (!source || !target) continue
-      ctx.beginPath()
-      ctx.moveTo(source.x, source.y)
-      ctx.lineTo(target.x, target.y)
-      ctx.stroke()
-    }
-    
-    // Draw nodes
-    for (const node of nodes) {
-      const radius = node.category === 'entity' ? 8 : 6
-      ctx.beginPath()
-      ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI)
-      ctx.fillStyle = colors[node.category] || colors.page
-      ctx.fill()
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 2
-      ctx.stroke()
-      
-      // Draw label
-      ctx.fillStyle = '#4d4d4d'
-      ctx.font = '11px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(node.name, node.x, node.y + radius + 14)
-    }
-    
+      ],
+      minZoom: 0.2,
+      maxZoom: 3,
+      wheelSensitivity: 0.3
+    })
+
+    graphLoading.value = false
   } catch (e) {
     console.error('[Wiki] Graph render failed:', e)
     graphError.value = '渲染失败'
-  } finally {
     graphLoading.value = false
   }
 }
@@ -1098,13 +1040,13 @@ watch(() => props.agentName, () => {
   background: var(--slack-blue);
 }
 
-.wiki-graph-container {
+.wiki-graph-wrapper {
   flex: 1;
   position: relative;
   overflow: hidden;
 }
 
-.wiki-graph-canvas {
+.wiki-graph-container-inner {
   width: 100%;
   height: 100%;
 }
