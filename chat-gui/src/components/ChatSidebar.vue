@@ -27,21 +27,11 @@
         <span class="join-party-icon">🌐</span>
       </button>
 
-      <!-- 1. Create group chat button -->
-      <button
-        class="new-group-rail-btn"
-        :class="{ active: showPicker }"
-        @click="togglePicker"
-        title="New group chat"
-      >
-        <span class="new-group-rail-icon">#<span class="new-group-plus">+</span></span>
-      </button>
-
-      <!-- 2. Group Chats org icon (two lobsters) -->
+      <!-- Group Chats org icon (two lobsters) -->
       <div
         class="org-icon group-chats-icon"
         :class="{ active: activeOrg === 'groups' }"
-        @click="activeOrg = 'groups'"
+        @click="activeOrg = 'groups'; if (sidebarCollapsed) sidebarCollapsed = false"
         title="Group Chats"
       >
         <span class="org-double-lobster">
@@ -50,13 +40,11 @@
         <span class="org-active-bar" v-if="activeOrg === 'groups'"></span>
       </div>
 
-      <div class="org-divider"></div>
-
       <!-- zAgents icon -->
       <div
         class="org-icon"
         :class="{ active: activeOrg === 'zagents' }"
-        @click="activeOrg = 'zagents'"
+        @click="activeOrg = 'zagents'; if (sidebarCollapsed) sidebarCollapsed = false"
         title="zAgents"
       >
         <span class="org-emoji">
@@ -64,8 +52,6 @@
         </span>
         <span class="org-active-bar" v-if="activeOrg === 'zagents'"></span>
       </div>
-
-      <div class="org-divider"></div>
 
       <!-- One icon per mesh -->
       <div
@@ -120,8 +106,10 @@
               <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
             </svg>
           </button>
-          <button class="add-agent-btn" @click="showZAgentTemplates = true" title="从模板添加 zAgent">#A</button>
-          <button class="add-agent-btn plain" @click="showCreateZAgentDialog = true" title="创建 Agent">+A</button>
+          <button class="add-agent-btn" @click="showZAgentTemplates = true" title="从模板添加 zAgent">+A</button>
+        </div>
+        <div v-if="activeOrg === 'groups'" class="panel-header-actions">
+          <button class="add-agent-btn plain" @click="togglePicker" title="创建群聊">+G</button>
         </div>
       </div>
 
@@ -1372,13 +1360,6 @@ const getStatusText = (agent) => {
   flex-shrink: 0;
 }
 
-.org-divider {
-  width: 32px;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.8);
-  margin: 4px 0;
-}
-
 .org-icon {
   position: relative;
   width: 40px;
@@ -2224,12 +2205,6 @@ const getStatusText = (agent) => {
     display: none;
   }
   .org-active-bar { display: none; }
-  .org-divider {
-    width: 1px;
-    height: 24px;
-    margin: 0 4px;
-    flex-shrink: 0;
-  }
   .org-icon {
     flex-shrink: 0;
   }

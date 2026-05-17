@@ -113,12 +113,18 @@ fn clone_headers(
     builder
 }
 
+/// Look up an agent's port from clawparty.db.
+fn get_agent_port_clawparty(data_dir: &str, agent_name: &str) -> Option<u16> {
+    crate::db::get_agent_port(data_dir, agent_name)
+}
+
 /// Resolve the backend target URI for HTTP requests.
 ///
 /// Routing rules:
 /// - /api/zeroclaw/sessions/{id}      → http://127.0.0.1:42617/api/sessions/{id}
 /// - /api/zeroclaw/sessions/{id}/chat → http://127.0.0.1:42617/api/sessions/{id}/chat
-/// - /api/zeroclaw/messages?session=  → http://127.0.0.1:42617/api/sessions/{session}/messages
+/// - /api/zeroclaw/messages?agent=...&session=...
+///                                      → http://127.0.0.1:{agent_port}/api/sessions/{session}/messages
 /// - /api/zeroclaw/health             → http://127.0.0.1:42617/api/health
 /// - /api/zeroclaw/* (catch-all)      → http://127.0.0.1:42617/api/* (strip /zeroclaw)
 /// - everything else                  → http://127.0.0.1:6789
@@ -129,20 +135,27 @@ fn resolve_http_backend(req: &Request<Incoming>) -> anyhow::Result<Uri> {
         let remainder = &path_and_query["/api/zeroclaw".len()..];
         let target = if remainder.starts_with("/messages") {
             // /api/zeroclaw/messages?agent=...&session=...
-            // → /api/sessions/{session}/messages
+            // → http://127.0.0.1:{agent_port}/api/sessions/{session}/messages
+            let mut agent_name = String::new();
+            let mut session = "me".to_string();
             if let Some(idx) = remainder.find('?') {
                 let query_str = &remainder[idx + 1..];
-                let mut session = "me".to_string();
                 for (key, value) in url::form_urlencoded::parse(query_str.as_bytes()) {
-                    if key == "session" {
+                    if key == "agent" {
+                        agent_name = value.to_string();
+                    } else if key == "session" {
                         session = value.to_string();
-                        break;
                     }
                 }
-                format!("http://127.0.0.1:42617/api/sessions/{}/messages", session)
-            } else {
-                "http://127.0.0.1:42617/api/sessions/me/messages".to_string()
             }
+            let port = if agent_name.is_empty() {
+                42617
+            } else if let Some(data_dir) = DATA_DIR.get() {
+                get_agent_port_clawparty(data_dir, &agent_name).unwrap_or(42617)
+            } else {
+                42617
+            };
+            format!("http://127.0.0.1:{}/api/sessions/{}/messages", port, session)
         } else if remainder == "/health" {
             "http://127.0.0.1:42617/api/health".to_string()
         } else {
@@ -748,24 +761,170 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
         return Ok(resp);
     }
 
-    // Agent workspace file write — handled locally by Rust
-    if path.starts_with("/api/agents/") && path.contains("/workspace/") && method == hyper::Method::POST {
+    // ── Agent management API routes — handled locally by Rust (clawparty.db) ──
+    if path == "/api/agents" || path.starts_with("/api/agents/") || path == "/api/agents/reconcile" {
         if let Some(data_dir) = DATA_DIR.get() {
-            let rest = &path["/api/agents/".len()..];
-            if let Some(ws_idx) = rest.find("/workspace/") {
-                let agent_name = urlencoding::decode(&rest[..ws_idx]).unwrap_or_else(|_| rest[..ws_idx].into()).to_string();
-                let filename = urlencoding::decode(&rest[ws_idx + "/workspace/".len()..]).unwrap_or_else(|_| rest[ws_idx + "/workspace/".len()..].into()).to_string();
+            let resp = if path == "/api/agents" && method == hyper::Method::GET {
+                crate::agents::list_agents(data_dir).await
+            } else if path == "/api/agents" && method == hyper::Method::POST {
                 let body_bytes = match req.collect().await {
                     Ok(body) => body.to_bytes(),
-                    Err(_) => {
-                        let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#)));
-                        *resp.status_mut() = StatusCode::BAD_REQUEST;
-                        return Ok(resp);
-                    }
+                    Err(_) => return Ok(Response::builder().status(StatusCode::BAD_REQUEST).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#))).unwrap()),
                 };
-                let resp = crate::wiki::save_workspace_file(data_dir, &agent_name, &filename, body_bytes).await;
-                return Ok(resp);
-            }
+                crate::agents::create_agent(data_dir, body_bytes).await
+            } else if path == "/api/agents/reconcile" && method == hyper::Method::POST {
+                crate::agents::reconcile_agents(data_dir).await
+            } else if path.starts_with("/api/agents/") {
+                let rest = &path["/api/agents/".len()..];
+                // Workspace file write: /api/agents/{name}/workspace/{filename}
+                if rest.contains("/workspace/") && method == hyper::Method::POST {
+                    if let Some(ws_idx) = rest.find("/workspace/") {
+                        let agent_name = urlencoding::decode(&rest[..ws_idx]).unwrap_or_else(|_| rest[..ws_idx].into()).to_string();
+                        let filename = urlencoding::decode(&rest[ws_idx + "/workspace/".len()..]).unwrap_or_else(|_| rest[ws_idx + "/workspace/".len()..].into()).to_string();
+                        let body_bytes = match req.collect().await {
+                            Ok(body) => body.to_bytes(),
+                            Err(_) => {
+                                let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#)));
+                                *resp.status_mut() = StatusCode::BAD_REQUEST;
+                                return Ok(resp);
+                            }
+                        };
+                        return Ok(crate::wiki::save_workspace_file(data_dir, &agent_name, &filename, body_bytes).await);
+                    }
+                }
+                if rest.ends_with("/start") && method == hyper::Method::POST {
+                    let name = &rest[..rest.len() - "/start".len()];
+                    crate::agents::start_agent(data_dir, name).await
+                } else if rest.ends_with("/stop") && method == hyper::Method::POST {
+                    let name = &rest[..rest.len() - "/stop".len()];
+                    crate::agents::stop_agent(data_dir, name).await
+                } else if rest.ends_with("/status") && method == hyper::Method::GET {
+                    let name = &rest[..rest.len() - "/status".len()];
+                    crate::agents::get_agent(data_dir, name).await
+                } else if method == hyper::Method::GET {
+                    crate::agents::get_agent(data_dir, rest).await
+                } else if method == hyper::Method::DELETE {
+                    crate::agents::delete_agent(data_dir, rest).await
+                } else {
+                    Response::builder().status(StatusCode::NOT_FOUND).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Agent route not found"}"#))).unwrap()
+                }
+            } else {
+                Response::builder().status(StatusCode::NOT_FOUND).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Agent route not found"}"#))).unwrap()
+            };
+            return Ok(resp);
+        }
+        let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Service Unavailable"}"#)));
+        *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+        return Ok(resp);
+    }
+
+    // ── Group chat API routes — handled locally by Rust (clawparty.db) ──
+    if path == "/api/groupchats" || path.starts_with("/api/groupchats/") {
+        if let Some(data_dir) = DATA_DIR.get() {
+            let resp = if path == "/api/groupchats" && method == hyper::Method::GET {
+                crate::groupchats::list_group_chats(data_dir).await
+            } else if path == "/api/groupchats" && method == hyper::Method::POST {
+                let body_bytes = match req.collect().await {
+                    Ok(body) => body.to_bytes(),
+                    Err(_) => return Ok(Response::builder().status(StatusCode::BAD_REQUEST).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#))).unwrap()),
+                };
+                crate::groupchats::create_group_chat(data_dir, body_bytes).await
+            } else if path.starts_with("/api/groupchats/") {
+                let rest = &path["/api/groupchats/".len()..];
+                if let Some(slash) = rest.find('/') {
+                    let group_id = &rest[..slash];
+                    let action = &rest[slash + 1..];
+                    if action == "members" && method == hyper::Method::GET {
+                        crate::groupchats::get_members(data_dir, group_id).await
+                    } else if action == "members" && method == hyper::Method::POST {
+                        let body_bytes = match req.collect().await {
+                            Ok(body) => body.to_bytes(),
+                            Err(_) => return Ok(Response::builder().status(StatusCode::BAD_REQUEST).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#))).unwrap()),
+                        };
+                        crate::groupchats::add_member(data_dir, group_id, body_bytes).await
+                    } else if action.starts_with("members/") && method == hyper::Method::DELETE {
+                        let agent_name = &action["members/".len()..];
+                        crate::groupchats::remove_member(data_dir, group_id, agent_name).await
+                    } else if action == "messages" && method == hyper::Method::GET {
+                        crate::groupchats::get_messages(data_dir, group_id).await
+                    } else if action == "messages" && method == hyper::Method::POST {
+                        let body_bytes = match req.collect().await {
+                            Ok(body) => body.to_bytes(),
+                            Err(_) => return Ok(Response::builder().status(StatusCode::BAD_REQUEST).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#))).unwrap()),
+                        };
+                        crate::groupchats::post_message(data_dir, group_id, body_bytes).await
+                    } else {
+                        Response::builder().status(StatusCode::NOT_FOUND).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Group chat route not found"}"#))).unwrap()
+                    }
+                } else {
+                    let group_id = rest;
+                    if method == hyper::Method::GET {
+                        crate::groupchats::get_group_chat(data_dir, group_id).await
+                    } else if method == hyper::Method::PUT {
+                        let body_bytes = match req.collect().await {
+                            Ok(body) => body.to_bytes(),
+                            Err(_) => return Ok(Response::builder().status(StatusCode::BAD_REQUEST).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#))).unwrap()),
+                        };
+                        crate::groupchats::update_group_chat(data_dir, group_id, body_bytes).await
+                    } else if method == hyper::Method::DELETE {
+                        crate::groupchats::delete_group_chat(data_dir, group_id).await
+                    } else {
+                        Response::builder().status(StatusCode::NOT_FOUND).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Group chat route not found"}"#))).unwrap()
+                    }
+                }
+            } else {
+                Response::builder().status(StatusCode::NOT_FOUND).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Group chat route not found"}"#))).unwrap()
+            };
+            return Ok(resp);
+        }
+        let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Service Unavailable"}"#)));
+        *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+        return Ok(resp);
+    }
+
+    // Kanban API routes — handled locally by Rust (clawparty.db)
+    if path == "/api/kanban" {
+        if let Some(data_dir) = DATA_DIR.get() {
+            let query = req.uri().query().unwrap_or("");
+            let resp = if method == hyper::Method::GET {
+                let agent_name = url::form_urlencoded::parse(query.as_bytes())
+                    .find(|(k, _)| k == "agent")
+                    .map(|(_, v)| v.to_string());
+                let group_id = url::form_urlencoded::parse(query.as_bytes())
+                    .find(|(k, _)| k == "group")
+                    .map(|(_, v)| v.to_string());
+                crate::kanban::get_kanban(data_dir, agent_name.as_deref(), group_id.as_deref()).await
+            } else if method == hyper::Method::PUT {
+                let body_bytes = match req.collect().await {
+                    Ok(body) => body.to_bytes(),
+                    Err(_) => return Ok(Response::builder().status(StatusCode::BAD_REQUEST).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#))).unwrap()),
+                };
+                crate::kanban::update_kanban(data_dir, body_bytes).await
+            } else {
+                Response::builder().status(StatusCode::METHOD_NOT_ALLOWED).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Method not allowed"}"#))).unwrap()
+            };
+            return Ok(resp);
+        }
+        let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Service Unavailable"}"#)));
+        *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+        return Ok(resp);
+    }
+
+    // Global Config API routes — handled locally by Rust
+    if path == "/api/global-config" {
+        if let Some(data_dir) = DATA_DIR.get() {
+            let resp = if method == hyper::Method::GET {
+                crate::global_config::get_global_config(data_dir).await
+            } else if method == hyper::Method::PUT {
+                let body_bytes = match req.collect().await {
+                    Ok(body) => body.to_bytes(),
+                    Err(_) => return Ok(Response::builder().status(StatusCode::BAD_REQUEST).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#))).unwrap()),
+                };
+                crate::global_config::update_global_config(data_dir, body_bytes).await
+            } else {
+                Response::builder().status(StatusCode::METHOD_NOT_ALLOWED).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Method not allowed"}"#))).unwrap()
+            };
+            return Ok(resp);
         }
         let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Service Unavailable"}"#)));
         *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;

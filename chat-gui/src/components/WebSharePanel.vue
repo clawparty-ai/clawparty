@@ -479,7 +479,7 @@ const goParent = () => {
 const copyFileUrl = async (filename) => {
   const url = fileUrl(filename)
   try {
-    await navigator.clipboard.writeText(window.location.origin + url)
+    await navigator.clipboard.writeText(url)
   } catch (e) {
     console.error('[WebShare] 复制失败:', e)
   }

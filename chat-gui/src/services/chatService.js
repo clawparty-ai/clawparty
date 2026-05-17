@@ -174,11 +174,20 @@ export class ZeroClawWS {
       
       this.ws.onmessage = (event) => {
         try {
+          // Handle binary or non-string data
+          if (typeof event.data !== 'string') {
+            console.warn('[zAgentWS] Received non-string data:', typeof event.data)
+            return
+          }
+          // Skip empty messages
+          if (!event.data || event.data.trim().length === 0) {
+            return
+          }
           const data = JSON.parse(event.data)
           console.log('[zAgentWS] Received:', data.type)
           this.onMessage?.(data)
         } catch (e) {
-          console.error('[zAgentWS] Parse error:', e)
+          console.error('[zAgentWS] Parse error:', e, 'data:', event.data?.substring?.(0, 200))
         }
       }
       

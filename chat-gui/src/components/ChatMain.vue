@@ -68,7 +68,7 @@
       @toggle="wikiPanelBodyExpanded = !wikiPanelBodyExpanded"
       @refresh="handleWikiRefresh"
     />
-    <div class="messages" ref="messagesContainer">
+    <div class="messages" ref="messagesContainer" @click="handleMessagesClick">
       <div class="date-divider">
         <span>{{ currentDate }}</span>
       </div>
@@ -1732,6 +1732,8 @@ const filteredMessages = computed(() => {
   for (i = 0; i < msgs.length; i++) {
     const m = msgs[i]
     if (m.isHalfDraft) continue
+    // Filter out NO_REPLY messages from LLM in group chats
+    if (props.chat.isGroupChat && !!m.text && (m.text === 'NO_REPLY' || m.text.includes('NO_REPLY'))) continue
     if (!!m.text && m.text.indexOf(' GMT') >= 0) {
       m.text = m.text.split(/[^[]*] /).slice(1)[0]
     }
@@ -2176,6 +2178,14 @@ watch(showTaskPanel, async (visible) => {
     await loadKanbanConfig()
   }
 })
+
+const handleMessagesClick = (e) => {
+  // Don't close panels if clicking on interactive elements inside messages
+  if (e.target.closest('button, a, select, input, textarea, .attachment-item')) return
+  showWebSharePanel.value = false
+  showTaskPanel.value = false
+  showWikiPanel.value = false
+}
 
 onUnmounted(() => {
   stopPolling()

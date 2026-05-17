@@ -97,6 +97,7 @@ pub struct AppState {
     pub zeroclaw_mgr: Option<ZeroClawDaemon>,
     pub zeroclaw_pending_tasks: std::collections::HashMap<String, tokio::task::AbortHandle>,
     pub agent_processes: Vec<AgentProcess>,
+    pub last_loaded_openclaw_agent: Option<String>,
 }
 
 impl AppState {
@@ -147,6 +148,7 @@ impl AppState {
             zeroclaw_mgr: None,
             zeroclaw_pending_tasks: std::collections::HashMap::new(),
             agent_processes: Vec::new(),
+            last_loaded_openclaw_agent: None,
         }
     }
 

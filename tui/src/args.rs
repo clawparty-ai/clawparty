@@ -38,7 +38,7 @@ pub struct Args {
     pub open: bool,
 
     // ZeroClaw-only mode (no ZTM agent)
-    #[arg(long, default_value = "false")]
+    #[arg(long, visible_alias = "no-ztm", default_value = "false")]
     pub zeroclaw_only: bool,
 
     // Watchdog: interval in seconds to health-check ZTM agent and auto-restart if hung (0 = disabled)

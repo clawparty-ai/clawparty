@@ -79,7 +79,59 @@ pub fn init_clawparty_db(data_dir: &str) -> anyhow::Result<()> {
             updated_at  REAL    NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_kanban_agent ON kanban_configs(agent_name);
-        CREATE INDEX IF NOT EXISTS idx_kanban_group ON kanban_configs(group_id);",
+        CREATE INDEX IF NOT EXISTS idx_kanban_group ON kanban_configs(group_id);
+
+        -- Agents table (migrated from ztm.db)
+        CREATE TABLE IF NOT EXISTS agents (
+            agent_name      TEXT PRIMARY KEY,
+            display_name    TEXT,
+            description     TEXT,
+            directory       TEXT NOT NULL,
+            config_path     TEXT NOT NULL,
+            workspace_dir   TEXT NOT NULL,
+            port            INTEGER NOT NULL,
+            pid             INTEGER,
+            status          TEXT NOT NULL DEFAULT 'stopped',
+            created_at      REAL    NOT NULL,
+            updated_at      REAL    NOT NULL,
+            config_json     TEXT,
+            error_msg       TEXT,
+            deleted         INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
+        CREATE INDEX IF NOT EXISTS idx_agents_deleted ON agents(deleted);
+
+        -- Group chats table (migrated from ztm.db)
+        CREATE TABLE IF NOT EXISTS group_chats (
+            group_id      TEXT PRIMARY KEY,
+            group_name    TEXT    NOT NULL,
+            owner_agent   TEXT    NOT NULL,
+            members       TEXT    NOT NULL,
+            created_at    REAL    NOT NULL,
+            updated_at    REAL    NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_groupchats_owner ON group_chats(owner_agent);
+
+        -- Chat log table (migrated from ztm.db)
+        CREATE TABLE IF NOT EXISTS chat_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            time        REAL    NOT NULL,
+            mesh        TEXT    NOT NULL,
+            chat_type   TEXT    NOT NULL,
+            chat_id     TEXT    NOT NULL,
+            chat_name   TEXT,
+            creator     TEXT,
+            sender      TEXT    NOT NULL,
+            event       TEXT    NOT NULL,
+            content     TEXT,
+            members     TEXT,
+            session_id  TEXT,
+            muted       INTEGER NOT NULL DEFAULT 0,
+            msg_type    TEXT    NOT NULL DEFAULT 'response'
+        );
+        CREATE INDEX IF NOT EXISTS idx_chatlog_chat ON chat_log(chat_type, chat_id, time);",
+
+
     )?;
 
     Ok(())
@@ -514,4 +566,440 @@ pub fn migrate_from_ztm_db(data_dir: &str) -> anyhow::Result<usize> {
 // Helper: deserialize JSON dependencies / pipeline_definition
 fn parse_json_array<T: serde::de::DeserializeOwned>(s: Option<String>) -> Vec<T> {
     s.and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default()
+}
+
+// ── Agent management (clawparty.db) ─────────────────────────────────────
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct AgentRecord {
+    pub agent_name: String,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub directory: String,
+    pub config_path: String,
+    pub workspace_dir: String,
+    pub port: u16,
+    pub pid: Option<u64>,
+    pub status: String,
+    pub created_at: f64,
+    pub updated_at: f64,
+    pub config_json: Option<String>,
+    pub error_msg: Option<String>,
+    pub deleted: bool,
+}
+
+fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<AgentRecord> {
+    Ok(AgentRecord {
+        agent_name: row.get("agent_name")?,
+        display_name: row.get("display_name")?,
+        description: row.get("description")?,
+        directory: row.get("directory")?,
+        config_path: row.get("config_path")?,
+        workspace_dir: row.get("workspace_dir")?,
+        port: row.get::<_, i64>("port")? as u16,
+        pid: row.get::<_, Option<i64>>("pid")?.map(|v| v as u64),
+        status: row.get("status")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        config_json: row.get("config_json")?,
+        error_msg: row.get("error_msg")?,
+        deleted: row.get::<_, i64>("deleted")? != 0,
+    })
+}
+
+pub fn get_agent(data_dir: &str, agent_name: &str) -> anyhow::Result<Option<AgentRecord>> {
+    let conn = open_db(data_dir)?;
+    let agent = conn
+        .query_row(
+            "SELECT * FROM agents WHERE agent_name = ?1 AND deleted = 0",
+            rusqlite::params![agent_name],
+            row_to_agent,
+        )
+        .optional()?;
+    Ok(agent)
+}
+
+pub fn get_agent_port(data_dir: &str, agent_name: &str) -> Option<u16> {
+    get_agent(data_dir, agent_name).ok()?.map(|a| a.port)
+}
+
+pub fn list_agents(data_dir: &str) -> anyhow::Result<Vec<AgentRecord>> {
+    let conn = open_db(data_dir)?;
+    let mut stmt = conn.prepare(
+        "SELECT * FROM agents WHERE deleted = 0 ORDER BY
+         CASE WHEN agent_name = '0#Agent' THEN 0 ELSE 1 END,
+         agent_name ASC",
+    )?;
+    let rows: Vec<AgentRecord> = stmt
+        .query_map([], row_to_agent)?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+pub fn create_agent(
+    data_dir: &str,
+    agent_name: &str,
+    display_name: Option<&str>,
+    description: Option<&str>,
+    directory: &str,
+    config_path: &str,
+    workspace_dir: &str,
+    port: u16,
+    config_json: Option<&str>,
+) -> anyhow::Result<AgentRecord> {
+    let conn = open_db(data_dir)?;
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs_f64();
+
+    conn.execute(
+        "INSERT INTO agents
+         (agent_name, display_name, description, directory, config_path, workspace_dir,
+          port, status, created_at, updated_at, config_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)",
+        rusqlite::params![
+            agent_name,
+            display_name,
+            description,
+            directory,
+            config_path,
+            workspace_dir,
+            port as i64,
+            "stopped",
+            t,
+            config_json,
+        ],
+    )?;
+
+    get_agent(data_dir, agent_name)?.ok_or_else(|| anyhow::anyhow!("Agent not found after create"))
+}
+
+pub fn update_agent_status(
+    data_dir: &str,
+    agent_name: &str,
+    status: &str,
+    pid: Option<u64>,
+    error_msg: Option<&str>,
+) -> anyhow::Result<()> {
+    let conn = open_db(data_dir)?;
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs_f64();
+
+    conn.execute(
+        "UPDATE agents SET status = ?1, pid = ?2, error_msg = ?3, updated_at = ?4
+         WHERE agent_name = ?5 AND deleted = 0",
+        rusqlite::params![
+            status,
+            pid.map(|v| v as i64),
+            error_msg,
+            t,
+            agent_name,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn delete_agent(data_dir: &str, agent_name: &str) -> anyhow::Result<()> {
+    let conn = open_db(data_dir)?;
+    conn.execute(
+        "UPDATE agents SET deleted = 1, updated_at = ?1 WHERE agent_name = ?2",
+        rusqlite::params![
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs_f64(),
+            agent_name,
+        ],
+    )?;
+    Ok(())
+}
+
+// ── Group chat management (clawparty.db) ──────────────────────────────────
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct GroupChatRecord {
+    pub group_id: String,
+    pub group_name: String,
+    pub owner_agent: String,
+    pub members: Vec<String>,
+    pub created_at: f64,
+    pub updated_at: f64,
+}
+
+fn row_to_groupchat(row: &rusqlite::Row) -> rusqlite::Result<GroupChatRecord> {
+    let members_str: String = row.get("members")?;
+    let members: Vec<String> = serde_json::from_str(&members_str).unwrap_or_default();
+    Ok(GroupChatRecord {
+        group_id: row.get("group_id")?,
+        group_name: row.get("group_name")?,
+        owner_agent: row.get("owner_agent")?,
+        members,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+    })
+}
+
+pub fn get_group_chat(data_dir: &str, group_id: &str) -> anyhow::Result<Option<GroupChatRecord>> {
+    let conn = open_db(data_dir)?;
+    let gc = conn
+        .query_row(
+            "SELECT * FROM group_chats WHERE group_id = ?1",
+            rusqlite::params![group_id],
+            row_to_groupchat,
+        )
+        .optional()?;
+    Ok(gc)
+}
+
+pub fn list_group_chats(data_dir: &str) -> anyhow::Result<Vec<GroupChatRecord>> {
+    let conn = open_db(data_dir)?;
+    let mut stmt = conn.prepare("SELECT * FROM group_chats ORDER BY created_at DESC")?;
+    let rows: Vec<GroupChatRecord> = stmt
+        .query_map([], row_to_groupchat)?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+pub fn create_group_chat(
+    data_dir: &str,
+    group_id: &str,
+    group_name: &str,
+    owner_agent: &str,
+    members: &[String],
+) -> anyhow::Result<GroupChatRecord> {
+    let conn = open_db(data_dir)?;
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs_f64();
+
+    let members_json = serde_json::to_string(members)?;
+
+    conn.execute(
+        "INSERT INTO group_chats (group_id, group_name, owner_agent, members, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+        rusqlite::params![group_id, group_name, owner_agent, members_json, t],
+    )?;
+
+    get_group_chat(data_dir, group_id)?.ok_or_else(|| anyhow::anyhow!("Group chat not found after create"))
+}
+
+pub fn update_group_chat(
+    data_dir: &str,
+    group_id: &str,
+    group_name: Option<&str>,
+    members: Option<&[String]>,
+) -> anyhow::Result<()> {
+    let conn = open_db(data_dir)?;
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs_f64();
+
+    if let Some(name) = group_name {
+        conn.execute(
+            "UPDATE group_chats SET group_name = ?1, updated_at = ?2 WHERE group_id = ?3",
+            rusqlite::params![name, t, group_id],
+        )?;
+    }
+    if let Some(m) = members {
+        let members_json = serde_json::to_string(m)?;
+        conn.execute(
+            "UPDATE group_chats SET members = ?1, updated_at = ?2 WHERE group_id = ?3",
+            rusqlite::params![members_json, t, group_id],
+        )?;
+    }
+    Ok(())
+}
+
+pub fn delete_group_chat(data_dir: &str, group_id: &str) -> anyhow::Result<()> {
+    let conn = open_db(data_dir)?;
+    conn.execute(
+        "DELETE FROM group_chats WHERE group_id = ?1",
+        rusqlite::params![group_id],
+    )?;
+    Ok(())
+}
+
+// ── Chat log (clawparty.db) ─────────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ChatLogRecord {
+    pub id: i64,
+    pub time: f64,
+    pub mesh: String,
+    pub chat_type: String,
+    pub chat_id: String,
+    pub chat_name: Option<String>,
+    pub creator: Option<String>,
+    pub sender: String,
+    pub event: String,
+    pub content: Option<String>,
+    pub members: Option<String>,
+    pub session_id: Option<String>,
+    pub muted: bool,
+    pub msg_type: String,
+}
+
+fn row_to_chat_log(row: &rusqlite::Row) -> rusqlite::Result<ChatLogRecord> {
+    Ok(ChatLogRecord {
+        id: row.get("id")?,
+        time: row.get("time")?,
+        mesh: row.get("mesh")?,
+        chat_type: row.get("chat_type")?,
+        chat_id: row.get("chat_id")?,
+        chat_name: row.get("chat_name")?,
+        creator: row.get("creator")?,
+        sender: row.get("sender")?,
+        event: row.get("event")?,
+        content: row.get("content")?,
+        members: row.get("members")?,
+        session_id: row.get("session_id")?,
+        muted: row.get::<_, i64>("muted")? != 0,
+        msg_type: row.get("msg_type")?,
+    })
+}
+
+pub fn get_chat_log(
+    data_dir: &str,
+    chat_type: &str,
+    chat_id: &str,
+    limit: i64,
+    msg_types: &[&str],
+) -> anyhow::Result<Vec<ChatLogRecord>> {
+    let conn = open_db(data_dir)?;
+    // Build IN clause manually for msg_types (SQLite does not support array parameters)
+    let msg_types_str: Vec<String> = msg_types.iter().map(|s| format!("'{}'", s.replace("'", "''"))).collect();
+    let in_clause = msg_types_str.join(",");
+    let sql = format!(
+        "SELECT * FROM chat_log WHERE chat_type = ?1 AND chat_id = ?2 AND msg_type IN ({}) ORDER BY time DESC LIMIT ?3",
+        in_clause,
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows: Vec<ChatLogRecord> = stmt
+        .query_map(rusqlite::params![chat_type, chat_id, limit], row_to_chat_log)?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+pub fn log_chat(
+    data_dir: &str,
+    mesh: &str,
+    chat_type: &str,
+    chat_id: &str,
+    chat_name: Option<&str>,
+    creator: Option<&str>,
+    sender: &str,
+    event: &str,
+    content: Option<&str>,
+    members: Option<&str>,
+    session_id: Option<&str>,
+    muted: bool,
+    msg_type: &str,
+) -> anyhow::Result<()> {
+    let conn = open_db(data_dir)?;
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs_f64();
+    conn.execute(
+        "INSERT INTO chat_log (time, mesh, chat_type, chat_id, chat_name, creator, sender, event, content, members, session_id, muted, msg_type)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        rusqlite::params![
+            t, mesh, chat_type, chat_id, chat_name, creator, sender, event, content, members, session_id, muted as i64, msg_type,
+        ],
+    )?;
+    Ok(())
+}
+
+// ── Kanban Config (clawparty.db) ────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct KanbanConfig {
+    pub id: Option<i64>,
+    pub agent_name: String,
+    pub group_id: Option<String>,
+    pub name: String,
+    pub prompt: Option<String>,
+    pub config: Option<serde_json::Value>,
+    pub created_at: Option<f64>,
+    pub updated_at: Option<f64>,
+}
+
+fn row_to_kanban(row: &rusqlite::Row) -> rusqlite::Result<KanbanConfig> {
+    let config_str: Option<String> = row.get("config")?;
+    let config = config_str.and_then(|s| serde_json::from_str(&s).ok());
+    Ok(KanbanConfig {
+        id: row.get("id")?,
+        agent_name: row.get("agent_name")?,
+        group_id: row.get("group_id")?,
+        name: row.get("name")?,
+        prompt: row.get("prompt")?,
+        config,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+    })
+}
+
+pub fn get_kanban_config(data_dir: &str, agent_name: &str, group_id: Option<&str>) -> anyhow::Result<Option<KanbanConfig>> {
+    let conn = open_db(data_dir)?;
+    let sql = if group_id.is_some() {
+        "SELECT * FROM kanban_configs WHERE agent_name = ?1 AND group_id = ?2"
+    } else {
+        "SELECT * FROM kanban_configs WHERE agent_name = ?1 AND group_id IS NULL"
+    };
+    let row = if let Some(gid) = group_id {
+        conn.query_row(sql, rusqlite::params![agent_name, gid], row_to_kanban).optional()?
+    } else {
+        conn.query_row(sql, rusqlite::params![agent_name], row_to_kanban).optional()?
+    };
+    Ok(row)
+}
+
+pub fn set_kanban_config(
+    data_dir: &str,
+    agent_name: &str,
+    group_id: Option<&str>,
+    name: Option<&str>,
+    prompt: Option<&str>,
+    config: Option<&serde_json::Value>,
+) -> anyhow::Result<KanbanConfig> {
+    let conn = open_db(data_dir)?;
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs_f64();
+
+    let existing = get_kanban_config(data_dir, agent_name, group_id)?;
+    if let Some(ref existing) = existing {
+        let sql = if group_id.is_some() {
+            "UPDATE kanban_configs SET name = ?1, prompt = ?2, config = ?3, updated_at = ?4 WHERE agent_name = ?5 AND group_id = ?6"
+        } else {
+            "UPDATE kanban_configs SET name = ?1, prompt = ?2, config = ?3, updated_at = ?4 WHERE agent_name = ?5 AND group_id IS NULL"
+        };
+        let config_json = config.map(|c| serde_json::to_string(c).unwrap_or_default());
+        let new_name = name.unwrap_or(&existing.name);
+        let new_prompt = prompt.unwrap_or_else(|| existing.prompt.as_deref().unwrap_or(""));
+        if group_id.is_some() {
+            conn.execute(sql, rusqlite::params![new_name, new_prompt, config_json, t, agent_name, group_id])?;
+        } else {
+            conn.execute(sql, rusqlite::params![new_name, new_prompt, config_json, t, agent_name])?;
+        }
+    } else {
+        let config_json = config.map(|c| serde_json::to_string(c).unwrap_or_default());
+        conn.execute(
+            "INSERT INTO kanban_configs (agent_name, group_id, name, prompt, config, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            rusqlite::params![
+                agent_name,
+                group_id,
+                name.unwrap_or("默认看板"),
+                prompt,
+                config_json,
+                t,
+            ],
+        )?;
+    }
+
+    get_kanban_config(data_dir, agent_name, group_id)?
+        .ok_or_else(|| anyhow::anyhow!("Kanban config not found after set"))
 }

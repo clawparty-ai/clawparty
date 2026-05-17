@@ -13,6 +13,10 @@ mod wiki;
 mod db;
 mod tasks;
 mod webshare;
+mod agents;
+mod groupchats;
+mod kanban;
+mod global_config;
 
 use agent::AgentManager;
 use args::Args;
@@ -399,6 +403,57 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // OpenClaw message loader task: auto-load messages when switching agents
+    let loader_state = state.clone();
+    tokio::spawn(async move {
+        let mut last_agent_id: Option<String> = None;
+        loop {
+            sleep(Duration::from_millis(200)).await;
+
+            let agent_id = {
+                let s = loader_state.read().await;
+                if let Some(ref agent) = s.current_openclaw_agent {
+                    if last_agent_id.as_ref() != Some(&agent.id) {
+                        Some(agent.id.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            };
+
+            if let Some(agent_id) = agent_id {
+                let api = {
+                    let s = loader_state.read().await;
+                    s.api.clone()
+                };
+
+                let msgs = {
+                    let client = api.lock().await;
+                    client.get_openclaw_messages(&agent_id).await
+                };
+
+                let mut s = loader_state.write().await;
+                if let Some(ref agent) = s.current_openclaw_agent {
+                    if agent.id == agent_id {
+                        match msgs {
+                            Ok(messages) => {
+                                s.messages = messages;
+                                s.trim_messages();
+                                s.messages_scroll.scroll_to_bottom();
+                            }
+                            Err(e) => {
+                                s.add_log("ERROR", &format!("Failed to load OpenClaw messages for {}: {}", agent_id, e));
+                            }
+                        }
+                    }
+                }
+                last_agent_id = Some(agent_id);
+            }
+        }
+    });
+
     // Watchdog task: health-check ZTM agent and auto-restart if hung
     let poll_state = state.clone();
     let watchdog_interval = args.watchdog_interval;
@@ -556,6 +611,7 @@ async fn main() -> anyhow::Result<()> {
 
                             // Collect what we need before dropping the lock
                             let cur_zeroclaw = s.current_zeroclaw_session.as_ref().map(|z| z.session_id.clone());
+                            let cur_openclaw = s.current_openclaw_agent.as_ref().map(|a| a.id.clone());
                             let api_client = s.api.clone();
                             let state_clone = state.clone();
                             let text_clone = text.clone();
@@ -595,6 +651,44 @@ async fn main() -> anyhow::Result<()> {
                                         Err(_) => {
                                             let mut s = st_cl.write().await;
                                             s.add_log("ERROR", "ZeroClaw response timeout (60 seconds)");
+                                        }
+                                    }
+                                });
+                            } else if let Some(ref agent_id) = cur_openclaw {
+                                let agent_id = agent_id.clone();
+                                let api_cl = api_client.clone();
+                                let st_cl = state_clone.clone();
+                                let txt_cl = text_clone.clone();
+
+                                tokio::spawn(async move {
+                                    let result = {
+                                        let client = api_cl.lock().await;
+                                        client.send_openclaw_message(&agent_id, &txt_cl).await
+                                    };
+
+                                    match result {
+                                        Ok(()) => {
+                                            let msgs = {
+                                                let client = api_cl.lock().await;
+                                                client.get_openclaw_messages(&agent_id).await
+                                            };
+
+                                            let mut s = st_cl.write().await;
+                                            match msgs {
+                                                Ok(messages) => {
+                                                    s.messages = messages;
+                                                    s.trim_messages();
+                                                    s.messages_scroll.scroll_to_bottom();
+                                                }
+                                                Err(e) => {
+                                                    s.add_log("ERROR", &format!("Failed to reload messages: {}", e));
+                                                }
+                                            }
+                                            s.add_log("INFO", "OpenClaw message sent");
+                                        }
+                                        Err(e) => {
+                                            let mut s = st_cl.write().await;
+                                            s.add_log("ERROR", &format!("Failed to send OpenClaw message: {}", e));
                                         }
                                     }
                                 });
