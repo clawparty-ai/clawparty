@@ -191,7 +191,9 @@ function getMetaUrl(url){
 	if(!!devPath){
 		return `http://127.0.0.1:${getPort()}${devPath}${apiPrefix}${url}`
 	}else if(!window.__TAURI_INTERNALS__ || url.indexOf('://')>=0){
-		return path ? `${path}${url}` : `http://localhost:${getPort()}${apiPrefix}${url}`
+		// Browser: use current page origin (e.g. https://127.0.0.1)
+		const origin = typeof window !== 'undefined' ? window.location.origin : `http://127.0.0.1:${getPort()}`
+		return path ? `${path}${url}` : `${origin}${apiPrefix}${url}`
 	} else {
 		return `http://127.0.0.1:${getPort()}${path}${apiPrefix}${url}`
 	}
@@ -215,7 +217,7 @@ function getLocalUrl(url){
 }
 const getPort = () => {
 	const VITE_APP_API_PORT = localStorage.getItem("VITE_APP_API_PORT") || (!!location?.port && location.port>=2000?location.port:null);
-	return VITE_APP_API_PORT || DEFAULT_VITE_APP_API_PORT || 6789;
+	return VITE_APP_API_PORT || DEFAULT_VITE_APP_API_PORT || 443;
 }
 const setPort = (port) => {
 	localStorage.setItem("VITE_APP_API_PORT",port);
