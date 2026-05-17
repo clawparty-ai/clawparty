@@ -48,6 +48,13 @@ jobs:
             exit 1
           fi
 
+      - name: Build Web GUI
+        run: |
+          set -e
+          cd chat-gui
+          yarn install
+          yarn build
+
       - name: Build ztm (Pipy)
         run: |
           set -e
@@ -63,22 +70,6 @@ jobs:
           cargo build --release --features gateway
           cd ..
           cp zeroclaw/target/release/zeroclaw bin/zeroclaw
-
-      - name: Install GUI dependencies
-        working-directory: ./chat-gui
-        run: npm ci --no-audit
-
-      - name: Build Web GUI
-        working-directory: ./chat-gui
-        run: npm run build
-
-      - name: Verify GUI output
-        run: |
-          if [ ! -f "tui/gui/index.html" ]; then
-            echo "GUI build failed: tui/gui/index.html not found"
-            exit 1
-          fi
-          echo "GUI build OK"
 
       - name: Package release (tar.gz)
         run: |

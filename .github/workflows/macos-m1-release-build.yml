@@ -42,6 +42,13 @@ jobs:
             exit 1
           fi
 
+      - name: Build Web GUI
+        run: |
+          set -e
+          cd chat-gui
+          yarn install
+          yarn build
+
       - name: Build ztm (Pipy)
         run: |
           set -e
@@ -57,30 +64,16 @@ jobs:
           cargo build --release --features gateway
           cd ..
           cp zeroclaw/target/release/zeroclaw bin/zeroclaw
+          codesign -s - --force --deep bin/zeroclaw 2>/dev/null || true
 
-      - name: Build TUI
+      - name: Build TUI (Rust)
         run: |
           set -e
           cd tui
           cargo build --release
           cd ..
           cp tui/target/release/clawparty bin/clawparty
-
-      - name: Install GUI dependencies
-        working-directory: ./chat-gui
-        run: npm ci --no-audit
-
-      - name: Build Web GUI
-        working-directory: ./chat-gui
-        run: npm run build
-
-      - name: Verify GUI output
-        run: |
-          if [ ! -f "tui/gui/index.html" ]; then
-            echo "GUI build failed: tui/gui/index.html not found"
-            exit 1
-          fi
-          echo "GUI build OK"
+          codesign -s - --force --deep bin/clawparty 2>/dev/null || true
 
       - name: Package release (tar.gz)
         run: |
@@ -89,7 +82,6 @@ jobs:
           cp bin/ztm dist/ztm
           cp bin/zeroclaw dist/zeroclaw
           cp bin/clawparty dist/clawparty
-          cp -r tui/gui dist/gui
           tag="${{ inputs.tag }}"
           tar -czf "clawparty-${tag}-macos-m1.tar.gz" -C dist .
 

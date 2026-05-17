@@ -56,15 +56,13 @@ jobs:
         run: git fetch --force --tags
 
       # Step A: Build GUI FIRST (makes files available for Pipy to embed)
-      - name: Install GUI dependencies
-        working-directory: ./chat-gui
-        env:
-          NODE_ENV: development
-        run: npm ci --no-audit
-
       - name: Build Web GUI
-        working-directory: ./chat-gui
-        run: npm run build
+        shell: bash
+        run: |
+          set -e
+          cd chat-gui
+          yarn install
+          yarn build
 
       # Clear Pipy codebase cache so it re-packs tui/gui into ztm binary
       - name: Clear Pipy codebase cache

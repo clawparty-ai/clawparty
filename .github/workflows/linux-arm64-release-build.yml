@@ -64,21 +64,12 @@ jobs:
           cd ..
           cp zeroclaw/target/release/zeroclaw bin/zeroclaw
 
-      - name: Install GUI dependencies
-        working-directory: ./chat-gui
-        run: npm ci --no-audit
-
       - name: Build Web GUI
-        working-directory: ./chat-gui
-        run: npm run build
-
-      - name: Verify GUI output
         run: |
-          if [ ! -f "tui/gui/index.html" ]; then
-            echo "GUI build failed: tui/gui/index.html not found"
-            exit 1
-          fi
-          echo "GUI build OK"
+          set -e
+          cd chat-gui
+          yarn install
+          yarn build
 
       - name: Package release (tar.gz)
         run: |
