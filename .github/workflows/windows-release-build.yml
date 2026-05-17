@@ -66,11 +66,11 @@ jobs:
         working-directory: ./chat-gui
         run: npm run build
 
-      # Clear Pipy codebase cache so it re-packs agent/gui into ztm binary
+      # Clear Pipy codebase cache so it re-packs tui/gui into ztm binary
       - name: Clear Pipy codebase cache
         run: IF EXIST pipy\build\deps\codebases.tar.gz.h DEL pipy\build\deps\codebases.tar.gz.h
 
-      # Step B: Build ztm (Pipy) — must happen AFTER GUI is in agent/gui/
+      # Step B: Build ztm (Pipy) — must happen AFTER GUI is in tui/gui/
       - name: Build ztm (Pipy)
         run: |
           CALL build\deps.cmd
@@ -94,9 +94,9 @@ jobs:
         run: |
           Write-Host "=== File sizes ==="
           Get-ChildItem -Path "bin\" | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,2)}}
-          if (Test-Path "agent\gui\index.html") {
+          if (Test-Path "tui\gui\index.html") {
             Write-Host "GUI files:"
-            Get-ChildItem -Recurse -Path "agent\gui" | Measure-Object -Property Length -Sum | Select-Object @{N='SizeMB';E={[math]::Round($_.Sum/1MB,2)}}
+            Get-ChildItem -Recurse -Path "tui\gui" | Measure-Object -Property Length -Sum | Select-Object @{N='SizeMB';E={[math]::Round($_.Sum/1MB,2)}}
           }
           $fail = $false
           if (-Not (Test-Path "bin\ztm.exe")) {
@@ -107,8 +107,8 @@ jobs:
             Write-Error "Missing binary: bin\zeroclaw.exe"
             $fail = $true
           }
-          if (-Not (Test-Path "agent\gui\index.html")) {
-            Write-Error "GUI build failed: agent\gui\index.html not found"
+          if (-Not (Test-Path "tui\gui\index.html")) {
+            Write-Error "GUI build failed: tui\gui\index.html not found"
             $fail = $true
           }
           # CRITICAL: verify GUI is actually embedded inside ztm.exe binary
@@ -140,7 +140,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path "dist"
           Copy-Item "bin\ztm.exe" "dist\ztm.exe"
           Copy-Item "bin\zeroclaw.exe" "dist\zeroclaw.exe"
-          Copy-Item -Recurse -Force "agent\gui" "dist\gui"
+          Copy-Item -Recurse -Force "tui\gui" "dist\gui"
           if (Test-Path "windows\start.bat") {
             Copy-Item "windows\start.bat" "dist\start.bat"
           }

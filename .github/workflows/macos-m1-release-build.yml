@@ -76,8 +76,8 @@ jobs:
 
       - name: Verify GUI output
         run: |
-          if [ ! -f "agent/gui/index.html" ]; then
-            echo "GUI build failed: agent/gui/index.html not found"
+          if [ ! -f "tui/gui/index.html" ]; then
+            echo "GUI build failed: tui/gui/index.html not found"
             exit 1
           fi
           echo "GUI build OK"
@@ -89,7 +89,7 @@ jobs:
           cp bin/ztm dist/ztm
           cp bin/zeroclaw dist/zeroclaw
           cp bin/clawparty dist/clawparty
-          cp -r agent/gui dist/gui
+          cp -r tui/gui dist/gui
           tag="${{ inputs.tag }}"
           tar -czf "clawparty-${tag}-macos-m1.tar.gz" -C dist .
 
