@@ -93,6 +93,15 @@
         >
           <span style="font-size: 13px;">📖</span>
         </button>
+        <button
+          v-if="showRadarButton"
+          class="header-btn"
+          :class="{ active: radarPanelVisible }"
+          title="雷达"
+          @click="emit('toggleRadarPanel')"
+        >
+          <span style="font-size: 13px;">📡</span>
+        </button>
         <button class="header-btn" title="Settings">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
             <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z"/>
@@ -157,10 +166,18 @@ const props = defineProps({
   wikiPanelVisible: {
     type: Boolean,
     default: false
+  },
+  showRadarButton: {
+    type: Boolean,
+    default: false
+  },
+  radarPanelVisible: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload', 'toggleTaskPanel', 'toggleWebSharePanel', 'toggleWikiPanel', 'showMembers'])
+const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload', 'toggleTaskPanel', 'toggleWebSharePanel', 'toggleWikiPanel', 'toggleRadarPanel', 'showMembers'])
 </script>
 
 <style scoped>

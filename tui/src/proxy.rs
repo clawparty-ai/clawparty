@@ -931,6 +931,18 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
         return Ok(resp);
     }
 
+    // Radar API routes — handled locally by Rust (bypass ztm agent)
+    if path.starts_with("/api/radar/") {
+        if let Some(data_dir) = DATA_DIR.get() {
+            if let Some(resp) = crate::radar::route(data_dir, &path, &method, req).await {
+                return Ok(resp);
+            }
+        }
+        let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Service Unavailable"}"#)));
+        *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+        return Ok(resp);
+    }
+
     // WebShare API routes — handled locally by Rust (bypass ztm agent)
     if path.starts_with("/api/webshare/") {
         if let Some(data_dir) = DATA_DIR.get() {

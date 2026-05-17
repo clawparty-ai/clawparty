@@ -11,6 +11,8 @@
       :webSharePanelVisible="showWebSharePanel"
       :showWikiButton="chat.isZeroClaw"
       :wikiPanelVisible="showWikiPanel"
+      :showRadarButton="chat.isZeroClaw || chat.isGroupChat"
+      :radarPanelVisible="showRadarPanel"
       @switchSession="$emit('switchSession', $event)"
       @deleteGroup="$emit('deleteGroup', $event)"
       @leaveGroup="$emit('leaveGroup', $event)"
@@ -22,6 +24,7 @@
       @toggleTaskPanel="showTaskPanel = !showTaskPanel"
       @toggleWebSharePanel="showWebSharePanel = !showWebSharePanel"
       @toggleWikiPanel="showWikiPanel = !showWikiPanel"
+      @toggleRadarPanel="showRadarPanel = !showRadarPanel"
       @showMembers="showMembersPanel = !showMembersPanel"
     />
     <div class="chat-body-wrapper">
@@ -67,6 +70,15 @@
       :refreshing="isWikiRefreshing"
       @toggle="wikiPanelBodyExpanded = !wikiPanelBodyExpanded"
       @refresh="handleWikiRefresh"
+    />
+    <RadarPanel
+      v-if="(chat.isZeroClaw || chat.isGroupChat) && showRadarPanel"
+      :agentName="agentName || chat.display_name || chat.agent_name || chat.ownerAgent"
+      :expanded="radarPanelExpanded"
+      :initialHeight="taskPanelInitialHeight"
+      :refreshing="isRadarRefreshing"
+      @toggle="radarPanelExpanded = !radarPanelExpanded"
+      @refresh="handleRadarRefresh"
     />
     <div class="messages" ref="messagesContainer" @click="handleMessagesClick">
       <div class="date-divider">
@@ -254,7 +266,9 @@ import ConfigTable from './ConfigTable.vue'
 import TaskPanel from './TaskPanel.vue'
 import WebSharePanel from './WebSharePanel.vue'
 import WikiPanel from './WikiPanel.vue'
+import RadarPanel from './RadarPanel.vue'
 import { chatService, taskService, kanbanService, ZeroClawWS, zagentService, groupChatService, webshareService, wikiService } from '../services/chatService'
+import { radarService } from '../services/radarService'
 import { getAvatarColor } from '../utils/avatar'
 
 marked.setOptions({
@@ -488,6 +502,33 @@ watch(showWikiPanel, (visible) => {
   if (visible) {
     showTaskPanel.value = false
     showWebSharePanel.value = false
+    showRadarPanel.value = false
+  }
+})
+
+// Radar panel state
+const showRadarPanel = ref(false)
+const radarPanelExpanded = ref(true)
+const isRadarRefreshing = ref(false)
+
+const handleRadarRefresh = async () => {
+  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
+  if (!agentName) return
+  isRadarRefreshing.value = true
+  try {
+    await radarService.initRadar(agentName)
+  } catch (e) {
+    console.error('[Radar] Refresh failed:', e)
+  } finally {
+    isRadarRefreshing.value = false
+  }
+}
+
+watch(showRadarPanel, (visible) => {
+  if (visible) {
+    showTaskPanel.value = false
+    showWebSharePanel.value = false
+    showWikiPanel.value = false
   }
 })
 
@@ -2185,6 +2226,7 @@ const handleMessagesClick = (e) => {
   showWebSharePanel.value = false
   showTaskPanel.value = false
   showWikiPanel.value = false
+  showRadarPanel.value = false
 }
 
 onUnmounted(() => {

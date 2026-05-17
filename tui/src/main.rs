@@ -13,6 +13,7 @@ mod wiki;
 mod db;
 mod tasks;
 mod webshare;
+mod radar;
 mod agents;
 mod groupchats;
 mod kanban;
