@@ -8,6 +8,8 @@ mod zeroclaw;
 mod proxy;
 mod static_files;
 mod wiki;
+mod db;
+mod tasks;
 
 use agent::AgentManager;
 use args::Args;

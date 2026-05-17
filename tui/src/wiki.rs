@@ -9,15 +9,35 @@ use regex::Regex;
 use crate::proxy::box_body;
 
 /// Get the workspace directory for an agent from the ZTM DB.
-fn get_agent_workspace(data_dir: &str, agent_name: &str) -> anyhow::Result<PathBuf> {
+/// Falls back to inferring from the agents/ directory if not in DB.
+pub(crate) fn get_agent_workspace(data_dir: &str, agent_name: &str) -> anyhow::Result<PathBuf> {
     let db_path = format!("{}/ztm.db", data_dir);
-    let conn = rusqlite::Connection::open(&db_path)?;
-    let dir: String = conn.query_row(
-        "SELECT workspace_dir FROM agents WHERE agent_name = ?1 AND deleted = 0",
-        [agent_name],
-        |row| row.get(0),
-    )?;
-    Ok(PathBuf::from(dir))
+    if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+        if let Ok(dir) = conn.query_row(
+            "SELECT workspace_dir FROM agents WHERE agent_name = ?1 AND deleted = 0",
+            [agent_name],
+            |row| row.get::<_, String>(0),
+        ) {
+            return Ok(PathBuf::from(dir));
+        }
+    }
+    
+    // Fallback: check agents/ directory directly
+    let agents_dir = PathBuf::from(data_dir).join("agents");
+    let agent_dir = agents_dir.join(agent_name);
+    if agent_dir.exists() {
+        return Ok(agent_dir);
+    }
+    
+    // Also check .zeroclaw for 0#Agent
+    if agent_name == "0#Agent" {
+        let zeroclaw_dir = PathBuf::from(data_dir).join(".zeroclaw");
+        if zeroclaw_dir.exists() {
+            return Ok(zeroclaw_dir);
+        }
+    }
+    
+    anyhow::bail!("Agent '{}' not found in database or filesystem", agent_name)
 }
 
 fn json_response<T: serde::Serialize>(status: StatusCode, body: &T) -> Response<BoxBody<Bytes, hyper::Error>> {
@@ -268,6 +288,8 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
     };
 
     let wiki_dir = workspace.join("wiki");
+    eprintln!("[Wiki::graph] agent={}, wiki_dir={:?}", agent_name, wiki_dir);
+
     let mut nodes: Vec<serde_json::Value> = Vec::new();
     let mut links: Vec<serde_json::Value> = Vec::new();
     let mut node_map: HashMap<String, usize> = HashMap::new();
@@ -293,10 +315,15 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
     };
 
     let mut dirs = vec![(wiki_dir.clone(), "page")];
+    let mut scanned_files = 0usize;
+    let mut skipped_empty = 0usize;
     while let Some((dir, category)) = dirs.pop() {
         let mut entries = match tokio::fs::read_dir(&dir).await {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!("[Wiki::graph] read_dir failed for {:?}: {}", dir, e);
+                continue;
+            }
         };
         while let Ok(Some(entry)) = entries.next_entry().await {
             let name = entry.file_name().to_string_lossy().to_string();
@@ -314,13 +341,18 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
                     "pages" => "page",
                     _ => category,
                 };
+                eprintln!("[Wiki::graph] push dir {:?} category={}", path, sub_category);
                 dirs.push((path, sub_category));
             } else if name.ends_with(".md") {
+                scanned_files += 1;
                 let page_name = name.trim_end_matches(".md");
                 let content = tokio::fs::read_to_string(&path).await.unwrap_or_default();
                 if content.is_empty() {
+                    skipped_empty += 1;
+                    eprintln!("[Wiki::graph] skip empty file {:?}", path);
                     continue;
                 }
+                eprintln!("[Wiki::graph] scan {} bytes from {:?}", content.len(), path);
                 let page_id = get_node_id(page_name, category);
 
                 // Parse [[WikiLink]]
@@ -352,6 +384,11 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
             }
         }
     }
+
+    eprintln!(
+        "[Wiki::graph] done: {} nodes, {} links (scanned {} files, {} empty)",
+        nodes.len(), links.len(), scanned_files, skipped_empty
+    );
 
     ok_response(&serde_json::json!({
         "nodes": nodes,
@@ -393,7 +430,9 @@ async fn convert_file(raw_path: &std::path::Path, pages_dir: &std::path::Path, f
         .map_err(|e| anyhow::anyhow!("Failed to connect to LLM: {}", e))?;
 
     if !result.status().is_success() {
-        anyhow::bail!("LLM service returned error: {}", result.status());
+        let status = result.status();
+        let err_body = result.text().await.unwrap_or_default();
+        anyhow::bail!("LLM service returned {}: {}", status, err_body);
     }
 
     let json: serde_json::Value = result.json().await
@@ -494,10 +533,21 @@ pub async fn refresh(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes
     let raw_dir = wiki_dir.join("raw");
     let pages_dir = wiki_dir.join("pages");
 
-    // Verify wiki directory exists
-    match tokio::fs::metadata(&wiki_dir).await {
-        Ok(_) => {}
-        Err(_) => return error_response(StatusCode::NOT_FOUND, "Wiki not initialized"),
+    // Auto-initialize wiki directories if missing
+    let dirs = ["raw", "entities", "concepts", "pages"];
+    for d in &dirs {
+        let _ = tokio::fs::create_dir_all(wiki_dir.join(d)).await;
+    }
+    let index_path = wiki_dir.join("index.md");
+    if !index_path.exists() {
+        let content = "# Wiki 目录\n\nWiki 初始化于 ".to_string()
+            + &chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+            + "\n";
+        let _ = tokio::fs::write(&index_path, content).await;
+    }
+    let log_path = wiki_dir.join("log.md");
+    if !log_path.exists() {
+        let _ = tokio::fs::write(&log_path, "# Wiki 日志\n\n").await;
     }
 
     // Phase 1: Convert non-markdown files in raw/ that don't have a corresponding .md in pages/
@@ -575,7 +625,11 @@ pub async fn convert(data_dir: &str, agent_name: &str, filename: &str) -> Respon
             "filename": md_filename,
             "path": format!("pages/{}", md_filename)
         })),
-        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Conversion failed: {}", e)),
+        Err(e) => ok_response(&serde_json::json!({
+            "error": format!("Conversion failed: {}", e),
+            "filename": filename,
+            "path": null
+        })),
     }
 }
 
@@ -611,6 +665,36 @@ pub async fn upload_raw(data_dir: &str, agent_name: &str, filename: &str, data: 
             "message": "File uploaded",
             "filename": filename,
             "path": format!("raw/{}", filename)
+        })),
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to write file: {}", e)),
+    }
+}
+
+/// POST /api/agents/{agent}/workspace/{filename}
+/// Write a file into the agent's workspace directory.
+pub async fn save_workspace_file(data_dir: &str, agent_name: &str, filename: &str, data: Bytes) -> Response<BoxBody<Bytes, hyper::Error>> {
+    let workspace = match get_agent_workspace(data_dir, agent_name) {
+        Ok(w) => w,
+        Err(_) => return error_response(StatusCode::NOT_FOUND, "Agent not found"),
+    };
+
+    // Security checks
+    if filename.is_empty() || filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return error_response(StatusCode::FORBIDDEN, "Forbidden filename");
+    }
+
+    let file_path = workspace.join(filename);
+
+    // Ensure still within workspace after join
+    if !file_path.starts_with(&workspace) {
+        return error_response(StatusCode::FORBIDDEN, "Forbidden path");
+    }
+
+    match tokio::fs::write(&file_path, data).await {
+        Ok(_) => ok_response(&serde_json::json!({
+            "message": "File saved",
+            "filename": filename,
+            "path": file_path.to_string_lossy().to_string()
         })),
         Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to write file: {}", e)),
     }

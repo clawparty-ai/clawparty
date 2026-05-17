@@ -599,19 +599,15 @@ const handleTaskRefresh = async () => {
   await loadTasks()
 
   const msgs = props.chat.messages || []
-
   const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
   const groupId = props.chat.isGroupChat ? props.chat.groupId : null
 
-  // Load persisted lastTaskAnalyzedAt from database
-  var persistedLog = null
   var lastAnalyzed = 0
   try {
     if (agentName) {
       const logRes = await taskService.getAnalysisLog(agentName, groupId)
       if (logRes.data) {
-        persistedLog = logRes.data
-        lastAnalyzed = persistedLog.last_analyzed_at || 0
+        lastAnalyzed = logRes.data.last_analyzed_at || 0
         addRefreshLog('info', 'Loaded analysis log, lastAnalyzed=' + lastAnalyzed)
       }
     }
@@ -635,12 +631,10 @@ const handleTaskRefresh = async () => {
     if (latestTs != null) {
       const newLast = Math.max(lastAnalyzed, latestTs)
       props.chat.lastTaskAnalyzedAt = newLast
-      if (agentName) {
-        try {
-          await taskService.setAnalysisLog(agentName, groupId, newLast)
-          addRefreshLog('info', 'Persisted analysis log (no new messages)')
-        } catch (e) {}
-      }
+      try {
+        await taskService.setAnalysisLog(agentName, groupId, newLast)
+        addRefreshLog('info', 'Persisted analysis log (no new messages)')
+      } catch (e) {}
     }
     addRefreshLog('info', 'No new messages. Done.')
     isTaskRefreshing.value = false
@@ -657,11 +651,9 @@ const handleTaskRefresh = async () => {
 
   const persistLastAnalyzed = function(ts) {
     props.chat.lastTaskAnalyzedAt = ts
-    if (agentName) {
-      taskService.setAnalysisLog(agentName, groupId, ts).catch(function(e) {
-        addRefreshLog('warn', 'Failed to persist analysis log: ' + (e.message || e))
-      })
-    }
+    taskService.setAnalysisLog(agentName, groupId, ts).catch(function(e) {
+      addRefreshLog('warn', 'Failed to persist analysis log: ' + (e.message || e))
+    })
   }
 
   try {
@@ -712,7 +704,7 @@ const handleTaskRefresh = async () => {
     const ws = new ZeroClawWS(
       '0#Agent',
       sessionId,
-      function(data) {
+      async function(data) {
         if (data.type === 'chunk') {
           fullResponse += data.content
         } else if (data.type === 'done') {
@@ -732,15 +724,18 @@ const handleTaskRefresh = async () => {
             }
             const result = JSON.parse(jsonText)
             const changes = []
-            const summaryUpdates = []
             if (result.newTasks && result.newTasks.length > 0) {
               addRefreshLog('info', 'AI detected ' + result.newTasks.length + ' new task(s)')
               for (const t of result.newTasks) {
                 changes.push({
                   type: 'create',
-                  taskId: 'ai-task-' + Date.now() + '-' + Math.floor(Math.random() * 10000),
-                  data: t,
-                  reason: 'AI 检测到新任务：' + t.title
+                  data: {
+                    title: t.title,
+                    description: t.description || t.title,
+                    status: t.status || 'pending',
+                    progress: t.progress !== undefined ? t.progress : 0,
+                    prompt: t.prompt || null
+                  }
                 })
               }
             }
@@ -749,21 +744,22 @@ const handleTaskRefresh = async () => {
               for (const c of result.statusChanges) {
                 changes.push({
                   type: 'update',
-                  taskId: c.taskId,
-                  newStatus: c.newStatus,
-                  newProgress: c.newProgress,
-                  reason: c.reason || 'AI 检测到状态变更'
+                  task_id: c.taskId,
+                  new_status: c.newStatus,
+                  new_progress: c.newProgress,
+                  result_summary: c.summary || null
                 })
-                if (c.summary) {
-                  summaryUpdates.push({ taskId: c.taskId, summary: c.summary })
-                }
               }
             }
             if (result.summaries && result.summaries.length > 0) {
               addRefreshLog('info', 'AI generated ' + result.summaries.length + ' summary/summaries')
               for (const s of result.summaries) {
                 if (s.taskId && s.summary) {
-                  summaryUpdates.push({ taskId: s.taskId, summary: s.summary })
+                  changes.push({
+                    type: 'summary',
+                    task_id: s.taskId,
+                    result_summary: s.summary
+                  })
                 }
               }
             }
@@ -771,14 +767,15 @@ const handleTaskRefresh = async () => {
             if (changes.length === 0) {
               addRefreshLog('info', 'No changes detected by AI.')
             } else {
-              addRefreshLog('info', 'Pending changes: ' + changes.length)
-            }
-            // Persist summaries for existing tasks (statusChanges + summaries) to DB immediately
-            if (summaryUpdates.length > 0) {
-              addRefreshLog('info', 'Persisting ' + summaryUpdates.length + ' summary/summaries...')
-              for (const su of summaryUpdates) {
-                taskService.updateTask(su.taskId, { result_summary: su.summary }).catch(function() {})
-              }
+              addRefreshLog('info', 'Batch refreshing ' + changes.length + ' change(s) via tui...')
+              const batchRes = await taskService.batchRefresh(
+                agentName, groupId,
+                newMessages[newMessages.length - 1].timestamp,
+                changes
+              )
+              addRefreshLog('info', 'Batch refresh done: created=' + (batchRes.data?.created || 0) +
+                ' updated=' + (batchRes.data?.updated || 0) +
+                ' saved=' + (batchRes.data?.tasks_saved || false))
             }
           } catch (e) {
             addRefreshLog('error', 'Failed to parse AI response: ' + (e.message || e))
@@ -821,38 +818,12 @@ const handleTaskRefresh = async () => {
 
 const handleConfirmTaskChange = async (change) => {
   if (!change) return
-  addRefreshLog('info', 'Confirming ' + change.type + ': ' + change.taskId)
-  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
-  const groupId = props.chat.isGroupChat ? props.chat.groupId : null
+  addRefreshLog('info', 'Confirming ' + change.type + ': ' + (change.taskId || change.task_id))
+  // Batch refresh already persisted all changes in tui; just refresh the list
   try {
-    if (change.type === 'create') {
-      await taskService.createTask({
-        task_id: change.taskId,
-        agent_name: agentName,
-        group_id: groupId || null,
-        title: change.data.title,
-        description: change.data.description || change.data.title,
-        status: change.data.status || 'pending',
-        progress: change.data.progress !== undefined ? change.data.progress : 0,
-        priority: 'normal',
-        prompt: change.data.prompt || null
-      })
-      // Apply summary for newly created task if present
-      if (change.data.summary) {
-        taskService.updateTask(change.taskId, { result_summary: change.data.summary }).catch(function() {})
-      }
-      addRefreshLog('info', 'Created task: ' + change.taskId)
-    } else if (change.type === 'update') {
-      await taskService.updateTask(change.taskId, {
-        status: change.newStatus,
-        progress: change.newProgress,
-        message: change.reason
-      })
-      addRefreshLog('info', 'Updated task: ' + change.taskId + ' -> ' + change.newStatus)
-    }
     await loadTasks()
     pendingTaskChanges.value = pendingTaskChanges.value.filter(c =>
-      !(c.type === change.type && c.taskId === change.taskId)
+      !(c.type === change.type && (c.taskId === change.taskId || c.task_id === change.task_id))
     )
     addRefreshLog('info', 'Remaining pending: ' + pendingTaskChanges.value.length)
   } catch (e) {

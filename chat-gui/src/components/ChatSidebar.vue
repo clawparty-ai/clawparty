@@ -3,6 +3,20 @@
 
     <!-- Left: org switcher rail -->
     <nav class="org-rail">
+      <!-- Sidebar collapse toggle -->
+      <button
+        class="sidebar-toggle-btn"
+        :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
+        @click="sidebarCollapsed = !sidebarCollapsed"
+      >
+        <svg v-if="!sidebarCollapsed" width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/>
+        </svg>
+        <svg v-else width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+        </svg>
+      </button>
+
       <!-- 0. Join Party button -->
       <button
         class="new-group-rail-btn"
@@ -68,20 +82,6 @@
       </div>
 
       <div class="org-rail-spacer"></div>
-
-      <!-- Sidebar collapse toggle -->
-      <button
-        class="sidebar-toggle-btn"
-        :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
-        @click="sidebarCollapsed = !sidebarCollapsed"
-      >
-        <svg v-if="!sidebarCollapsed" width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
-          <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/>
-        </svg>
-        <svg v-else width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
-          <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-        </svg>
-      </button>
 
       <div class="org-rail-bottom-spacer"></div>
 
@@ -2112,7 +2112,7 @@ const getStatusText = (agent) => {
   height: 36px;
   border-radius: 10px;
   border: none;
-  background: #4095fe;
+  background: #0d47a1;
   color: #fff;
   cursor: pointer;
   display: flex;
@@ -2124,7 +2124,7 @@ const getStatusText = (agent) => {
 }
 
 .sidebar-toggle-btn:hover {
-  background: #1d6cff;
+  background: #1565c0;
   color: #fff;
 }
 

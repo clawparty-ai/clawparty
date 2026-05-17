@@ -277,6 +277,15 @@ export const taskService = {
       msg_type: msgType || 'assistant',
     })
   },
+
+  batchRefresh(agentName, groupId, lastAnalyzedAt, changes) {
+    return api.post('/tasks/batch-refresh', {
+      agent_name: agentName,
+      group_id: groupId || null,
+      last_analyzed_at: lastAnalyzedAt,
+      changes: changes || []
+    })
+  },
 }
 
 export const kanbanService = {
@@ -295,6 +304,14 @@ export const kanbanService = {
       config: config,
     })
   },
+}
+
+export const workspaceService = {
+  saveFile(agentName, filename, content) {
+    return api.post(`/agents/${encodeURIComponent(agentName)}/workspace/${encodeURIComponent(filename)}`, content, {
+      headers: { 'Content-Type': 'text/plain' }
+    })
+  }
 }
 
 export const zagentService = {

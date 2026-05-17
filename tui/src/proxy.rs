@@ -580,13 +580,100 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
         }
     }
 
+    // ── Task API routes — handled locally by Rust (clawparty.db, not ztm.db) ──
+    if path.starts_with("/api/tasks") {
+        if let Some(data_dir) = DATA_DIR.get() {
+            let query = req.uri().query().unwrap_or("");
+            let resp = if path == "/api/tasks" && method == hyper::Method::GET {
+                let agent_name = url::form_urlencoded::parse(query.as_bytes())
+                    .find(|(k, _)| k == "agent")
+                    .map(|(_, v)| v.to_string())
+                    .unwrap_or_default();
+                let group_id = url::form_urlencoded::parse(query.as_bytes())
+                    .find(|(k, _)| k == "group")
+                    .map(|(_, v)| v.to_string());
+                crate::tasks::list_tasks(data_dir, &agent_name, group_id.as_deref()).await
+            } else if path == "/api/tasks" && method == hyper::Method::POST {
+                let body_bytes = match req.collect().await {
+                    Ok(body) => body.to_bytes(),
+                    Err(_) => return Ok(Response::builder().status(StatusCode::BAD_REQUEST).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#))).unwrap()),
+                };
+                crate::tasks::create_task(data_dir, body_bytes).await
+            } else if path == "/api/tasks/batch-refresh" && method == hyper::Method::POST {
+                let body_bytes = match req.collect().await {
+                    Ok(body) => body.to_bytes(),
+                    Err(_) => return Ok(Response::builder().status(StatusCode::BAD_REQUEST).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#))).unwrap()),
+                };
+                crate::tasks::batch_refresh(data_dir, body_bytes).await
+            } else if path.starts_with("/api/tasks/") && method == hyper::Method::GET {
+                let rest = &path["/api/tasks/".len()..];
+                if rest.ends_with("/events") {
+                    let task_id = &rest[..rest.len() - "/events".len()];
+                    // TODO: implement task events query
+                    let mut r = Response::new(box_body(Bytes::from(r#"{"task_id":"","events":[]}"#)));
+                    *r.status_mut() = StatusCode::OK;
+                    r
+                } else {
+                    crate::tasks::get_task(data_dir, rest).await
+                }
+            } else if path.starts_with("/api/tasks/") && method == hyper::Method::PUT {
+                let task_id = &path["/api/tasks/".len()..];
+                let body_bytes = match req.collect().await {
+                    Ok(body) => body.to_bytes(),
+                    Err(_) => return Ok(Response::builder().status(StatusCode::BAD_REQUEST).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#))).unwrap()),
+                };
+                crate::tasks::update_task(data_dir, task_id, body_bytes).await
+            } else if path.starts_with("/api/tasks/") && method == hyper::Method::DELETE {
+                let task_id = &path["/api/tasks/".len()..];
+                crate::tasks::delete_task(data_dir, task_id).await
+            } else {
+                Response::builder().status(StatusCode::NOT_FOUND).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Task route not found"}"#))).unwrap()
+            };
+            return Ok(resp);
+        }
+        let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Service Unavailable"}"#)));
+        *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+        return Ok(resp);
+    }
+
+    if path == "/api/task/analysis" {
+        if let Some(data_dir) = DATA_DIR.get() {
+            let query = req.uri().query().unwrap_or("");
+            let resp = if method == hyper::Method::GET {
+                let agent_name = url::form_urlencoded::parse(query.as_bytes())
+                    .find(|(k, _)| k == "agent")
+                    .map(|(_, v)| v.to_string())
+                    .unwrap_or_default();
+                let group_id = url::form_urlencoded::parse(query.as_bytes())
+                    .find(|(k, _)| k == "group")
+                    .map(|(_, v)| v.to_string());
+                crate::tasks::get_analysis_log(data_dir, &agent_name, group_id.as_deref()).await
+            } else if method == hyper::Method::PUT {
+                let body_bytes = match req.collect().await {
+                    Ok(body) => body.to_bytes(),
+                    Err(_) => return Ok(Response::builder().status(StatusCode::BAD_REQUEST).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#))).unwrap()),
+                };
+                crate::tasks::set_analysis_log(data_dir, body_bytes).await
+            } else {
+                Response::builder().status(StatusCode::METHOD_NOT_ALLOWED).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Method not allowed"}"#))).unwrap()
+            };
+            return Ok(resp);
+        }
+        let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Service Unavailable"}"#)));
+        *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+        return Ok(resp);
+    }
+
     // Wiki API routes — handled locally by Rust (not forwarded to ztm agent)
+    eprintln!("[Proxy] Checking path: '{}' for wiki routes", path);
     if path.starts_with("/api/wiki/") {
         if let Some(data_dir) = DATA_DIR.get() {
             let wiki_path = &path["/api/wiki/".len()..];
+            eprintln!("[Proxy] wiki_path: '{}'", wiki_path);
             if let Some(slash_idx) = wiki_path.find('/') {
                 let agent_name = &wiki_path[..slash_idx];
                 let action = &wiki_path[slash_idx + 1..];
+                eprintln!("[Proxy] agent_name: '{}', action: '{}'", agent_name, action);
 
                 // Decode URL-encoded agent name
                 let agent_decoded = urlencoding::decode(agent_name).unwrap_or_else(|_| agent_name.into()).to_string();
@@ -653,6 +740,30 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
                         resp
                     }
                 };
+                return Ok(resp);
+            }
+        }
+        let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Service Unavailable"}"#)));
+        *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+        return Ok(resp);
+    }
+
+    // Agent workspace file write — handled locally by Rust
+    if path.starts_with("/api/agents/") && path.contains("/workspace/") && method == hyper::Method::POST {
+        if let Some(data_dir) = DATA_DIR.get() {
+            let rest = &path["/api/agents/".len()..];
+            if let Some(ws_idx) = rest.find("/workspace/") {
+                let agent_name = urlencoding::decode(&rest[..ws_idx]).unwrap_or_else(|_| rest[..ws_idx].into()).to_string();
+                let filename = urlencoding::decode(&rest[ws_idx + "/workspace/".len()..]).unwrap_or_else(|_| rest[ws_idx + "/workspace/".len()..].into()).to_string();
+                let body_bytes = match req.collect().await {
+                    Ok(body) => body.to_bytes(),
+                    Err(_) => {
+                        let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Failed to read body"}"#)));
+                        *resp.status_mut() = StatusCode::BAD_REQUEST;
+                        return Ok(resp);
+                    }
+                };
+                let resp = crate::wiki::save_workspace_file(data_dir, &agent_name, &filename, body_bytes).await;
                 return Ok(resp);
             }
         }

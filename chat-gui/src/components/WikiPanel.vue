@@ -263,8 +263,13 @@ const uploadFiles = async (files) => {
       // Auto-convert non-markdown files to markdown via LLM
       if (!file.name.toLowerCase().endsWith('.md')) {
         try {
-          await wikiService.convert(props.agentName, file.name)
-          console.log('[Wiki] Converted to markdown:', file.name)
+          const convertRes = await wikiService.convert(props.agentName, file.name)
+          if (convertRes.data?.error) {
+            alert(`转换失败: ${convertRes.data.error}`)
+            console.warn('[Wiki] Auto-convert failed (file kept in raw/):', file.name, convertRes.data.error)
+          } else {
+            console.log('[Wiki] Converted to markdown:', file.name)
+          }
         } catch (convertErr) {
           console.warn('[Wiki] Auto-convert failed (file kept in raw/):', file.name, convertErr)
         }

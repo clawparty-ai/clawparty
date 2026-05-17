@@ -33,6 +33,12 @@ fn load_openclaw_bootstrap_files(
 
     // MEMORY.md — curated long-term memory (main session only)
     inject_workspace_file(prompt, workspace_dir, "MEMORY.md", max_chars_per_file);
+
+    // TASKS.md — task list snapshot (only if present; refreshed by external system)
+    let tasks_path = workspace_dir.join("TASKS.md");
+    if tasks_path.exists() {
+        inject_workspace_file(prompt, workspace_dir, "TASKS.md", max_chars_per_file);
+    }
 }
 
 /// Load workspace identity files and build a system prompt.

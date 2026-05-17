@@ -42,7 +42,7 @@ pub struct Args {
     pub zeroclaw_only: bool,
 
     // Watchdog: interval in seconds to health-check ZTM agent and auto-restart if hung (0 = disabled)
-    #[arg(long, default_value = "30")]
+    #[arg(long, default_value = "0")]
     pub watchdog_interval: u64,
 
     // Disable all health-check probes to ZTM agent (skips startup wait and watchdog)
