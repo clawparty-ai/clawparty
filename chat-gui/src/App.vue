@@ -1204,7 +1204,7 @@ const parseTaskTags = (content, agentName) => {
   // Only trigger when no XML <task> tags were found and content looks like a task report
   if (!foundXml) {
     const isTaskContext = /(?:已创建|创建成功|新建|任务已|任务名称|task created|created task|new task|🆔|📛)/i.test(content)
-    if (!isTaskContext) return
+    if (!isTaskContext) return detectedTaskIds
 
     // Extract task ID
     let extractedId = null

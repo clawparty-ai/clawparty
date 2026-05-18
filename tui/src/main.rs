@@ -808,13 +808,16 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
     });
     ts_print!("🦀 ZeroClaw binary: {}", zeroclaw_bin);
 
+    // Expand ~ in data_dir so DB and filesystem paths resolve correctly
+    let data_dir = expand_data_dir(&args.data);
+
     let (log_tx, mut log_rx) = mpsc::channel::<String>(100);
 
     ts_print!("\n🔄 Starting ZeroClaw daemon...");
     let zeroclaw_bin_for_service = zeroclaw_bin.clone();
     let zeroclaw_mgr = zeroclaw::ZeroClawDaemon::new(
         zeroclaw_bin_for_service,
-        args.data.clone(),
+        data_dir.clone(),
         42617,
         log_tx.clone(),
     );
@@ -841,10 +844,10 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
     ts_print!("✅ ZeroClaw daemon started successfully on port 42617");
 
     // Sync agents from filesystem to clawparty.db
-    crate::agents::sync_agents_from_fs(&args.data);
+    crate::agents::sync_agents_from_fs(&data_dir);
 
     // Start all ZeroClaw agents from DB before ZTM
-    let agent_configs = read_agents_from_db(&args.data);
+    let agent_configs = read_agents_from_db(&data_dir);
     if !agent_configs.is_empty() {
         ts_print!("📋 Found {} agent(s) in DB, starting zeroclaw daemons...", agent_configs.len());
     }
@@ -893,7 +896,7 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
             ts_print!("\n🔄 Starting ZTM agent ({}) [health check disabled]...", pipy_bin);
             let mgr = AgentManager::new(
                 pipy_bin.clone(),
-                args.data.clone(),
+                data_dir.clone(),
                 args.listen.clone(),
                 args.token.clone(),
                 log_tx.clone(),
@@ -901,7 +904,7 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
             let mut guard = agent_mgr_arc.lock().await;
             *guard = Some(mgr);
             drop(guard);
-            set_all_agents_running(&args.data);
+            set_all_agents_running(&data_dir);
         } else {
             if api.check_health().await {
                 ts_print!("✅ ZTM Agent is already running at {}", args.api_host);
@@ -909,7 +912,7 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
                 ts_print!("\n🔄 Starting ZTM agent ({})...", pipy_bin);
                 let mgr = AgentManager::new(
                     pipy_bin.clone(),
-                    args.data.clone(),
+                    data_dir.clone(),
                     args.listen.clone(),
                     args.token.clone(),
                     log_tx.clone(),
@@ -929,7 +932,7 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
 
                 if ready {
                     ts_print!("✅ ZTM Agent started successfully");
-                    set_all_agents_running(&args.data);
+                    set_all_agents_running(&data_dir);
                 } else {
                     ts_print!("⚠️ ZTM Agent failed to start (mesh features unavailable)");
                 }
@@ -967,7 +970,7 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
             }
             "ztm".to_string()
         });
-        let data_watch = args.data.clone();
+        let data_watch = data_dir.clone();
         let listen_watch = args.listen.clone();
         let token_watch = args.token.clone();
         let log_tx_watch = log_tx.clone();
