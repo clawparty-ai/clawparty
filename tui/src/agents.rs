@@ -5,6 +5,8 @@ use hyper::body::Bytes;
 use hyper::{Response, StatusCode, header};
 use http_body_util::combinators::BoxBody;
 
+use std::path::Path;
+
 use crate::db;
 use crate::db::AgentRecord;
 use crate::proxy::box_body;
@@ -25,6 +27,89 @@ fn error_response(status: StatusCode, message: &str) -> Response<BoxBody<Bytes, 
 
 fn ok_response<T: serde::Serialize>(body: &T) -> Response<BoxBody<Bytes, hyper::Error>> {
     json_response(StatusCode::OK, body)
+}
+
+// ── Helper: sync agents from filesystem to clawparty.db ────────────────
+
+/// Scan ~/.clawparty/agents/ and create DB records for any agents not yet in clawparty.db.
+pub fn sync_agents_from_fs(data_dir: &str) {
+    let agents_dir = Path::new(data_dir).join("agents");
+    if !agents_dir.exists() {
+        ts_eprint!("[Agents] Agents directory not found: {:?}", agents_dir);
+        return;
+    }
+
+    let mut count = 0usize;
+    let read_dir = match std::fs::read_dir(&agents_dir) {
+        Ok(rd) => rd,
+        Err(e) => {
+            ts_eprint!("[Agents] Failed to read agents directory: {}", e);
+            return;
+        }
+    };
+
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let agent_name = match path.file_name() {
+            Some(n) => n.to_string_lossy().to_string(),
+            None => continue,
+        };
+        if agent_name.starts_with('.') {
+            continue;
+        }
+
+        // Skip if already in clawparty.db
+        if let Ok(Some(_)) = db::get_agent(data_dir, &agent_name) {
+            continue;
+        }
+
+        let config_path = path.join("config.toml");
+        let workspace_dir = path.join("workspace");
+
+        // Read port from config.toml
+        let port = std::fs::read_to_string(&config_path)
+            .ok()
+            .and_then(|content| {
+                content.lines()
+                    .find(|l| l.trim().starts_with("port"))
+                    .and_then(|l| l.split('=').nth(1))
+                    .and_then(|v| v.trim().split(|c: char| !c.is_digit(10)).next())
+                    .and_then(|v| v.parse::<u16>().ok())
+            })
+            .unwrap_or(42617);
+
+        let dir_str = path.to_string_lossy().to_string();
+        let config_str = config_path.to_string_lossy().to_string();
+        let ws_str = workspace_dir.to_string_lossy().to_string();
+        let description = format!("Auto-discovered agent: {}", agent_name);
+
+        match db::create_agent(
+            data_dir,
+            &agent_name,
+            Some(&agent_name),
+            Some(&description),
+            &dir_str,
+            &config_str,
+            &ws_str,
+            port,
+            None,
+        ) {
+            Ok(_) => {
+                ts_print!("[Agents] Created DB record for agent '{}' on port {}", agent_name, port);
+                count += 1;
+            }
+            Err(e) => {
+                ts_eprint!("[Agents] Failed to create agent '{}': {}", agent_name, e);
+            }
+        }
+    }
+
+    if count > 0 {
+        ts_print!("[Agents] Synced {} new agent(s) from filesystem to DB", count);
+    }
 }
 
 // ── Helper: find zeroclaw binary ────────────────────────────────────────

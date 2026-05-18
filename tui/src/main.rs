@@ -66,40 +66,22 @@ fn set_all_agents_running(data_dir: &str) {
 }
 
 fn read_agents_from_db(data_dir: &str) -> Vec<AgentConfig> {
-    let expanded = data_dir.replace("~", &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
-    let db_path = format!("{}/ztm.db", expanded);
-    let conn = match rusqlite::Connection::open(&db_path) {
-        Ok(c) => c,
+    let _ = db::init_clawparty_db(data_dir);
+    match db::list_agents(data_dir) {
+        Ok(agents) => agents
+            .into_iter()
+            .map(|a| AgentConfig {
+                agent_name: a.agent_name,
+                directory: a.directory,
+                port: a.port,
+                status: a.status,
+            })
+            .collect(),
         Err(e) => {
-            ts_eprint!("DB open error: {}", e);
-            return vec![];
+            ts_eprint!("read_agents_from_db error: {}", e);
+            vec![]
         }
-    };
-    let mut stmt = match conn.prepare("SELECT agent_name, directory, port, status FROM agents WHERE deleted = 0") {
-        Ok(s) => s,
-        Err(e) => {
-            ts_eprint!("DB prepare error: {}", e);
-            return vec![];
-        }
-    };
-    let rows = match stmt.query_map([], |row| {
-        Ok(AgentConfig {
-            agent_name: row.get(0)?,
-            directory: row.get(1)?,
-            port: row.get(2)?,
-            status: row.get(3)?,
-        })
-    }) {
-        Ok(r) => r,
-        Err(e) => {
-            ts_eprint!("DB query error: {}", e);
-            return vec![];
-        }
-    };
-    let result: Vec<AgentConfig> = rows.filter_map(|r| r.ok()).collect();
-    drop(stmt);
-    drop(conn);
-    result
+    }
 }
 
 #[tokio::main]
@@ -200,6 +182,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Err(e) => state.add_log("WARN", &format!("Failed to fetch ZeroClaw sessions: {}", e)),
     }
+
+    // Sync agents from filesystem to clawparty.db
+    crate::agents::sync_agents_from_fs(&args.data);
 
     // Read agents from DB and start zeroclaw daemon for each non-running agent
     let zeroclaw_bin_for_agents = args.zeroclaw_bin.clone().unwrap_or_else(|| {
@@ -854,6 +839,9 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
         return Err(anyhow::anyhow!("ZeroClaw startup failed"));
     }
     ts_print!("✅ ZeroClaw daemon started successfully on port 42617");
+
+    // Sync agents from filesystem to clawparty.db
+    crate::agents::sync_agents_from_fs(&args.data);
 
     // Start all ZeroClaw agents from DB before ZTM
     let agent_configs = read_agents_from_db(&args.data);

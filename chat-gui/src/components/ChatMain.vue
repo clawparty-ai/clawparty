@@ -859,9 +859,35 @@ const handleTaskRefresh = async () => {
 
 const handleConfirmTaskChange = async (change) => {
   if (!change) return
+  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
+  const groupId = props.chat.isGroupChat ? props.chat.groupId : null
   addRefreshLog('info', 'Confirming ' + change.type + ': ' + (change.taskId || change.task_id))
-  // Batch refresh already persisted all changes in tui; just refresh the list
   try {
+    // Ensure the change is actually persisted before removing from pending
+    if (change.type === 'create' && change.data) {
+      const payload = {
+        agent_name: agentName,
+        group_id: groupId || null,
+        title: change.data.title,
+        description: change.data.description || '',
+        status: change.data.status || 'pending',
+        progress: change.data.progress !== undefined ? change.data.progress : 0,
+        priority: 'normal',
+        prompt: change.data.prompt || null
+      }
+      await taskService.createTask(payload)
+      addRefreshLog('info', 'Created task: ' + change.data.title)
+    } else if (change.type === 'update' && change.task_id) {
+      const updates = {}
+      if (change.new_status) updates.status = change.new_status
+      if (change.new_progress !== undefined) updates.progress = change.new_progress
+      if (change.result_summary) updates.result_summary = change.result_summary
+      await taskService.updateTask(change.task_id, updates)
+      addRefreshLog('info', 'Updated task: ' + change.task_id)
+    } else if (change.type === 'summary' && change.task_id) {
+      await taskService.updateTask(change.task_id, { result_summary: change.result_summary })
+      addRefreshLog('info', 'Updated summary: ' + change.task_id)
+    }
     await loadTasks()
     pendingTaskChanges.value = pendingTaskChanges.value.filter(c =>
       !(c.type === change.type && (c.taskId === change.taskId || c.task_id === change.task_id))

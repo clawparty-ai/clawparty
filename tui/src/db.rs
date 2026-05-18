@@ -239,9 +239,8 @@ pub fn get_tasks(data_dir: &str, agent_name: &str, group_id: Option<&str>) -> an
          ORDER BY created_at ASC",
     )?;
 
-    let gid = group_id.unwrap_or("");
     let rows: Vec<Task> = stmt
-        .query_map(rusqlite::params![agent_name, gid], row_to_task)?
+        .query_map(rusqlite::params![agent_name, group_id], row_to_task)?
         .filter_map(|r| r.ok())
         .collect();
 
@@ -460,7 +459,7 @@ pub fn get_analysis_log(data_dir: &str, agent_name: &str, group_id: Option<&str>
         .query_row(
             "SELECT last_analyzed_at FROM task_analysis_log
              WHERE agent_name = ?1 AND (group_id = ?2 OR (?2 IS NULL AND group_id IS NULL))",
-            rusqlite::params![agent_name, group_id.unwrap_or("")],
+            rusqlite::params![agent_name, group_id],
             |row| row.get(0),
         )
         .optional()?;
@@ -472,7 +471,7 @@ pub fn set_analysis_log(tx: &Transaction, agent_name: &str, group_id: Option<&st
     let existing: bool = tx.query_row(
         "SELECT COUNT(*) > 0 FROM task_analysis_log
          WHERE agent_name = ?1 AND (group_id = ?2 OR (?2 IS NULL AND group_id IS NULL))",
-        rusqlite::params![agent_name, group_id.unwrap_or("")],
+        rusqlite::params![agent_name, group_id],
         |row| row.get(0),
     ).unwrap_or(false);
 
@@ -480,7 +479,7 @@ pub fn set_analysis_log(tx: &Transaction, agent_name: &str, group_id: Option<&st
         tx.execute(
             "UPDATE task_analysis_log SET last_analyzed_at = ?1
              WHERE agent_name = ?2 AND (group_id = ?3 OR (?3 IS NULL AND group_id IS NULL))",
-            rusqlite::params![timestamp, agent_name, group_id.unwrap_or("")],
+            rusqlite::params![timestamp, agent_name, group_id],
         )?;
     } else {
         tx.execute(
