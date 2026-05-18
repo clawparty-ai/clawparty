@@ -355,6 +355,11 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
                 ts_eprint!("[Wiki::graph] scan {} bytes from {:?}", content.len(), path);
                 let page_id = get_node_id(page_name, category);
 
+                // Skip links from index pages (they link to everything and clutter the graph)
+                if page_name == "index" {
+                    continue;
+                }
+
                 // Parse [[WikiLink]]
                 for cap in wiki_re.captures_iter(&content) {
                     if let Some(m) = cap.get(1) {
