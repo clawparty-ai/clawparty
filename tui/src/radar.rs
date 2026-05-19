@@ -25,6 +25,179 @@ fn ok_response<T: serde::Serialize>(body: &T) -> Response<BoxBody<Bytes, hyper::
     json_response(StatusCode::OK, body)
 }
 
+// ── YAML frontmatter parsing ────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+struct ChannelRaw {
+    #[serde(rename = "type")]
+    channel_type: String,
+    location: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct TargetRaw {
+    id: Option<String>,
+    name: String,
+    description: Option<String>,
+    spec: Option<serde_yaml::Value>,
+    channels: Option<Vec<ChannelRaw>>,
+    #[serde(rename = "source_probe")]
+    source_probe: Option<String>,
+    status: Option<String>,
+    #[serde(rename = "created_at")]
+    created_at: Option<String>,
+    #[serde(rename = "last_scan")]
+    last_scan: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct TargetsYaml {
+    targets: Vec<TargetRaw>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct SpecEntry {
+    key: String,
+    value: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ChannelJson {
+    #[serde(rename = "type")]
+    channel_type: String,
+    location: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct TargetJson {
+    id: Option<String>,
+    name: String,
+    description: Option<String>,
+    #[serde(rename = "spec")]
+    spec_entries: Vec<SpecEntry>,
+    #[serde(rename = "specLabel")]
+    spec_label: String,
+    channels: Vec<ChannelJson>,
+    #[serde(rename = "channelLabel")]
+    channel_label: String,
+    #[serde(rename = "source_probe")]
+    source_probe: Option<String>,
+    status: String,
+    #[serde(rename = "created_at")]
+    created_at: Option<String>,
+    #[serde(rename = "last_scan")]
+    last_scan: Option<String>,
+}
+
+fn convert_spec(value: &serde_yaml::Value) -> Vec<SpecEntry> {
+    let mut entries = Vec::new();
+    match value {
+        serde_yaml::Value::Mapping(m) => {
+            for (k, v) in m.iter() {
+                let key = k.as_str().unwrap_or("").to_string();
+                let val = match v {
+                    serde_yaml::Value::String(s) => s.clone(),
+                    serde_yaml::Value::Number(n) => n.to_string(),
+                    serde_yaml::Value::Bool(b) => b.to_string(),
+                    _ => v.as_str().unwrap_or("").to_string(),
+                };
+                entries.push(SpecEntry { key, value: val });
+            }
+        }
+        serde_yaml::Value::String(s) => {
+            // Try to parse "key: value; key2: value2" format
+            for part in s.split(';') {
+                let trimmed = part.trim();
+                if let Some(pos) = trimmed.find(':') {
+                    let key = trimmed[..pos].trim().to_string();
+                    let value = trimmed[pos + 1..].trim().to_string();
+                    entries.push(SpecEntry { key, value });
+                }
+            }
+        }
+        _ => {}
+    }
+    entries
+}
+
+fn normalize_status(status: &Option<String>) -> String {
+    match status.as_deref() {
+        Some("monitoring") | Some("active") | Some("running") => "active".to_string(),
+        Some("paused") => "paused".to_string(),
+        Some(s) => s.to_string(),
+        None => "active".to_string(),
+    }
+}
+
+fn parse_targets_md(content: &str) -> Vec<TargetJson> {
+    // Extract YAML frontmatter between --- markers
+    let yaml_str = if content.starts_with("---\n") || content.starts_with("---\r\n") {
+        let after_first = content.find("---\n").map(|i| i + 4)
+            .or_else(|| content.find("---\r\n").map(|i| i + 5));
+        if let Some(start) = after_first {
+            let remaining = &content[start..];
+            if let Some(end) = remaining.find("\n---") {
+                Some(&remaining[..end])
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let yaml_content = match yaml_str {
+        Some(y) => y,
+        None => return Vec::new(),
+    };
+
+    let parsed: Result<TargetsYaml, _> = serde_yaml::from_str(yaml_content);
+    let targets_raw = match parsed {
+        Ok(t) => t.targets,
+        Err(e) => {
+            ts_eprint!("[Radar] Failed to parse YAML frontmatter: {}", e);
+            return Vec::new();
+        }
+    };
+
+    targets_raw.into_iter().map(|t| {
+        let spec_entries = t.spec.as_ref().map(|v| convert_spec(v)).unwrap_or_default();
+        let spec_label = spec_entries.iter()
+            .map(|e| e.value.as_str())
+            .filter(|v| !v.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ");
+        
+        let channels: Vec<ChannelJson> = t.channels.map(|chs| {
+            chs.into_iter().map(|c| ChannelJson {
+                channel_type: c.channel_type,
+                location: c.location,
+            }).collect()
+        }).unwrap_or_default();
+        
+        let channel_label = channels.iter()
+            .map(|c| c.channel_type.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        
+        TargetJson {
+            id: t.id,
+            name: t.name,
+            description: t.description,
+            spec_entries,
+            spec_label,
+            channels,
+            channel_label,
+            source_probe: t.source_probe,
+            status: normalize_status(&t.status),
+            created_at: t.created_at,
+            last_scan: t.last_scan,
+        }
+    }).collect()
+}
+
 /// Ensure the radar directory tree exists for an agent.
 async fn ensure_radar_dir(workspace: &PathBuf) {
     tokio::fs::create_dir_all(workspace.join("radar").join("logs")).await.ok();
@@ -87,6 +260,28 @@ pub async fn get_targets_md(data_dir: &str, agent_name: &str) -> Response<BoxBod
                 .unwrap()
         }
     }
+}
+
+/// GET /api/radar/{agent}/targets-json
+/// Returns parsed targets from YAML frontmatter as structured JSON.
+pub async fn get_targets_json(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
+    let workspace = match get_agent_workspace(data_dir, agent_name) {
+        Ok(w) => w,
+        Err(_) => return error_response(StatusCode::NOT_FOUND, "Agent not found"),
+    };
+
+    ensure_radar_dir(&workspace).await;
+
+    let path = workspace.join("radar").join("targets.md");
+    let content = match tokio::fs::read_to_string(&path).await {
+        Ok(c) => c,
+        Err(_) => {
+            return ok_response(&serde_json::json!({ "targets": Vec::<TargetJson>::new() }));
+        }
+    };
+
+    let targets = parse_targets_md(&content);
+    ok_response(&serde_json::json!({ "targets": targets }))
 }
 
 /// GET /api/radar/{agent}/probes
@@ -215,6 +410,9 @@ pub async fn route(
         }
         "targets-md" if method == hyper::Method::GET => {
             Some(get_targets_md(data_dir, &agent).await)
+        }
+        "targets-json" if method == hyper::Method::GET => {
+            Some(get_targets_json(data_dir, &agent).await)
         }
         "probes" if method == hyper::Method::GET => {
             Some(get_probes(data_dir, &agent).await)

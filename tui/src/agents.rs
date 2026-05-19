@@ -29,24 +29,237 @@ fn ok_response<T: serde::Serialize>(body: &T) -> Response<BoxBody<Bytes, hyper::
     json_response(StatusCode::OK, body)
 }
 
+// ── Bootstrap workspace files for 0#Agent ──────────────────────────────
+
+const AGENTS_MD: &str = r#"# AGENTS.md — Zerus System Agent
+
+## Role
+
+You are Zerus, the primary system agent for ClawParty. You help users manage their knowledge (Wiki), track work (Tasks), and monitor subjects of interest (Radar).
+
+---
+
+## Wiki
+
+When the user says anything like "build wiki", "add to wiki", "update wiki", or drops a document/link, follow the LLM Wiki methodology defined in WIKI.md.
+
+### Quick reference
+
+- Raw sources go in `workspace/wiki/raw/` — never modify them
+- You write and maintain all files in `workspace/wiki/entities/`, `concepts/`, `pages/`
+- Always update `workspace/wiki/index.md` and append to `workspace/wiki/log.md` after every change
+- Use `[[Page Name]]` for internal links
+
+**Ingest flow**: read source → discuss with user → write summary page → update entity/concept pages → update index + log
+
+**Query flow**: read `index.md` → find relevant pages → synthesise answer → optionally file the answer as a new wiki page
+
+---
+
+## Radar
+
+When the user says anything like "build radar", "track X", "monitor X", "help me follow X", follow the Radar methodology defined in RADAR.md.
+
+### Quick reference
+
+Directory: `workspace/radar/`
+- `probes.md` — list of probes (what to look for, how, which channels)
+- `targets.md` — list of known targets (description, spec, channels)
+- `logs/probe-YYYYMMDD-HHMMSS.log` — probe execution logs
+- `logs/scan-YYYYMMDD-HHMMSS.log` — scan execution logs
+
+**Setup flow**: understand user's focus → initialise `radar/` dir → write `probes.md` → write `targets.md` (if targets are already known)
+
+**File format** — use markdown tables or YAML frontmatter, both are accepted:
+
+```markdown
+## Target: Example Corp
+
+| 字段 | 内容 |
+|------|------|
+| **名称** | Example Corp |
+| **描述** | ... |
+| **规格** | `产品`: X; `融资`: $50M |
+| **渠道** | https://example.com |
+| **状态** | monitoring |
+```
+
+Or YAML frontmatter:
+
+```yaml
+---
+targets:
+  - name: Example Corp
+    description: ...
+    spec:
+      产品: X
+    channels:
+      - type: website
+        location: https://example.com
+    status: monitoring
+---
+```
+
+---
+
+## Task Management
+
+Track all significant work using XML task tags in your responses. The system parses these automatically — they are invisible to the user.
+
+```xml
+<!-- Create task -->
+<task id="task-{timestamp}-{id}" title="Short title" status="running" progress="0">
+Description of the task
+</task>
+
+<!-- Update task -->
+<task id="task-{timestamp}-{id}" status="running" progress="50">
+Progress update
+</task>
+
+<!-- Complete task -->
+<task id="task-{timestamp}-{id}" status="completed" progress="100">
+Summary of result
+</task>
+
+<!-- Subtask -->
+<subtask parent="task-{timestamp}-{id}" id="subtask-{timestamp}-{id}" title="Step title" status="pending">
+Step description
+</subtask>
+```
+
+Rules: always reuse the same id; progress is 0–100; keep titles under 50 chars.
+
+---
+
+## File Tools
+
+Always use your file tools to write and read files — never describe what you would write without actually writing it. When creating workspace files, write them directly.
+
+### Creating files for a new agent
+
+When you create a new agent and need to write its initial files (e.g. `SOUL.md`,
+`AGENTS.md`, `radar/`, `wiki/`, `web/`), always write them into the **new agent's
+workspace directory**:
+
+```
+<new-agent-config-dir>/workspace/
+```
+
+Do NOT write them to the root of `<new-agent-config-dir>` or to your own workspace.
+
+If a file already exists in the target workspace directory, do **not** overwrite it.
+Instead, warn the user: "File `<filename>` already exists in `<path>` — skipped to
+avoid overwriting existing content. Please confirm if you want to replace it."
+
+"#;
+
+const WIKI_MD_NOTICE: &str = "# WIKI.md\n\nSee this file for the full LLM Wiki methodology.\n";
+
+const RADAR_MD_NOTICE: &str = "# RADAR.md\n\nSee this file for the full Radar methodology.\n";
+
+/// Write bootstrap workspace files for 0#Agent (AGENTS.md, WIKI.md, RADAR.md).
+/// Skips any file that already exists.
+fn write_zero_agent_bootstrap_files(workspace_dir: &std::path::Path) {
+    let files: &[(&str, &str)] = &[
+        ("AGENTS.md", AGENTS_MD),
+        ("WIKI.md",   WIKI_MD_NOTICE),
+        ("RADAR.md",  RADAR_MD_NOTICE),
+    ];
+
+    // Read llm-wiki.md from Desktop if available
+    let wiki_content = std::env::var("HOME")
+        .ok()
+        .map(|h| std::path::PathBuf::from(h).join("Desktop").join("llm-wiki.md"))
+        .and_then(|p| std::fs::read_to_string(&p).ok());
+
+    // Read radar-design.md from docs/ — try several locations relative to exe
+    let radar_content = std::env::current_exe().ok().and_then(|exe| {
+        let mut dir = exe.as_path();
+        for _ in 0..4 {
+            let candidate = dir.join("docs").join("radar-design.md");
+            if candidate.exists() {
+                return std::fs::read_to_string(&candidate).ok();
+            }
+            dir = match dir.parent() { Some(p) => p, None => break };
+        }
+        None
+    });
+
+    for (filename, default_content) in files {
+        let path = workspace_dir.join(filename);
+        if path.exists() {
+            continue;
+        }
+        let content = match *filename {
+            "WIKI.md"  => wiki_content.as_deref().unwrap_or(default_content),
+            "RADAR.md" => radar_content.as_deref().unwrap_or(default_content),
+            _          => default_content,
+        };
+        if let Err(e) = std::fs::write(&path, content) {
+            ts_eprint!("[Agents] Failed to write {}: {}", filename, e);
+        } else {
+            ts_print!("[Agents] Wrote {} to {:?}", filename, path);
+        }
+    }
+}
+
 // ── Helper: sync agents from filesystem to clawparty.db ────────────────
 
-/// Scan ~/.clawparty/agents/ and create DB records for any agents not yet in clawparty.db.
-pub fn sync_agents_from_fs(data_dir: &str) {
-    let agents_dir = Path::new(data_dir).join("agents");
-    if !agents_dir.exists() {
-        ts_eprint!("[Agents] Agents directory not found: {:?}", agents_dir);
+/// Spawn a zeroclaw daemon for a newly discovered agent and update DB status to "running".
+/// Mirrors the startup launch in main.rs. Sync (no await).
+fn spawn_agent_process(data_dir: &str, agent_name: &str, agent_dir: &str, port: u16) {
+    let zeroclaw_bin = match find_zeroclaw_bin() {
+        Some(p) => p,
+        None => {
+            ts_eprint!("[Agents] zeroclaw binary not found, cannot start '{}'", agent_name);
+            return;
+        }
+    };
+
+    // Skip if port already in use (agent may already be running)
+    if is_port_in_use(port) {
+        ts_print!("[Agents] Port {} already in use, marking '{}' as running", port, agent_name);
+        let _ = db::update_agent_status(data_dir, agent_name, "running", None, None);
         return;
     }
 
-    let mut count = 0usize;
+    match Command::new(&zeroclaw_bin)
+        .args(["daemon", "--config-dir", agent_dir, "-p", &port.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .stdin(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => {
+            let pid = child.id() as u64;
+            ts_print!("[Agents] Started agent '{}' on port {} (pid {})", agent_name, port, pid);
+            let _ = db::update_agent_status(data_dir, agent_name, "running", Some(pid), None);
+        }
+        Err(e) => {
+            ts_eprint!("[Agents] Failed to start agent '{}': {}", agent_name, e);
+            let _ = db::update_agent_status(data_dir, agent_name, "error", None, Some(&e.to_string()));
+        }
+    }
+}
+
+/// Scan ~/.clawparty/agents/ and create DB records for any agents not yet in clawparty.db.
+/// Returns the number of new agents added. Silent when count == 0.
+fn sync_agents_from_fs_inner(data_dir: &str) -> usize {
+    let agents_dir = Path::new(data_dir).join("agents");
+    if !agents_dir.exists() {
+        return 0;
+    }
+
     let read_dir = match std::fs::read_dir(&agents_dir) {
         Ok(rd) => rd,
         Err(e) => {
             ts_eprint!("[Agents] Failed to read agents directory: {}", e);
-            return;
+            return 0;
         }
     };
+
+    let mut count = 0usize;
 
     for entry in read_dir.flatten() {
         let path = entry.path();
@@ -63,23 +276,30 @@ pub fn sync_agents_from_fs(data_dir: &str) {
 
         // Skip if already in clawparty.db
         if let Ok(Some(_)) = db::get_agent(data_dir, &agent_name) {
+            // For 0#Agent: still ensure bootstrap files are present
+            if agent_name == "0#Agent" {
+                let workspace_dir = path.join("workspace");
+                if workspace_dir.exists() {
+                    write_zero_agent_bootstrap_files(&workspace_dir);
+                }
+            }
             continue;
         }
 
         let config_path = path.join("config.toml");
         let workspace_dir = path.join("workspace");
 
-        // Read port from config.toml
+        // Read port from config.toml; allocate a free port if none found
         let port = std::fs::read_to_string(&config_path)
             .ok()
             .and_then(|content| {
                 content.lines()
                     .find(|l| l.trim().starts_with("port"))
                     .and_then(|l| l.split('=').nth(1))
-                    .and_then(|v| v.trim().split(|c: char| !c.is_digit(10)).next())
+                    .and_then(|v| v.trim().split(|c: char| !c.is_ascii_digit()).next())
                     .and_then(|v| v.parse::<u16>().ok())
             })
-            .unwrap_or(42617);
+            .unwrap_or_else(|| allocate_port(data_dir).unwrap_or(42617));
 
         let dir_str = path.to_string_lossy().to_string();
         let config_str = config_path.to_string_lossy().to_string();
@@ -102,6 +322,14 @@ pub fn sync_agents_from_fs(data_dir: &str) {
             Ok(_) => {
                 ts_print!("[Agents] Created DB record for agent '{}' on port {}", agent_name, port);
                 count += 1;
+                // Write bootstrap files for newly discovered 0#Agent
+                if agent_name == "0#Agent" && workspace_dir.exists() {
+                    write_zero_agent_bootstrap_files(&workspace_dir);
+                }
+                // Start the agent immediately (skip 0#Agent — managed separately)
+                if agent_name != "0#Agent" {
+                    spawn_agent_process(data_dir, &agent_name, &dir_str, port);
+                }
             }
             Err(e) => {
                 ts_eprint!("[Agents] Failed to create agent '{}': {}", agent_name, e);
@@ -112,6 +340,17 @@ pub fn sync_agents_from_fs(data_dir: &str) {
     if count > 0 {
         ts_print!("[Agents] Synced {} new agent(s) from filesystem to DB", count);
     }
+    count
+}
+
+/// Public sync called at startup — always runs.
+pub fn sync_agents_from_fs(data_dir: &str) {
+    sync_agents_from_fs_inner(data_dir);
+}
+
+/// Periodic sync — silent when no diff (no logging, no action).
+pub fn sync_agents_from_fs_periodic(data_dir: &str) {
+    let _ = sync_agents_from_fs_inner(data_dir);
 }
 
 // ── Helper: find zeroclaw binary ────────────────────────────────────────
@@ -142,7 +381,7 @@ fn allocate_port(data_dir: &str) -> anyhow::Result<u16> {
     let agents = db::list_agents(data_dir).unwrap_or_default();
     let used_ports: std::collections::HashSet<u16> = agents.iter().map(|a| a.port).collect();
 
-    for port in 30000..=60000 {
+    for port in 42618..=60000 {
         if used_ports.contains(&port) {
             continue;
         }
@@ -499,7 +738,10 @@ pub async fn reconcile_agents(data_dir: &str) -> Response<BoxBody<Bytes, hyper::
         if agent.status != "running" && agent.status != "starting" {
             continue;
         }
-        let alive = agent.pid.map(is_process_alive).unwrap_or(false);
+        let alive = match agent.pid {
+            Some(pid) => is_process_alive(pid),
+            None => is_port_in_use(agent.port), // PID missing but port in use -> still alive
+        };
         let new_status = if alive { "running" } else { "stopped" };
         if new_status != agent.status {
             let _ = db::update_agent_status(data_dir, &agent.agent_name, new_status, agent.pid, agent.error_msg.as_deref());

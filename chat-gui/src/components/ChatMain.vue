@@ -489,6 +489,7 @@ watch(showWebSharePanel, (visible) => {
   if (visible) {
     showTaskPanel.value = false
     showWikiPanel.value = false
+    showRadarPanel.value = false
     loadWebShareFiles()
   }
 })

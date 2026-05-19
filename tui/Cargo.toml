@@ -24,6 +24,7 @@ url = "2"
 rusqlite = { version = "0.39.0", features = ["bundled"] }
 regex = "1"
 urlencoding = "2"
+serde_yaml = "0.9"
 
 # HTTPS proxy
 hyper = { version = "1", features = ["full"] }

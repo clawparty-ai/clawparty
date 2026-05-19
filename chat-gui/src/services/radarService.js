@@ -10,6 +10,9 @@ export const radarService = {
   getTargetsMd(agentName) {
     return get(`/radar/${encodeURIComponent(agentName)}/targets-md`)
   },
+  getTargetsJson(agentName) {
+    return get(`/radar/${encodeURIComponent(agentName)}/targets-json`)
+  },
   getLogs(agentName) {
     return get(`/radar/${encodeURIComponent(agentName)}/logs`)
   },

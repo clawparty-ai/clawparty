@@ -1137,6 +1137,17 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
         });
     }
 
+    // Periodic agent sync: scan agents/ dir vs DB every 60s, silent if no diff
+    {
+        let data_sync = data_dir.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                crate::agents::sync_agents_from_fs_periodic(&data_sync);
+            }
+        });
+    }
+
     // Open browser if requested
     if args.open {
         ts_print!("🌐 Opening browser to http://{}", if args.zeroclaw_only { "localhost:42617" } else { &args.api_host });
