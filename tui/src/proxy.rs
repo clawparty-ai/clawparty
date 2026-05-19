@@ -955,7 +955,26 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
         return Ok(resp);
     }
 
-    if is_websocket_request(&req) {
+    // Meshes API — try upstream (ztm), return empty array on 502/failure
+    if path.starts_with("/api/meshes") && method == hyper::Method::GET {
+        match proxy_http(req).await {
+            Ok(resp) => {
+                if resp.status() == StatusCode::BAD_GATEWAY {
+                    let mut fallback = Response::new(box_body(Bytes::from("[]")));
+                    *fallback.status_mut() = StatusCode::OK;
+                    Ok(fallback)
+                } else {
+                    Ok(resp)
+                }
+            }
+            Err(e) => {
+                ts_eprint!("[Proxy] Meshes proxy error: {}", e);
+                let mut resp = Response::new(box_body(Bytes::from("[]")));
+                *resp.status_mut() = StatusCode::OK;
+                Ok(resp)
+            }
+        }
+    } else if is_websocket_request(&req) {
         match proxy_websocket(req).await {
             Ok(resp) => Ok(resp),
             Err(e) => {

@@ -823,6 +823,14 @@ const handleTaskRefresh = async () => {
               addRefreshLog('info', 'Batch refresh done: created=' + (batchRes.data?.created || 0) +
                 ' updated=' + (batchRes.data?.updated || 0) +
                 ' saved=' + (batchRes.data?.tasks_saved || false))
+              // Remove "create" changes from pending since batchRefresh already persisted them.
+              // Keeping them would show duplicate entries AND trigger extra creates on Confirm.
+              pendingTaskChanges.value = changes.filter(function (c) { return c.type !== 'create' })
+              if (pendingTaskChanges.value.length === 0) {
+                addRefreshLog('info', 'All changes committed, no pending confirmations.')
+              } else {
+                addRefreshLog('info', pendingTaskChanges.value.length + ' change(s) remain pending confirmation.')
+              }
             }
           } catch (e) {
             addRefreshLog('error', 'Failed to parse AI response: ' + (e.message || e))

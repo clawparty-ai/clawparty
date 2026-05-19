@@ -221,10 +221,11 @@ const logFilter = ref('all')
 const radarCanvasRef = ref(null)
 const radarColRef = ref(null)
 let radarAnimCleanup = null
+let radarResizeObserver = null
 
-// ── YAML parser ────────────────────────────────────────
+// ── YAML frontmatter parser ───────────────────────────
 
-function parseListMd(content, rootKey) {
+function parseYamlFrontmatterList(content, rootKey) {
   var fm = content.match(/^---\n([\s\S]*?)\n---/)
   if (!fm) return []
   var yaml = fm[1]
@@ -239,14 +240,11 @@ function parseListMd(content, rootKey) {
     var line = lines[li]
     var trimmed = line.trim()
     if (!trimmed) continue
-
     var indent = line.search(/\S/)
     if (indent < 0) continue
 
-    // Root array key (e.g., "targets:" or "probes:")
     if (indent === 0 && trimmed.endsWith(':')) continue
 
-    // Item start: "  - name: xxx"
     var itemMatch = trimmed.match(/^-\s+(\w+):\s*(.*)/)
     if (itemMatch) {
       var k = itemMatch[1]
@@ -254,9 +252,7 @@ function parseListMd(content, rootKey) {
       if (k === 'name') {
         if (currentItem) items.push(currentItem)
         currentItem = { name: v || '' }
-        inNested = false
-        currentNested = null
-        currentNestedItem = null
+        inNested = false; currentNested = null; currentNestedItem = null
       } else if (currentItem) {
         currentItem[k] = v || ''
       }
@@ -265,32 +261,25 @@ function parseListMd(content, rootKey) {
 
     if (!currentItem) continue
 
-    // Nested key with indent 4 (spec:, channels:)
     var nestedMatch = trimmed.match(/^(\w+):\s*$/)
     if (indent === 4 && nestedMatch) {
-      inNested = true
-      currentNested = nestedMatch[1]
-      currentItem[currentNested] = []
-      currentNestedItem = null
+      inNested = true; currentNested = nestedMatch[1]
+      currentItem[currentNested] = []; currentNestedItem = null
       continue
     }
 
     if (inNested && currentNested) {
-      // Nested array item: "      - type: xxx"
       var niMatch = trimmed.match(/^-\s+(\w+):\s*(.*)/)
       if (niMatch && indent >= 6) {
-        currentNestedItem = {}
-        currentNestedItem[niMatch[1]] = niMatch[2] || ''
+        currentNestedItem = {}; currentNestedItem[niMatch[1]] = niMatch[2] || ''
         currentItem[currentNested].push(currentNestedItem)
         continue
       }
-      // Nested field: "        key: value"
       var nfMatch = trimmed.match(/^(\w+):\s*(.*)/)
       if (nfMatch && indent >= 8 && currentNestedItem) {
         currentNestedItem[nfMatch[1]] = nfMatch[2] || ''
         continue
       }
-      // spec key-value: "      key: value"
       var specMatch = trimmed.match(/^(\w+):\s*(.*)/)
       if (specMatch && indent === 6 && currentNested === 'spec') {
         currentItem[currentNested].push({ key: specMatch[1], value: specMatch[2] || '' })
@@ -298,36 +287,136 @@ function parseListMd(content, rootKey) {
       }
     }
 
-    // Top-level fields of current item (indent 2)
     if (indent === 2 && !inNested) {
       var topMatch = trimmed.match(/^(\w+):\s*(.*)/)
-      if (topMatch) {
-        currentItem[topMatch[1]] = topMatch[2] || ''
-      }
+      if (topMatch) currentItem[topMatch[1]] = topMatch[2] || ''
     }
   }
   if (currentItem) items.push(currentItem)
+  return enrichItems(items)
+}
 
-  // Enrich items with display labels
+// ── Markdown section parser (fallback for LLM-generated content) ──
+
+function parseMdSections(content, rootKey) {
+  // Match ## Name or ## Prefix: Name (e.g., ## 目标: 开源项目)
+  var headingPrefix = rootKey === 'targets' ? '(目标|Target)' : '(探测|Probe)'
+  var sectionRe = new RegExp('^##\\s+' + headingPrefix + '?:\\s*(.+)$', 'gm')
+  var items = []
+  var match
+
+  // Split content into sections by ## headings
+  var lines = content.split('\n')
+  var currentName = null
+  var currentLines = []
+  var inSection = false
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i]
+    var headingMatch = line.match(/^##\s+(.+)/)
+    if (headingMatch) {
+      if (currentName) {
+        var parsed = parseSectionBody(currentName, currentLines)
+        if (parsed) items.push(parsed)
+      }
+      // Check if this heading is a target/probe header
+      var nameMatch = headingMatch[1].match(new RegExp('^' + headingPrefix + ':?\\s*(.*)', 'i'))
+      currentName = nameMatch ? (nameMatch[1] || headingMatch[1]) : headingMatch[1]
+      currentLines = []
+      inSection = true
+    } else if (inSection) {
+      currentLines.push(line)
+    }
+  }
+  if (currentName) {
+    var parsed = parseSectionBody(currentName, currentLines)
+    if (parsed) items.push(parsed)
+  }
+
+  return enrichItems(items)
+}
+
+function parseSectionBody(name, lines) {
+  var item = { name: name.trim() }
+  var inTable = false
+  var tableHeaders = []
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim()
+    if (!line) { inTable = false; continue }
+
+    // Markdown table: | **名称** | value |
+    var tableMatch = line.match(/^\|\s*(.+?)\s*\|\s*(.+?)\s*\|/)
+    if (tableMatch) {
+      var key = tableMatch[1].replace(/\*\*/g, '').trim().toLowerCase()
+      var val = tableMatch[2].replace(/\*\*/g, '').trim()
+      if (key === '名称' || key === 'name') { item.name = val; continue }
+      if (key === '描述' || key === 'description') { item.description = val; continue }
+      if (key === '规格' || key === 'spec') { item.spec = parseSpec(val); continue }
+      if (key === '渠道' || key === 'channel' || key === 'channels') { item.channelLabel = val; continue }
+      if (key === '状态' || key === 'status') { item.status = val; continue }
+      if (key === '来源探测' || key === 'source probe' || key === 'source_probe') { item.source_probe = val; continue }
+      if (key === '方法' || key === 'method') { item.method = val; continue }
+      if (key === '周期' || key === 'schedule') { item.schedule = val; continue }
+      if (key === '位置' || key === 'location') { item.channel_location = val; continue }
+      if (key === '类型' || key === 'type') { item.channel_type = val; continue }
+      if (!item._extra) item._extra = []
+      item._extra.push(key + ': ' + val)
+      continue
+    }
+
+    // List item: - **组织**: openclaw
+    var listMatch = line.match(/^-\s*\*\*(.+?)\*\*[:\uFF1A]\s*(.*)/)
+    if (listMatch) {
+      var lk = listMatch[1].trim().toLowerCase()
+      var lv = listMatch[2].trim()
+      if (lk === '组织' || lk === 'organization') item.spec = parseSpec(item.spec ? item.spec + '; ' + lv : lv)
+      else if (lk === '最新更新' || lk === 'last update') { /* skip date */ }
+      else continue
+    }
+  }
+
+  if (!item.name) return null
+  return item
+}
+
+function parseSpec(val) {
+  var entries = []
+  // Parse "`key`: value; `key2`: value2" or "key: value"
+  var parts = val.split(';')
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim()
+    var kv = p.match(/`?(.+?)`?\s*:\s*(.*)/)
+    if (kv) entries.push({ key: kv[1].trim(), value: kv[2].trim() })
+  }
+  return entries.length > 0 ? entries : [{ key: '规格', value: val }]
+}
+
+function enrichItems(items) {
   return items.map(function (item) {
     if (item.spec && Array.isArray(item.spec)) {
       item.specLabel = item.spec.map(function (s) { return s.value || '' }).filter(Boolean).join(', ').slice(0, 30)
     }
-    if (item.channel) {
-      item.channel_type = item.channel.type || ''
-      item.channel_location = item.channel.location || ''
-    }
-    if (item.channel_type) {
-      item.channelLabel = item.channel_type
-    }
-    if (item.channels && Array.isArray(item.channels) && item.channels.length > 0) {
-      item.channelLabel = item.channels.map(function (c) { return c.type || '' }).join(', ')
-    }
-    if (item.description) {
-      item.description = item.description.replace(/^["']|["']$/g, '')
+    if (item.description) item.description = item.description.replace(/^["']|["']$/g, '')
+    if (item.status) {
+      var s = item.status.toLowerCase()
+      if (s === 'monitoring' || s === 'active' || s === 'running') item.status = 'active'
+      else if (s === 'paused') item.status = 'paused'
+      else item.status = 'active'
+    } else {
+      item.status = 'active'
     }
     return item
   })
+}
+
+// ── Main parser: try YAML first, fall back to MD sections ──
+
+function parseListMd(content, rootKey) {
+  if (!content) return []
+  var items = parseYamlFrontmatterList(content, rootKey)
+  if (items.length > 0) return items
+  return parseMdSections(content, rootKey)
 }
 
 // ── Data loading ──────────────────────────────────────
@@ -455,7 +544,7 @@ function setupRadarAnimation() {
 
   function resize() {
     var rect = col.getBoundingClientRect()
-    var size = rect.width
+    var size = Math.min(rect.width, rect.height || rect.width)
     var dpr = window.devicePixelRatio || 1
     canvas.width = size * dpr
     canvas.height = size * dpr
@@ -590,6 +679,17 @@ async function loadAll() {
 
 function startRadar() {
   if (radarAnimCleanup) radarAnimCleanup()
+  if (radarResizeObserver) { radarResizeObserver.disconnect(); radarResizeObserver = null }
+
+  var col = radarColRef.value
+  if (col) {
+    radarResizeObserver = new ResizeObserver(function () {
+      if (radarAnimCleanup) { radarAnimCleanup(); radarAnimCleanup = null }
+      radarAnimCleanup = setupRadarAnimation()
+    })
+    radarResizeObserver.observe(col)
+  }
+
   nextTick(function () {
     radarAnimCleanup = setupRadarAnimation()
   })
@@ -646,6 +746,12 @@ watch(function () { return props.agentName }, function () {
   loadAll()
 })
 
+watch(isFullscreen, function () {
+  if (activeSubPanel.value !== 'logs') {
+    nextTick(function () { startRadar() })
+  }
+})
+
 // ── Lifecycle ─────────────────────────────────────────
 
 onMounted(function () {
@@ -657,6 +763,7 @@ onMounted(function () {
 
 onBeforeUnmount(function () {
   if (radarAnimCleanup) radarAnimCleanup()
+  if (radarResizeObserver) radarResizeObserver.disconnect()
 })
 </script>
 
@@ -994,12 +1101,17 @@ onBeforeUnmount(function () {
 
 /* ── Right column (radar animation) ───────────────── */
 .radar-right-col {
-  width: 240px;
-  min-width: 160px;
+  height: 100%;
+  aspect-ratio: 1;
   flex-shrink: 0;
+  min-width: 120px;
+  max-width: 320px;
   position: relative;
   overflow: hidden;
   background: #0a1628;
+}
+.radar-panel.fullscreen .radar-right-col {
+  max-width: 480px;
 }
 .radar-canvas {
   display: block;

@@ -519,8 +519,12 @@ const flattenedTasks = computed(() => {
   }
   flatten(cloned, 0)
 
+  var existingTaskIds = {}
+  for (var ri = 0; ri < result.length; ri++) {
+    if (result[ri].task_id) existingTaskIds[result[ri].task_id] = true
+  }
   for (const c of props.pendingChanges) {
-    if (c.type === 'create') {
+    if (c.type === 'create' && (!c.taskId || !existingTaskIds[c.taskId]) && (!c.task_id || !existingTaskIds[c.task_id])) {
       result.push({
         task_id: c.taskId,
         title: c.data.title,

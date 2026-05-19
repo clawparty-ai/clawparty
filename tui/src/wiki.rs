@@ -26,13 +26,22 @@ pub(crate) fn get_agent_workspace(data_dir: &str, agent_name: &str) -> anyhow::R
     let agents_dir = PathBuf::from(data_dir).join("agents");
     let agent_dir = agents_dir.join(agent_name);
     if agent_dir.exists() {
+        // Prefer workspace/ subdirectory over agent root
+        let workspace_dir = agent_dir.join("workspace");
+        if workspace_dir.exists() {
+            return Ok(workspace_dir);
+        }
         return Ok(agent_dir);
     }
     
-    // Also check .zeroclaw for 0#Agent
+    // Also check .zeroclaw for 0#Agent (legacy path)
     if agent_name == "0#Agent" {
         let zeroclaw_dir = PathBuf::from(data_dir).join(".zeroclaw");
         if zeroclaw_dir.exists() {
+            let zw_workspace = zeroclaw_dir.join("workspace");
+            if zw_workspace.exists() {
+                return Ok(zw_workspace);
+            }
             return Ok(zeroclaw_dir);
         }
     }
