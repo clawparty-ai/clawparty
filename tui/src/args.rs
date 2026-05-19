@@ -49,6 +49,10 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub no_health_check: bool,
 
+    /// Set the admin password and exit (writes to clawparty.db)
+    #[arg(long)]
+    pub set_password: Option<String>,
+
     // HTTPS Proxy settings (only active in --service mode)
     #[arg(long, default_value = "443")]
     pub proxy_https_port: u16,
@@ -66,6 +70,11 @@ pub enum Command {
     User {
         #[command(subcommand)]
         user_command: UserCommands,
+    },
+    /// Set the API key for the 0#Agent (written to its config.toml)
+    SetApiKey {
+        /// The API key value to write
+        api_key: String,
     },
 }
 

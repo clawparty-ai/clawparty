@@ -88,13 +88,43 @@ fn read_agents_from_db(data_dir: &str) -> Vec<AgentConfig> {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    // Handle user management subcommands
-    if let Some(args::Command::User { user_command }) = args.command {
-        return handle_user_command(user_command, &args.data);
+    // Handle subcommands that exit immediately (no TUI / service needed)
+    match args.command {
+        Some(args::Command::User { user_command }) => {
+            return handle_user_command(user_command, &args.data);
+        }
+        Some(args::Command::SetApiKey { api_key }) => {
+            return handle_set_api_key(&api_key, &args.data);
+        }
+        None => {}
+    }
+
+    // --set-password: update admin password and exit
+    if let Some(ref password) = args.set_password {
+        return handle_set_password(password, &args.data);
+    }
+
+    // ── First-run initialisation ─────────────────────────────────────────────
+    // If the data directory does not yet exist this is a brand-new install.
+    // Prompt the user for an admin password and an API key before continuing.
+    let expanded_data = expand_data_dir(&args.data);
+    let first_run = !std::path::Path::new(&expanded_data).exists();
+    let first_run_api_key: Option<String>;
+
+    if first_run {
+        let (password, api_key) = prompt_first_run_setup()?;
+        // Create data dir + DB so we can write the password immediately
+        std::fs::create_dir_all(&expanded_data)
+            .map_err(|e| anyhow::anyhow!("Cannot create data directory {}: {}", expanded_data, e))?;
+        let _ = db::init_clawparty_db(&expanded_data);
+        write_admin_password(&password, &expanded_data)?;
+        first_run_api_key = Some(api_key);
+    } else {
+        first_run_api_key = None;
     }
 
     if args.service {
-        let (_agent_mgr, _zeroclaw_mgr) = run_service_mode(args).await?;
+        let (_agent_mgr, _zeroclaw_mgr) = run_service_mode(args, first_run_api_key).await?;
         return Ok(());
     }
 
@@ -134,6 +164,16 @@ async fn main() -> anyhow::Result<()> {
         "zeroclaw".to_string()
     });
 
+    // Validate 0#Agent config before starting ZeroClaw daemon
+    {
+        let expanded = expand_data_dir(&args.data);
+        let zero_agent_dir = format!("{}/agents/0#Agent", expanded);
+        let errs = validate_agent_config("0#Agent", &zero_agent_dir);
+        for e in &errs {
+            state.add_log("WARN", &format!("[ConfigCheck] {}", e));
+        }
+    }
+
     // Start ZeroClaw daemon FIRST (always start this)
     state.add_log("INFO", "🦀 Starting ZeroClaw daemon...");
     let zeroclaw_mgr = zeroclaw::ZeroClawDaemon::new(
@@ -167,6 +207,30 @@ async fn main() -> anyhow::Result<()> {
     state.zeroclaw_running = true;
     state.zeroclaw_mgr = Some(zeroclaw_mgr);
     state.add_log("INFO", "✅ ZeroClaw daemon started successfully");
+
+    // Now that 0#Agent is running its directory exists — create the legacy
+    // ~/.clawparty/.zeroclaw -> agents/0#Agent symlink if it is absent.
+    {
+        let expanded = expand_data_dir(&args.data);
+        let agent_dir = format!("{}/agents/0#Agent", expanded);
+        let legacy_link = format!("{}/.zeroclaw", expanded);
+        #[cfg(unix)]
+        if std::fs::symlink_metadata(&legacy_link).is_err() {
+            if let Err(e) = std::os::unix::fs::symlink(&agent_dir, &legacy_link) {
+                state.add_log("WARN", &format!("[ZeroClaw] Failed to create .zeroclaw symlink: {}", e));
+            } else {
+                state.add_log("INFO", "[ZeroClaw] Created .zeroclaw -> agents/0#Agent symlink");
+            }
+        }
+    }
+
+    // First-run: write the api-key into 0#Agent config.toml now that it exists
+    if let Some(ref api_key) = first_run_api_key {
+        match handle_set_api_key(api_key, &args.data) {
+            Ok(()) => state.add_log("INFO", "API key written to 0#Agent config"),
+            Err(e) => state.add_log("WARN", &format!("Failed to write API key: {}", e)),
+        }
+    }
 
     // Fetch ZeroClaw sessions (always do this early)
     let zeroclaw_sessions_result = zeroclaw::ZeroClawDaemon::get_sessions("http://localhost:42617").await;
@@ -203,6 +267,25 @@ async fn main() -> anyhow::Result<()> {
         state.add_log("INFO", &format!("Found {} agents in DB, starting zeroclaw daemons...", agent_configs.len()));
     }
     for agent_cfg in &agent_configs {
+        // Guard against duplicate daemons on the same port (e.g. 0#Agent
+        // already started above by ZeroClawDaemon::new(), or a stale process).
+        if crate::agents::is_port_in_use(agent_cfg.port) {
+            state.add_log(
+                "WARN",
+                &format!(
+                    "Skipping agent {} — port {} is already in use",
+                    agent_cfg.agent_name, agent_cfg.port
+                ),
+            );
+            continue;
+        }
+
+        // Validate config before starting
+        let errs = validate_agent_config(&agent_cfg.agent_name, &agent_cfg.directory);
+        for e in &errs {
+            state.add_log("WARN", &format!("[ConfigCheck] {}", e));
+        }
+
         state.add_log("INFO", &format!("Starting agent {} on port {}", agent_cfg.agent_name, agent_cfg.port));
         let child = match std::process::Command::new(&zeroclaw_bin_for_agents)
             .args([
@@ -784,7 +867,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, ZeroClawDaemon)> {
+async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyhow::Result<(Option<AgentManager>, ZeroClawDaemon)> {
     let _ = env_logger::Builder::from_env("RUST_LOG")
         .format(|buf, record| {
             use std::io::Write;
@@ -812,6 +895,15 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
     let data_dir = expand_data_dir(&args.data);
 
     let (log_tx, mut log_rx) = mpsc::channel::<String>(100);
+
+    // Validate 0#Agent config before starting ZeroClaw daemon
+    {
+        let zero_agent_dir = format!("{}/agents/0#Agent", data_dir);
+        let errs = validate_agent_config("0#Agent", &zero_agent_dir);
+        for e in &errs {
+            ts_eprint!("[ConfigCheck] {}", e);
+        }
+    }
 
     ts_print!("\n🔄 Starting ZeroClaw daemon...");
     let zeroclaw_bin_for_service = zeroclaw_bin.clone();
@@ -843,6 +935,29 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
     }
     ts_print!("✅ ZeroClaw daemon started successfully on port 42617");
 
+    // Now that 0#Agent is running its directory exists — create the legacy
+    // ~/.clawparty/.zeroclaw -> agents/0#Agent symlink if it is absent.
+    {
+        let agent_dir = format!("{}/agents/0#Agent", data_dir);
+        let legacy_link = format!("{}/.zeroclaw", data_dir);
+        #[cfg(unix)]
+        if std::fs::symlink_metadata(&legacy_link).is_err() {
+            if let Err(e) = std::os::unix::fs::symlink(&agent_dir, &legacy_link) {
+                ts_eprint!("[ZeroClaw] Failed to create .zeroclaw symlink: {}", e);
+            } else {
+                ts_print!("[ZeroClaw] Created .zeroclaw -> agents/0#Agent symlink");
+            }
+        }
+    }
+
+    // First-run: write the api-key now that 0#Agent config.toml exists
+    if let Some(ref api_key) = first_run_api_key {
+        match handle_set_api_key(api_key, &data_dir) {
+            Ok(()) => ts_print!("API key written to 0#Agent config"),
+            Err(e) => ts_eprint!("Failed to write API key: {}", e),
+        }
+    }
+
     // Sync agents from filesystem to clawparty.db
     crate::agents::sync_agents_from_fs(&data_dir);
 
@@ -852,6 +967,12 @@ async fn run_service_mode(args: Args) -> anyhow::Result<(Option<AgentManager>, Z
         ts_print!("📋 Found {} agent(s) in DB, starting zeroclaw daemons...", agent_configs.len());
     }
     for agent_cfg in &agent_configs {
+        // Validate config before starting
+        let errs = validate_agent_config(&agent_cfg.agent_name, &agent_cfg.directory);
+        for e in &errs {
+            ts_eprint!("[ConfigCheck] {}", e);
+        }
+
         ts_print!("🔄 Starting agent {} on port {}...", agent_cfg.agent_name, agent_cfg.port);
         match std::process::Command::new(&zeroclaw_bin)
             .args([
@@ -1071,6 +1192,242 @@ fn expand_data_dir(data_dir: &str) -> String {
     data_dir.replace("~", &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
 }
 
+/// Validate a zeroclaw agent config.toml before startup.
+///
+/// Checks:
+/// 1. All directory/path fields (workspace_dir, web_dist_dir, config_path) must be
+///    relative paths — i.e. must NOT start with '/', '~', or a Windows drive letter.
+/// 2. `require_pairing` must not be set to `true`.
+///
+/// Returns a list of human-readable error messages. Empty means valid.
+fn validate_agent_config(agent_name: &str, config_dir: &str) -> Vec<String> {
+    let config_path = std::path::Path::new(config_dir).join("config.toml");
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(e) => {
+            // Missing config is not treated as an error here — zeroclaw will
+            // create a default one. Only warn if the file exists but is unreadable.
+            if config_path.exists() {
+                return vec![format!("Cannot read config.toml: {}", e)];
+            }
+            return vec![];
+        }
+    };
+
+    let mut errors: Vec<String> = Vec::new();
+
+    // Path fields whose values must be relative
+    let path_fields = ["workspace_dir", "web_dist_dir", "config_path"];
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        // Skip comments and section headers
+        if trimmed.starts_with('#') || trimmed.starts_with('[') {
+            continue;
+        }
+        // Check each path field
+        for field in &path_fields {
+            if trimmed.starts_with(field) {
+                // Extract value after '='
+                if let Some(eq_pos) = trimmed.find('=') {
+                    let raw_val = trimmed[eq_pos + 1..].trim();
+                    // Strip surrounding quotes if present
+                    let val = raw_val.trim_matches('"').trim_matches('\'');
+                    // Absolute path: starts with '/', '~', or Windows drive 'X:'
+                    let is_absolute = val.starts_with('/')
+                        || val.starts_with('~')
+                        || (val.len() >= 2 && val.as_bytes()[1] == b':' && val.as_bytes()[0].is_ascii_alphabetic());
+                    if is_absolute {
+                        errors.push(format!(
+                            "Agent '{}': config field '{}' must be a relative path, got '{}'",
+                            agent_name, field, val
+                        ));
+                    }
+                }
+            }
+        }
+        // Check pairing
+        if trimmed.starts_with("require_pairing") {
+            if let Some(eq_pos) = trimmed.find('=') {
+                let val = trimmed[eq_pos + 1..].trim();
+                if val == "true" {
+                    errors.push(format!(
+                        "Agent '{}': require_pairing must be false, got 'true'",
+                        agent_name
+                    ));
+                }
+            }
+        }
+    }
+
+    errors
+}
+
+/// Write `api_key = "<key>"` into ~/.clawparty/agents/0#Agent/config.toml.
+///
+/// Strategy: read the file line-by-line, replace any existing `api_key = …`
+/// line at the top level (outside a section), or prepend it if absent.
+fn handle_set_api_key(api_key: &str, data_dir: &str) -> anyhow::Result<()> {
+    let expanded = expand_data_dir(data_dir);
+    let config_path = std::path::Path::new(&expanded)
+        .join("agents")
+        .join("0#Agent")
+        .join("config.toml");
+
+    if !config_path.exists() {
+        anyhow::bail!(
+            "Config file not found: {}\nHas 0#Agent been started at least once?",
+            config_path.display()
+        );
+    }
+
+    let content = std::fs::read_to_string(&config_path)?;
+    let new_line = format!("api_key = \"{}\"", api_key);
+
+    // Walk lines; replace the first top-level `api_key = …` line found.
+    // A "top-level" line is one that appears before any `[section]` header
+    // OR inside no section (we stop caring once we enter a section because
+    // api_key at the top level is what zeroclaw reads as the global key).
+    let mut replaced = false;
+    let mut in_section = false;
+    let mut output_lines: Vec<String> = Vec::with_capacity(content.lines().count() + 1);
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && !trimmed.starts_with("[[") {
+            in_section = true;
+        }
+        if !in_section && trimmed.starts_with("api_key") {
+            if let Some(eq) = trimmed.find('=') {
+                let key_name = trimmed[..eq].trim();
+                if key_name == "api_key" {
+                    output_lines.push(new_line.clone());
+                    replaced = true;
+                    continue;
+                }
+            }
+        }
+        output_lines.push(line.to_string());
+    }
+
+    // If no top-level api_key line existed, prepend it before the first section.
+    if !replaced {
+        let insert_pos = output_lines
+            .iter()
+            .position(|l| l.trim().starts_with('[') && !l.trim().starts_with("[["))
+            .unwrap_or(0);
+        output_lines.insert(insert_pos, new_line);
+    }
+
+    let new_content = output_lines.join("\n") + "\n";
+    std::fs::write(&config_path, new_content)?;
+
+    println!("API key updated in {}", config_path.display());
+    Ok(())
+}
+
+/// Interactive first-run setup: prompt for admin password and API key.
+/// Returns (password, api_key). Loops until non-empty values are provided.
+fn prompt_first_run_setup() -> anyhow::Result<(String, String)> {
+    use std::io::{self, Write};
+
+    println!();
+    println!("╔══════════════════════════════════════════╗");
+    println!("║       ClawParty — First-time Setup       ║");
+    println!("╚══════════════════════════════════════════╝");
+    println!();
+    println!("No existing installation found. Please set up your credentials.");
+    println!();
+
+    let password = loop {
+        print!("Admin password (cannot be empty): ");
+        io::stdout().flush()?;
+        let p = read_password_stdin()?;
+        if p.is_empty() {
+            println!("Password cannot be empty, please try again.");
+            continue;
+        }
+        print!("Confirm password: ");
+        io::stdout().flush()?;
+        let p2 = read_password_stdin()?;
+        if p != p2 {
+            println!("Passwords do not match, please try again.");
+            continue;
+        }
+        break p;
+    };
+
+    let api_key = loop {
+        print!("ClawParty API key (cannot be empty): ");
+        io::stdout().flush()?;
+        let mut line = String::new();
+        io::stdin().read_line(&mut line)?;
+        let k = line.trim().to_string();
+        if k.is_empty() {
+            println!("API key cannot be empty, please try again.");
+            continue;
+        }
+        break k;
+    };
+
+    println!();
+    Ok((password, api_key))
+}
+
+/// Read a line from stdin without echoing (password input).
+/// Falls back to plain read_line if a TTY helper is unavailable.
+fn read_password_stdin() -> anyhow::Result<String> {
+    // Try rpassword-style: read without echo via termios
+    #[cfg(unix)]
+    {
+        use std::io::Read;
+        // Disable echo via stty
+        let _ = std::process::Command::new("stty").arg("-echo").status();
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line)?;
+        let _ = std::process::Command::new("stty").arg("echo").status();
+        println!(); // newline after hidden input
+        return Ok(line.trim().to_string());
+    }
+    #[allow(unreachable_code)]
+    {
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line)?;
+        Ok(line.trim().to_string())
+    }
+}
+
+/// Hash password and upsert the `admin` user into clawparty.db.
+fn write_admin_password(password: &str, expanded_data_dir: &str) -> anyhow::Result<()> {
+    let (hash, salt, token) = hash_password_raw(password);
+    db::upsert_user(expanded_data_dir, "admin", &hash, &salt, &token, "admin")?;
+    Ok(())
+}
+
+/// Set the admin password from the --set-password flag and exit.
+fn handle_set_password(password: &str, data_dir: &str) -> anyhow::Result<()> {
+    let expanded = expand_data_dir(data_dir);
+    let _ = db::init_clawparty_db(&expanded);
+    write_admin_password(password, &expanded)?;
+    println!("Admin password updated.");
+    Ok(())
+}
+
+/// Core hash-and-token logic shared by password helpers.
+fn hash_password_raw(password: &str) -> (String, String, String) {
+    use sha2::{Digest, Sha256};
+    let salt = generate_random_string(16);
+    let mut hasher = Sha256::new();
+    hasher.update(format!("{}{}", salt, password).as_bytes());
+    let hash = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    let token = generate_random_string(32);
+    (hash, salt, token)
+}
+
 fn generate_random_string(len: usize) -> String {
     use rand::Rng;
     let chars: Vec<char> = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".chars().collect();
@@ -1079,13 +1436,7 @@ fn generate_random_string(len: usize) -> String {
 }
 
 fn hash_password(_conn: &rusqlite::Connection, password: &str) -> (String, String, String) {
-    use sha2::{Sha256, Digest};
-    let salt = generate_random_string(16);
-    let mut hasher = Sha256::new();
-    hasher.update(format!("{}{}", salt, password).as_bytes());
-    let hash = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect();
-    let token = generate_random_string(32);
-    (hash, salt, token)
+    hash_password_raw(password)
 }
 
 fn default_expire_days(days: Option<u32>) -> f64 {
@@ -1123,7 +1474,9 @@ fn handle_user_command(cmd: args::UserCommands, data_dir: &str) -> anyhow::Resul
     use std::io::{self, Write};
 
     let expanded = expand_data_dir(data_dir);
-    let db_path = format!("{}/ztm.db", expanded);
+    // Ensure clawparty.db (and its users table) exists before operating on it
+    let _ = db::init_clawparty_db(&expanded);
+    let db_path = format!("{}/clawparty.db", expanded);
     let conn = rusqlite::Connection::open(&db_path)
         .map_err(|e| anyhow::anyhow!("Failed to open database at {}: {}", db_path, e))?;
 

@@ -48,6 +48,11 @@ pub struct OpenAiCompatibleProvider {
     api_path: Option<String>,
     /// Maximum output tokens to include in API requests.
     max_tokens: Option<u32>,
+    /// Force HTTP/1.1 only — disables ALPN h2 negotiation.
+    /// Required for servers that do not speak HTTP/2 but whose TLS stack
+    /// misbehaves during ALPN (causing connection errors instead of graceful
+    /// downgrade).
+    http1_only: bool,
 }
 
 /// How the provider expects the API key to be sent.
@@ -246,6 +251,7 @@ impl OpenAiCompatibleProvider {
             reasoning_effort: None,
             api_path: None,
             max_tokens: None,
+            http1_only: false,
         }
     }
 
@@ -296,6 +302,14 @@ impl OpenAiCompatibleProvider {
         self
     }
 
+    /// Force HTTP/1.1 only (disable ALPN h2 negotiation).
+    /// Use for endpoints whose TLS stack fails ALPN negotiation instead of
+    /// gracefully downgrading to HTTP/1.1.
+    pub fn with_http1_only(mut self) -> Self {
+        self.http1_only = true;
+        self
+    }
+
     /// Collect all `system` role messages, concatenate their content,
     /// and prepend to the first `user` message. Drop all system messages.
     /// Used for providers (e.g. MiniMax) that reject `role: system`.
@@ -332,7 +346,7 @@ impl OpenAiCompatibleProvider {
         let has_user_agent = self.user_agent.is_some();
         let has_extra_headers = !self.extra_headers.is_empty();
 
-        if has_user_agent || has_extra_headers {
+        if has_user_agent || has_extra_headers || self.http1_only {
             let mut headers = HeaderMap::new();
             if let Some(ua) = self.user_agent.as_deref()
                 && let Ok(value) = HeaderValue::from_str(ua)
@@ -353,10 +367,13 @@ impl OpenAiCompatibleProvider {
                 }
             }
 
-            let builder = Client::builder()
+            let mut builder = Client::builder()
                 .timeout(std::time::Duration::from_secs(timeout))
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .default_headers(headers);
+            if self.http1_only {
+                builder = builder.http1_only();
+            }
             let builder = zeroclaw_config::schema::apply_runtime_proxy_to_builder(
                 builder,
                 "provider.compatible",

@@ -964,6 +964,7 @@ fn resolve_provider_credential(name: &str, credential_override: Option<&str>) ->
         "sglang" => vec!["SGLANG_API_KEY"],
         "vllm" => vec!["VLLM_API_KEY"],
         "aihubmix" => vec!["AIHUBMIX_API_KEY"],
+        "clawparty-llm" | "clawparty" => vec!["CLAWPARTY_API_KEY"],
         "siliconflow" | "silicon-flow" => vec!["SILICONFLOW_API_KEY"],
         "osaurus" => vec!["OSAURUS_API_KEY"],
         "telnyx" => vec!["TELNYX_API_KEY"],
@@ -1547,6 +1548,12 @@ fn create_provider_with_url_and_options(
             key,
             AuthStyle::Bearer,
         ))),
+        "clawparty-llm" | "clawparty" => Ok(compat(OpenAiCompatibleProvider::new_no_responses_fallback(
+            "ClawParty LLM",
+            "https://llm.clawparty.ai/v1",
+            key,
+            AuthStyle::Bearer,
+        ).with_http1_only())),
         "litellm" | "lite-llm" => {
             let base_url = api_url
                 .map(str::trim)
@@ -2241,6 +2248,12 @@ pub fn list_providers() -> Vec<ProviderInfo> {
             name: "aihubmix",
             display_name: "AiHubMix",
             aliases: &[],
+            local: false,
+        },
+        ProviderInfo {
+            name: "clawparty-llm",
+            display_name: "ClawParty LLM",
+            aliases: &["clawparty"],
             local: false,
         },
         ProviderInfo {

@@ -117,6 +117,7 @@ pub async fn run(
             "gateway",
             initial_backoff,
             max_backoff,
+            true, // gateway bind failure is fatal — abort the process
             move || {
                 let cfg = gateway_cfg.clone();
                 let host = gateway_host.clone();
@@ -135,6 +136,7 @@ pub async fn run(
                 "channels",
                 initial_backoff,
                 max_backoff,
+                false,
                 move || {
                     let cfg = channels_cfg.clone();
                     let start = channels_start.clone();
@@ -160,6 +162,7 @@ pub async fn run(
                     "mqtt",
                     initial_backoff,
                     max_backoff,
+                    false,
                     move || {
                         let cfg = mqtt_cfg.clone();
                         let start = mqtt_start.clone();
@@ -183,6 +186,7 @@ pub async fn run(
             "heartbeat",
             initial_backoff,
             max_backoff,
+            false,
             move || {
                 let cfg = heartbeat_cfg.clone();
                 async move { Box::pin(run_heartbeat_worker(cfg)).await }
@@ -197,6 +201,7 @@ pub async fn run(
             "scheduler",
             initial_backoff,
             max_backoff,
+            false,
             move || {
                 let cfg = scheduler_cfg.clone();
                 let tx = scheduler_event_tx.clone();
@@ -265,6 +270,7 @@ fn spawn_component_supervisor<F, Fut>(
     name: &'static str,
     initial_backoff_secs: u64,
     max_backoff_secs: u64,
+    abort_on_error: bool,
     mut run_component: F,
 ) -> JoinHandle<()>
 where
@@ -287,6 +293,10 @@ where
                 Err(e) => {
                     crate::health::mark_component_error(name, e.to_string());
                     tracing::error!("Daemon component '{name}' failed: {e}");
+                    if abort_on_error {
+                        tracing::error!("Daemon component '{name}' is critical; shutting down.");
+                        std::process::exit(1);
+                    }
                 }
             }
 
@@ -989,7 +999,7 @@ mod tests {
 
     #[tokio::test]
     async fn supervisor_marks_error_and_restart_on_failure() {
-        let handle = spawn_component_supervisor("daemon-test-fail", 1, 1, || async {
+        let handle = spawn_component_supervisor("daemon-test-fail", 1, 1, false, || async {
             anyhow::bail!("boom")
         });
 
@@ -1011,7 +1021,7 @@ mod tests {
 
     #[tokio::test]
     async fn supervisor_marks_unexpected_exit_as_error() {
-        let handle = spawn_component_supervisor("daemon-test-exit", 1, 1, || async { Ok(()) });
+        let handle = spawn_component_supervisor("daemon-test-exit", 1, 1, false, || async { Ok(()) });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
         handle.abort();

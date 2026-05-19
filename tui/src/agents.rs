@@ -1,4 +1,4 @@
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::process::{Command, Stdio};
 
 use hyper::body::Bytes;
@@ -86,6 +86,7 @@ pub fn sync_agents_from_fs(data_dir: &str) {
         let ws_str = workspace_dir.to_string_lossy().to_string();
         let description = format!("Auto-discovered agent: {}", agent_name);
 
+        let initial_status = if agent_name == "0#Agent" { "running" } else { "stopped" };
         match db::create_agent(
             data_dir,
             &agent_name,
@@ -96,6 +97,7 @@ pub fn sync_agents_from_fs(data_dir: &str) {
             &ws_str,
             port,
             None,
+            initial_status,
         ) {
             Ok(_) => {
                 ts_print!("[Agents] Created DB record for agent '{}' on port {}", agent_name, port);
@@ -297,6 +299,7 @@ api_endpoint = "{}"
         &workspace_dir.to_string_lossy(),
         port,
         None,
+        "stopped",
     ) {
         Ok(agent) => json_response(StatusCode::CREATED, &agent),
         Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("DB error: {}", e)),
@@ -338,12 +341,29 @@ pub async fn delete_agent(data_dir: &str, name: &str) -> Response<BoxBody<Bytes,
 // ── POST /api/agents/{name}/start ──────────────────────────────────────
 
 pub async fn start_agent(data_dir: &str, name: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
+    // 0#Agent's daemon is owned by ZeroClawDaemon::new() in main.rs and must
+    // never be spawned through the per-agent start path (it would create a
+    // duplicate daemon on the same config-dir + port and break the LLM client).
+    if name == "0#Agent" {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "0#Agent is managed by the system; it cannot be started via this API",
+        );
+    }
+
     let _ = db::init_clawparty_db(data_dir);
     let agent = match db::get_agent(data_dir, name) {
         Ok(Some(a)) => a,
         Ok(None) => return error_response(StatusCode::NOT_FOUND, "Agent not found"),
         Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("DB error: {}", e)),
     };
+
+    if is_port_in_use(agent.port) {
+        return error_response(
+            StatusCode::CONFLICT,
+            &format!("Port {} is already in use; agent '{}' may already be running", agent.port, name),
+        );
+    }
 
     if agent.status == "running" || agent.status == "starting" {
         // Check if process is actually alive
@@ -492,6 +512,12 @@ pub async fn reconcile_agents(data_dir: &str) -> Response<BoxBody<Bytes, hyper::
         "checked": total,
         "updated": updated
     }))
+}
+
+/// Check whether something is already listening on the given port.
+/// This guards against spawning duplicate zeroclaw daemons on the same port.
+pub fn is_port_in_use(port: u16) -> bool {
+    TcpStream::connect(("127.0.0.1", port)).is_ok()
 }
 
 // ── Process health check ────────────────────────────────────────────────

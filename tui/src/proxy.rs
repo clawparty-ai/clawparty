@@ -1097,7 +1097,7 @@ async fn run_https_proxy(port: u16, cert_dir: &str) -> anyhow::Result<()> {
 /// Start both HTTP redirect and HTTPS proxy servers.
 pub async fn start(https_port: u16, http_port: u16, cert_dir: &str, data_dir: &str) {
     let expanded = data_dir.replace("~", &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
-    let _ = DB_PATH.get_or_init(|| format!("{}/ztm.db", expanded));
+    let _ = DB_PATH.get_or_init(|| format!("{}/clawparty.db", expanded));
     let _ = DATA_DIR.get_or_init(|| expanded.clone());
 
     let redirect = run_http_redirect(http_port);

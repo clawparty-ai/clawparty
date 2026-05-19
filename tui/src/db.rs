@@ -112,6 +112,17 @@ pub fn init_clawparty_db(data_dir: &str) -> anyhow::Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_groupchats_owner ON group_chats(owner_agent);
 
+        -- Web UI users (authentication for clawparty proxy / web UI)
+        CREATE TABLE IF NOT EXISTS users (
+            username      TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            salt          TEXT NOT NULL,
+            api_token     TEXT NOT NULL,
+            role          TEXT NOT NULL DEFAULT 'user',
+            created_at    REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+            expire        REAL NOT NULL DEFAULT 0
+        );
+
         -- Chat log table (migrated from ztm.db)
         CREATE TABLE IF NOT EXISTS chat_log (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -646,6 +657,7 @@ pub fn create_agent(
     workspace_dir: &str,
     port: u16,
     config_json: Option<&str>,
+    initial_status: &str,
 ) -> anyhow::Result<AgentRecord> {
     let conn = open_db(data_dir)?;
     let t = std::time::SystemTime::now()
@@ -665,7 +677,7 @@ pub fn create_agent(
             config_path,
             workspace_dir,
             port as i64,
-            "stopped",
+            initial_status,
             t,
             config_json,
         ],
@@ -1001,4 +1013,43 @@ pub fn set_kanban_config(
 
     get_kanban_config(data_dir, agent_name, group_id)?
         .ok_or_else(|| anyhow::anyhow!("Kanban config not found after set"))
+}
+
+// ── User management (clawparty.db) ──────────────────────────────────────────
+
+/// Create or update a user.  Uses INSERT OR REPLACE so it works for both
+/// initial setup and password resets.
+pub fn upsert_user(
+    data_dir: &str,
+    username: &str,
+    password_hash: &str,
+    salt: &str,
+    api_token: &str,
+    role: &str,
+) -> anyhow::Result<()> {
+    let conn = open_db(data_dir)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs_f64();
+    conn.execute(
+        "INSERT INTO users (username, password_hash, salt, api_token, role, created_at, expire)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)
+         ON CONFLICT(username) DO UPDATE SET
+             password_hash = excluded.password_hash,
+             salt          = excluded.salt,
+             api_token     = excluded.api_token,
+             role          = excluded.role",
+        rusqlite::params![username, password_hash, salt, api_token, role, now],
+    )?;
+    Ok(())
+}
+
+/// Return true if at least one user row exists.
+pub fn has_any_user(data_dir: &str) -> bool {
+    let conn = match open_db(data_dir) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    conn.query_row("SELECT COUNT(*) FROM users", [], |row| row.get::<_, i64>(0))
+        .unwrap_or(0) > 0
 }

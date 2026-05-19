@@ -2320,7 +2320,7 @@ impl Default for GatewayConfig {
         Self {
             port: default_gateway_port(),
             host: default_gateway_host(),
-            require_pairing: true,
+            require_pairing: false,
             allow_public_bind: false,
             paired_tokens: Vec::new(),
             pair_rate_limit_per_minute: default_pair_rate_limit(),
@@ -5702,6 +5702,7 @@ impl Default for AutonomyConfig {
                 "python3".into(),
                 "pip".into(),
                 "node".into(),
+                "opencode".into(),
             ],
             forbidden_paths: vec![
                 "/etc".into(),
@@ -9602,7 +9603,7 @@ async fn ensure_bootstrap_files(workspace_dir: &Path) -> Result<()> {
         (
             "IDENTITY.md",
             "# IDENTITY.md — Who Am I?\n\n\
-             I am ZeroClaw, an autonomous AI agent.\n\n\
+             I am zAgent, an autonomous AI agent.\n\n\
              ## Traits\n\
              - Helpful, precise, and safety-conscious\n\
              - I prioritize clarity and correctness\n",
@@ -9610,7 +9611,7 @@ async fn ensure_bootstrap_files(workspace_dir: &Path) -> Result<()> {
         (
             "SOUL.md",
             "# SOUL.md — Who You Are\n\n\
-             You are ZeroClaw, an autonomous AI agent.\n\n\
+             You are zAgent, an autonomous AI agent.\n\n\
              ## Core Principles\n\
              - Be helpful and accurate\n\
              - Respect user intent and boundaries\n\
@@ -9773,6 +9774,14 @@ impl Config {
                 workspace_dir,
                 ..Config::default()
             };
+
+            // Default to ClawParty-hosted LLM proxy on first init.
+            // api_key is left empty so the user fills it in after setup.
+            config.default_provider = Some("clawparty-llm".to_string());
+            config.default_model = Some("deepseek-chat".to_string());
+            config.api_url = None;
+            config.api_key = None;
+
             config.save().await?;
 
             // Restrict permissions on newly created config file (may contain API keys)
