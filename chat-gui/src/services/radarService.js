@@ -1,28 +1,19 @@
-import { get, post, del } from './request'
+import { get, post } from './request'
 
 export const radarService = {
   initRadar(agentName) {
     return post(`/radar/${encodeURIComponent(agentName)}/init`)
   },
-  getTargets(agentName) {
-    return get(`/radar/${encodeURIComponent(agentName)}/targets`)
+  getProbes(agentName) {
+    return get(`/radar/${encodeURIComponent(agentName)}/probes`)
   },
-  getTargetInfo(agentName, targetName) {
-    return get(`/radar/${encodeURIComponent(agentName)}/targets/${encodeURIComponent(targetName)}`)
+  getTargetsMd(agentName) {
+    return get(`/radar/${encodeURIComponent(agentName)}/targets-md`)
   },
-  getTargetLog(agentName, targetName) {
-    return get(`/radar/${encodeURIComponent(agentName)}/targets/${encodeURIComponent(targetName)}/log`)
+  getLogs(agentName) {
+    return get(`/radar/${encodeURIComponent(agentName)}/logs`)
   },
-  createTarget(agentName, targetName, info) {
-    return post(`/radar/${encodeURIComponent(agentName)}/targets/${encodeURIComponent(targetName)}`, info)
-  },
-  deleteTarget(agentName, targetName) {
-    return del(`/radar/${encodeURIComponent(agentName)}/targets/${encodeURIComponent(targetName)}`)
-  },
-  getScans(agentName) {
-    return get(`/radar/${encodeURIComponent(agentName)}/scans`)
-  },
-  getDiscoveries(agentName) {
-    return get(`/radar/${encodeURIComponent(agentName)}/discoveries`)
+  getLog(agentName, filename) {
+    return get(`/radar/${encodeURIComponent(agentName)}/logs/${encodeURIComponent(filename)}`)
   }
 }

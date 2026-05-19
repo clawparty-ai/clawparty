@@ -10,6 +10,8 @@ BUILD_ZTM=false
 BUILD_ZEROCLAW=false
 BUILD_TUI=false
 BUILD_PIPY=false
+NO_ZTM=false
+NO_ZEROCLAW=false
 
 # Determine build targets from arguments
 has_positional=false
@@ -21,6 +23,12 @@ for arg in "$@"; do
     --ztm-only|-z)
       # Legacy flag: only skip Rust binaries, build everything else
       BUILD_ZTM=true
+      ;;
+    --no-ztm)
+      NO_ZTM=true
+      ;;
+    --no-zeroclaw)
+      NO_ZEROCLAW=true
       ;;
     ztm|all)
       has_positional=true
@@ -60,6 +68,16 @@ if [ "$BUILD_ZTM" = false ] && [ "$BUILD_ZEROCLAW" = false ] && [ "$BUILD_TUI" =
   BUILD_PIPY=true
 fi
 
+# Apply exclusion overrides (take effect after defaults are set)
+if [ "$NO_ZTM" = true ]; then
+  BUILD_ZTM=false
+  BUILD_PIPY=false
+fi
+if [ "$NO_ZEROCLAW" = true ]; then
+  BUILD_ZEROCLAW=false
+  BUILD_PIPY=false
+fi
+
 if [ ! -d "$GUI_DIR" ] && [ -d "$ZTM_DIR/gui" ]; then
   GUI_DIR="$ZTM_DIR/gui"
 fi
@@ -89,7 +107,7 @@ if [ "$BUILD_ZTM" = true ] || [ "$BUILD_PIPY" = true ] || [ "$BUILD_TUI" = true 
 fi
 
 # Build dependencies (pipy C++ runtime)
-if [ "$BUILD_ZTM" = true ] || [ "$BUILD_PIPY" = true ]; then
+if [ "$BUILD_PIPY" = true ]; then
   cd "$ZTM_DIR"
   build/deps.sh
 fi

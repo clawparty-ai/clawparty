@@ -79,6 +79,8 @@
       :refreshing="isRadarRefreshing"
       @toggle="radarPanelExpanded = !radarPanelExpanded"
       @refresh="handleRadarRefresh"
+      @createTarget="handleRadarCreate"
+      @createProbe="handleRadarCreate"
     />
     <div class="messages" ref="messagesContainer" @click="handleMessagesClick">
       <div class="date-divider">
@@ -522,6 +524,10 @@ const handleRadarRefresh = async () => {
   } finally {
     isRadarRefreshing.value = false
   }
+}
+
+const handleRadarCreate = (draft) => {
+  emit('update:modelValue', draft)
 }
 
 watch(showRadarPanel, (visible) => {
