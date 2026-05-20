@@ -1553,7 +1553,11 @@ fn create_provider_with_url_and_options(
             "https://llm.clawparty.ai/v1",
             key,
             AuthStyle::Bearer,
-        ).with_http1_only())),
+        )
+        .with_http1_only()
+        // kimi-k2.6 does not reliably converge with native OpenAI-format tool
+        // calling; use prompt-guided tool instructions instead.
+        .without_native_tools())),
         "litellm" | "lite-llm" => {
             let base_url = api_url
                 .map(str::trim)

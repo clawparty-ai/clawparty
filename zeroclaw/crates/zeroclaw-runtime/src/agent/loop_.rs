@@ -415,8 +415,8 @@ fn build_hardware_context(
 
 // Tool execution moved to `super::tool_execution`.
 pub use super::tool_execution::{
-    ToolExecutionOutcome, execute_tools_parallel, execute_tools_sequential,
-    should_execute_tools_in_parallel,
+    ToolExecutionOutcome, detect_empty_tool_call, execute_tools_parallel,
+    execute_tools_sequential, should_execute_tools_in_parallel,
 };
 
 /// Build assistant history entry in JSON format for native tool-call APIs.
@@ -444,19 +444,12 @@ fn build_native_assistant_history(
         serde_json::Value::String(text.trim().to_string())
     };
 
-    let mut obj = serde_json::json!({
+    serde_json::json!({
         "content": content,
         "tool_calls": calls_json,
-    });
-
-    if let Some(rc) = reasoning_content {
-        obj.as_object_mut().unwrap().insert(
-            "reasoning_content".to_string(),
-            serde_json::Value::String(rc.to_string()),
-        );
-    }
-
-    obj.to_string()
+        "reasoning_content": reasoning_content.unwrap_or_default(),
+    })
+    .to_string()
 }
 
 #[cfg(test)]
@@ -528,6 +521,9 @@ struct StreamedChatOutcome {
     response_text: String,
     tool_calls: Vec<ToolCall>,
     forwarded_live_deltas: bool,
+    /// Accumulated reasoning/thinking content from providers that stream it
+    /// separately (e.g. kimi-k2.6). Preserved for round-trip fidelity.
+    reasoning_content: Option<String>,
 }
 
 async fn consume_provider_streaming_response(
@@ -586,8 +582,13 @@ async fn consume_provider_streaming_response(
                 // do not affect the agent's tool dispatch loop.
             }
             StreamEvent::TextDelta(chunk) => {
-                if chunk.delta.is_empty() {
+                if chunk.delta.is_empty() && chunk.reasoning.is_none() {
                     continue;
+                }
+
+                if let Some(ref reasoning) = chunk.reasoning {
+                    let rc = outcome.reasoning_content.get_or_insert_with(String::new);
+                    rc.push_str(reasoning);
                 }
 
                 outcome.response_text.push_str(&chunk.delta);
@@ -841,6 +842,7 @@ pub async fn run_tool_call_loop(
         .collect();
     let mut consecutive_identical_outputs: usize = 0;
     let mut last_tool_output_hash: Option<u64> = None;
+    let mut consecutive_empty_blocks: usize = 0;
 
     let mut loop_detector = crate::agent::loop_detector::LoopDetector::new(
         crate::agent::loop_detector::LoopDetectorConfig {
@@ -1087,7 +1089,7 @@ pub async fn run_tool_call_loop(
                         text: Some(streamed.response_text),
                         tool_calls: streamed.tool_calls,
                         usage: None,
-                        reasoning_content: None,
+                        reasoning_content: streamed.reasoning_content,
                     })
                 }
                 Err(stream_err) => {
@@ -1229,6 +1231,24 @@ pub async fn run_tool_call_loop(
                         tool_call_id: Some(call.id.clone()),
                     })
                     .collect();
+
+                // Diagnostic: log native tool calls with empty name/arguments
+                // to help identify which providers/models produce empty calls.
+                for call in &calls {
+                    if call.name.trim().is_empty()
+                        || call.arguments.is_null()
+                        || call.arguments.as_object().is_some_and(|m| m.is_empty())
+                    {
+                        tracing::warn!(
+                            tool_name = %call.name,
+                            tool_arguments = %call.arguments,
+                            provider = %provider_name,
+                            model = %model,
+                            "native tool call with empty name or arguments"
+                        );
+                    }
+                }
+
                 let mut parsed_text = String::new();
 
                 if calls.is_empty() {
@@ -1526,6 +1546,85 @@ pub async fn run_tool_call_loop(
                 }
             }
 
+            // ── Empty tool call guard ──────────────────────────
+            if let Some(reason) = detect_empty_tool_call(&tool_name, &tool_args, Some(&tool_specs)) {
+                tracing::warn!(
+                    tool = %tool_name,
+                    args = %tool_args,
+                    provider = %provider_name,
+                    model = %model,
+                    iteration = iteration + 1,
+                    %reason,
+                    "empty tool call skipped"
+                );
+                runtime_trace::record_event(
+                    "tool_call_empty",
+                    Some(channel_name),
+                    Some(provider_name),
+                    Some(model),
+                    Some(&turn_id),
+                    Some(false),
+                    Some(reason.as_str()),
+                    serde_json::json!({
+                        "iteration": iteration + 1,
+                        "tool": tool_name,
+                        "arguments": scrub_credentials(&tool_args.to_string()),
+                        "reason": reason,
+                    }),
+                );
+                if let Some(ref tx) = on_delta {
+                    let _ = tx
+                        .send(DraftEvent::Progress(format!(
+                            "\u{26a0}\u{fe0f} {}: {}\n",
+                            tool_name, reason
+                        )))
+                        .await;
+                }
+                ordered_results[idx] = Some((
+                    tool_name.clone(),
+                    call.tool_call_id.clone(),
+                    ToolExecutionOutcome {
+                        output: format!("ERROR: {reason}"),
+                        success: false,
+                        error_reason: Some(reason.clone()),
+                        duration: Duration::ZERO,
+                    },
+                ));
+                consecutive_empty_blocks += 1;
+                // On the second consecutive empty call, inject a strong corrective
+                // hint into history so the LLM can recover without waiting for abort.
+                if consecutive_empty_blocks == 2 {
+                    history.push(ChatMessage::user(format!(
+                        "[SYSTEM] You have made {} consecutive tool calls with missing required \
+                         parameters. This is a critical error. DO NOT repeat the same empty call. \
+                         Read the error message carefully: it lists the exact parameters you must \
+                         provide. Your next response MUST either call the tool with ALL required \
+                         parameters filled in, or explain why you cannot proceed.",
+                        consecutive_empty_blocks
+                    )));
+                }
+                if consecutive_empty_blocks >= 3 {
+                    runtime_trace::record_event(
+                        "tool_loop_empty_call_abort",
+                        Some(channel_name),
+                        Some(provider_name),
+                        Some(model),
+                        Some(&turn_id),
+                        Some(false),
+                        Some("repeated empty tool calls detected"),
+                        serde_json::json!({
+                            "iteration": iteration + 1,
+                            "consecutive_empty_blocks": consecutive_empty_blocks,
+                        }),
+                    );
+                    anyhow::bail!(
+                        "Agent loop aborted: {} consecutive empty tool call blocks",
+                        consecutive_empty_blocks,
+                    );
+                }
+                continue;
+            }
+
             maybe_inject_channel_delivery_defaults(
                 &tool_name,
                 &mut tool_args,
@@ -1679,6 +1778,8 @@ pub async fn run_tool_call_loop(
                 tracing::debug!(tool = %tool_name, "Sending progress start to draft");
                 let _ = tx.send(DraftEvent::Progress(progress)).await;
             }
+
+            consecutive_empty_blocks = 0;
 
             executable_indices.push(idx);
             executable_calls.push(ParsedToolCall {

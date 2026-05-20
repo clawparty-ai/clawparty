@@ -75,6 +75,13 @@ jobs:
           cp tui/target/release/clawparty bin/clawparty
           codesign -s - --force --deep bin/clawparty 2>/dev/null || true
 
+      - name: Build Desktop App
+        run: |
+          set -e
+          cd desktop
+          ./build.sh
+          cd ..
+
       - name: Package release (tar.gz)
         run: |
           set -e
@@ -82,6 +89,7 @@ jobs:
           cp bin/ztm dist/ztm
           cp bin/zeroclaw dist/zeroclaw
           cp bin/clawparty dist/clawparty
+          cp -R desktop/build/ClawPartyDesktop.app dist/ClawPartyDesktop.app
           tag="${{ inputs.tag }}"
           tar -czf "clawparty-${tag}-macos-m1.tar.gz" -C dist .
 

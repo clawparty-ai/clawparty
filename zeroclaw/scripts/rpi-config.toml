@@ -20,7 +20,7 @@ embedding_routes = []
 
 [observability]
 backend = "none"
-runtime_trace_mode = "none"
+runtime_trace_mode = "file"
 runtime_trace_path = "state/runtime-trace.jsonl"
 runtime_trace_max_entries = 200
 

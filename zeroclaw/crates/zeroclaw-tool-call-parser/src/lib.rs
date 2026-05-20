@@ -1488,19 +1488,12 @@ pub fn build_native_assistant_history_from_parsed_calls(
         serde_json::Value::String(text.trim().to_string())
     };
 
-    let mut obj = serde_json::json!({
+    Some(serde_json::json!({
         "content": content,
         "tool_calls": calls_json,
-    });
-
-    if let Some(rc) = reasoning_content {
-        obj.as_object_mut().unwrap().insert(
-            "reasoning_content".to_string(),
-            serde_json::Value::String(rc.to_string()),
-        );
-    }
-
-    Some(obj.to_string())
+        "reasoning_content": reasoning_content.unwrap_or_default(),
+    })
+    .to_string())
 }
 
 #[cfg(test)]

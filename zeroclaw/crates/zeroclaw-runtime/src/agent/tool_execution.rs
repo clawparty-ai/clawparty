@@ -182,6 +182,55 @@ pub async fn execute_tools_parallel(
 
 // ── Sequential execution ─────────────────────────────────────────────────
 
+/// Returns a reason string if the tool call is effectively empty
+/// (empty name, null args, or empty arguments object).
+/// When `tool_specs` is provided and the tool has required parameters,
+/// the message lists the missing required parameters to help the LLM recover.
+/// Used to skip meaningless calls before execution and to collect
+/// diagnostics on why LLMs generate empty calls.
+pub fn detect_empty_tool_call(
+    name: &str,
+    args: &serde_json::Value,
+    tool_specs: Option<&[crate::tools::ToolSpec]>,
+) -> Option<String> {
+    if name.trim().is_empty() {
+        return Some("empty tool name".to_string());
+    }
+    let is_empty = match args {
+        serde_json::Value::Object(map) => map.is_empty(),
+        serde_json::Value::Null => true,
+        _ => false,
+    };
+    if !is_empty {
+        return None;
+    }
+    // Build a helpful message that lists the required parameters for this tool
+    // so the LLM knows exactly what to provide.
+    let required_params = tool_specs
+        .and_then(|specs| specs.iter().find(|s| s.name == name))
+        .and_then(|spec| {
+            spec.parameters
+                .get("required")
+                .and_then(|r| r.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+        })
+        .filter(|s| !s.is_empty());
+
+    let reason = match required_params {
+        Some(params) => format!(
+            "empty arguments — tool '{name}' requires these parameters: {params}. \
+             You MUST include all required parameters in your next call."
+        ),
+        None => format!("empty arguments object for tool '{name}'"),
+    };
+    Some(reason)
+}
+
 pub async fn execute_tools_sequential(
     tool_calls: &[ParsedToolCall],
     tools_registry: &[Box<dyn Tool>],

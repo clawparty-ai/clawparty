@@ -10,6 +10,7 @@ BUILD_ZTM=false
 BUILD_ZEROCLAW=false
 BUILD_TUI=false
 BUILD_PIPY=false
+BUILD_DESKTOP=false
 NO_ZTM=false
 NO_ZEROCLAW=false
 
@@ -29,6 +30,10 @@ for arg in "$@"; do
       ;;
     --no-zeroclaw)
       NO_ZEROCLAW=true
+      ;;
+    --desktop)
+      has_positional=true
+      BUILD_DESKTOP=true
       ;;
     ztm|all)
       has_positional=true
@@ -163,5 +168,22 @@ fi
 #   echo "Plain pipy built: $ZTM_DIR/bin/pipy"
 #   rm -rf "$ZTM_DIR/pipy/build-plain"
 # fi
+
+# Build Desktop app (macOS only)
+if [ "$BUILD_DESKTOP" = true ]; then
+  if [ "$(uname)" = "Darwin" ]; then
+    echo "Building Desktop app..."
+    cd "$ZTM_DIR/desktop"
+    if [ -f "build.sh" ]; then
+      chmod +x build.sh
+      ./build.sh
+      echo "Desktop app built: $ZTM_DIR/desktop/build/ClawPartyDesktop.app"
+    else
+      echo "Desktop build script not found, skipping..."
+    fi
+  else
+    echo "Desktop app can only be built on macOS, skipping..."
+  fi
+fi
 
 echo "=== Build complete ==="

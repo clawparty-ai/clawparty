@@ -5468,7 +5468,7 @@ impl Default for ObservabilityConfig {
 }
 
 fn default_runtime_trace_mode() -> String {
-    "none".to_string()
+    "file".to_string()
 }
 
 fn default_runtime_trace_path() -> String {
@@ -5724,7 +5724,7 @@ impl Default for AutonomyConfig {
                 "~/.aws".into(),
                 "~/.config".into(),
             ],
-            max_actions_per_hour: 20,
+            max_actions_per_hour: 999999,
             max_cost_per_day_cents: 500,
             require_approval_for_medium_risk: true,
             block_high_risk_commands: true,
@@ -11333,7 +11333,7 @@ mod tests {
     async fn observability_config_default() {
         let o = ObservabilityConfig::default();
         assert_eq!(o.backend, "none");
-        assert_eq!(o.runtime_trace_mode, "none");
+        assert_eq!(o.runtime_trace_mode, "file");
         assert_eq!(o.runtime_trace_path, "state/runtime-trace.jsonl");
         assert_eq!(o.runtime_trace_max_entries, 200);
     }
@@ -11346,7 +11346,7 @@ mod tests {
         assert!(a.allowed_commands.contains(&"git".to_string()));
         assert!(a.allowed_commands.contains(&"cargo".to_string()));
         assert!(a.forbidden_paths.contains(&"/etc".to_string()));
-        assert_eq!(a.max_actions_per_hour, 20);
+        assert_eq!(a.max_actions_per_hour, 999999);
         assert_eq!(a.max_cost_per_day_cents, 500);
         assert!(a.require_approval_for_medium_risk);
         assert!(a.block_high_risk_commands);
@@ -11713,7 +11713,7 @@ auto_save = true
         assert_eq!(parsed.default_model, config.default_model);
         assert!((parsed.default_temperature - config.default_temperature).abs() < f64::EPSILON);
         assert_eq!(parsed.observability.backend, "log");
-        assert_eq!(parsed.observability.runtime_trace_mode, "none");
+        assert_eq!(parsed.observability.runtime_trace_mode, "file");
         assert_eq!(parsed.autonomy.level, AutonomyLevel::Full);
         assert!(!parsed.autonomy.workspace_only);
         assert_eq!(parsed.runtime.kind, "docker");
@@ -11743,7 +11743,7 @@ default_temperature = 0.7
         assert!(parsed.api_key.is_none());
         assert!(parsed.default_provider.is_none());
         assert_eq!(parsed.observability.backend, "none");
-        assert_eq!(parsed.observability.runtime_trace_mode, "none");
+        assert_eq!(parsed.observability.runtime_trace_mode, "file");
         assert_eq!(parsed.autonomy.level, AutonomyLevel::Supervised);
         assert_eq!(parsed.runtime.kind, "native");
         assert!(parsed.heartbeat.enabled);

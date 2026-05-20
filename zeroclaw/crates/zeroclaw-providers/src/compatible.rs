@@ -525,6 +525,18 @@ impl OpenAiCompatibleProvider {
             .then(|| self.reasoning_effort.clone())
             .flatten()
     }
+
+    /// Some models (e.g. kimi-k2.6) only accept a fixed temperature of 1.
+    /// When such a model is used, force the temperature to 1.0 regardless
+    /// of the user-configured value so the request is not rejected.
+    fn effective_temperature(&self, model: &str, requested: f64) -> f64 {
+        let id = model.rsplit('/').next().unwrap_or(model);
+        if id == "kimi-k2.6" || id == "kimi-2.6" {
+            1.0
+        } else {
+            requested
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -1539,7 +1551,10 @@ impl OpenAiCompatibleProvider {
                     let reasoning_content = value
                         .get("reasoning_content")
                         .and_then(serde_json::Value::as_str)
-                        .map(ToString::to_string);
+                        .map(ToString::to_string)
+                        // Some backends (e.g. kimi-k2.6) require the field to be
+                        // present even when empty; default to "" when absent.
+                        .or(Some(String::new()));
 
                     return NativeMessage {
                         role: "assistant".to_string(),
@@ -1722,7 +1737,7 @@ impl Provider for OpenAiCompatibleProvider {
         let request = ApiChatRequest {
             model: model.to_string(),
             messages,
-            temperature,
+            temperature: self.effective_temperature(model, temperature),
             stream: Some(false),
             reasoning_effort: self.reasoning_effort_for_model(model),
             tool_stream: None,
@@ -1836,7 +1851,7 @@ impl Provider for OpenAiCompatibleProvider {
         let request = ApiChatRequest {
             model: model.to_string(),
             messages: api_messages,
-            temperature,
+            temperature: self.effective_temperature(model, temperature),
             stream: Some(false),
             reasoning_effort: self.reasoning_effort_for_model(model),
             tool_stream: None,
@@ -1938,7 +1953,7 @@ impl Provider for OpenAiCompatibleProvider {
         let request = ApiChatRequest {
             model: model.to_string(),
             messages: api_messages,
-            temperature,
+            temperature: self.effective_temperature(model, temperature),
             stream: Some(false),
             reasoning_effort: self.reasoning_effort_for_model(model),
             tool_stream: self.tool_stream_for_tools(!tools.is_empty()),
@@ -2039,7 +2054,7 @@ impl Provider for OpenAiCompatibleProvider {
         let native_request = NativeChatRequest {
             model: model.to_string(),
             messages: Self::convert_messages_for_native(&effective_messages, !merge),
-            temperature,
+            temperature: self.effective_temperature(model, temperature),
             stream: Some(false),
             reasoning_effort: self.reasoning_effort_for_model(model),
             tool_stream: self
@@ -2179,7 +2194,7 @@ impl Provider for OpenAiCompatibleProvider {
             serde_json::to_value(NativeChatRequest {
                 model: model.to_string(),
                 messages: Self::convert_messages_for_native(&effective_messages, !merge),
-                temperature,
+                temperature: self.effective_temperature(model, temperature),
                 reasoning_effort: self.reasoning_effort.clone(),
                 tool_stream: if options.enabled { Some(true) } else { None },
                 stream: Some(options.enabled),
@@ -2199,7 +2214,7 @@ impl Provider for OpenAiCompatibleProvider {
             serde_json::to_value(ApiChatRequest {
                 model: model.to_string(),
                 messages,
-                temperature,
+                temperature: self.effective_temperature(model, temperature),
                 reasoning_effort: self.reasoning_effort.clone(),
                 tool_stream: if options.enabled { Some(true) } else { None },
                 stream: Some(options.enabled),
@@ -2300,7 +2315,7 @@ impl Provider for OpenAiCompatibleProvider {
         let request = ApiChatRequest {
             model: model.to_string(),
             messages,
-            temperature,
+            temperature: self.effective_temperature(model, temperature),
             stream: Some(options.enabled),
             reasoning_effort: self.reasoning_effort_for_model(model),
             tool_stream: None,
@@ -2390,7 +2405,7 @@ impl Provider for OpenAiCompatibleProvider {
         let request = ApiChatRequest {
             model: model.to_string(),
             messages: api_messages,
-            temperature,
+            temperature: self.effective_temperature(model, temperature),
             stream: Some(options.enabled),
             reasoning_effort: self.reasoning_effort_for_model(model),
             tool_stream: None,

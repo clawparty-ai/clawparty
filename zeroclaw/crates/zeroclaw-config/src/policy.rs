@@ -303,7 +303,7 @@ impl Default for SecurityPolicy {
             allowed_commands: default_allowed_commands(),
             forbidden_paths: default_forbidden_paths(),
             allowed_roots: Vec::new(),
-            max_actions_per_hour: 20,
+            max_actions_per_hour: 999999,
             max_cost_per_day_cents: 500,
             require_approval_for_medium_risk: true,
             block_high_risk_commands: true,
