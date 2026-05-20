@@ -68,6 +68,127 @@ struct ChannelJson {
     location: String,
 }
 
+// ── Probe types (mirrors targets pattern) ───────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+struct ProbeChannelRaw {
+    #[serde(rename = "type")]
+    channel_type: String,
+    location: String,
+    description: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ProbeRaw {
+    id: Option<String>,
+    name: String,
+    description: Option<String>,
+    #[serde(rename = "module_ref")]
+    module_ref: Option<String>,
+    channel: Option<Vec<ProbeChannelRaw>>,
+    method: Option<String>,
+    keywords: Option<Vec<String>>,
+    schedule: Option<String>,
+    status: Option<String>,
+    #[serde(rename = "created_at")]
+    created_at: Option<String>,
+    #[serde(rename = "last_run")]
+    last_run: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ProbesYaml {
+    probes: Vec<ProbeRaw>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ProbeChannelJson {
+    #[serde(rename = "type")]
+    channel_type: String,
+    location: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ProbeJson {
+    id: Option<String>,
+    name: String,
+    description: Option<String>,
+    #[serde(rename = "module_ref")]
+    module_ref: Option<String>,
+    channels: Vec<ProbeChannelJson>,
+    #[serde(rename = "channelLabel")]
+    channel_label: String,
+    method: Option<String>,
+    keywords: Option<Vec<String>>,
+    schedule: Option<String>,
+    status: String,
+    #[serde(rename = "created_at")]
+    created_at: Option<String>,
+    #[serde(rename = "last_run")]
+    last_run: Option<String>,
+}
+
+fn parse_probes_md(content: &str) -> Vec<ProbeJson> {
+    if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
+        return Vec::new();
+    }
+
+    let after_first = content.find("---\n").map(|i| i + 4)
+        .or_else(|| content.find("---\r\n").map(|i| i + 5));
+    let start = match after_first {
+        Some(s) => s,
+        None => return Vec::new(),
+    };
+
+    let remaining = &content[start..];
+    let end = match remaining.find("\n---") {
+        Some(e) => e,
+        None => return Vec::new(),
+    };
+
+    let yaml_str = &remaining[..end];
+
+    let parsed: Result<ProbesYaml, _> = serde_yaml::from_str(yaml_str);
+    let probes_raw = match parsed {
+        Ok(t) => t.probes,
+        Err(e) => {
+            ts_eprint!("[Radar] Failed to parse probes YAML: {}", e);
+            return Vec::new();
+        }
+    };
+
+    probes_raw.into_iter().map(|p| {
+        let channels: Vec<ProbeChannelJson> = p.channel.map(|chs| {
+            chs.into_iter().map(|c| ProbeChannelJson {
+                channel_type: c.channel_type,
+                location: c.location,
+            }).collect()
+        }).unwrap_or_default();
+
+        let channel_label = channels.iter()
+            .map(|c| c.channel_type.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        ProbeJson {
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            module_ref: p.module_ref,
+            channels,
+            channel_label,
+            method: p.method,
+            keywords: p.keywords,
+            schedule: p.schedule,
+            status: normalize_status(&p.status),
+            created_at: p.created_at,
+            last_run: p.last_run,
+        }
+    }).collect()
+}
+
+// ── Target types ────────────────────────────────────────────────────────
+
 #[derive(Debug, serde::Serialize)]
 struct TargetJson {
     id: Option<String>,
@@ -312,6 +433,28 @@ pub async fn get_probes(data_dir: &str, agent_name: &str) -> Response<BoxBody<By
     }
 }
 
+/// GET /api/radar/{agent}/probes-json
+/// Returns parsed probes from YAML frontmatter as structured JSON.
+pub async fn get_probes_json(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
+    let workspace = match get_agent_workspace(data_dir, agent_name) {
+        Ok(w) => w,
+        Err(_) => return error_response(StatusCode::NOT_FOUND, "Agent not found"),
+    };
+
+    ensure_radar_dir(&workspace).await;
+
+    let path = workspace.join("radar").join("probes.md");
+    let content = match tokio::fs::read_to_string(&path).await {
+        Ok(c) => c,
+        Err(_) => {
+            return ok_response(&serde_json::json!({ "probes": Vec::<ProbeJson>::new() }));
+        }
+    };
+
+    let probes = parse_probes_md(&content);
+    ok_response(&serde_json::json!({ "probes": probes }))
+}
+
 #[derive(serde::Serialize)]
 struct LogEntry {
     name: String,
@@ -414,8 +557,11 @@ pub async fn route(
         "targets-json" if method == hyper::Method::GET => {
             Some(get_targets_json(data_dir, &agent).await)
         }
-        "probes" if method == hyper::Method::GET => {
+        "probes" if method == hyper::Method::GET && segments.len() == 2 => {
             Some(get_probes(data_dir, &agent).await)
+        }
+        "probes-json" if method == hyper::Method::GET => {
+            Some(get_probes_json(data_dir, &agent).await)
         }
         "logs" if method == hyper::Method::GET && segments.len() == 2 => {
             Some(list_logs(data_dir, &agent).await)

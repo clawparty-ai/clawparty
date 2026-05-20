@@ -655,7 +655,7 @@ pub struct DelegateAgentConfig {
     /// Allowlist of tool names available to the sub-agent in agentic mode.
     #[serde(default)]
     pub allowed_tools: Vec<String>,
-    /// Maximum tool-call iterations in agentic mode.
+    /// Maximum tool-call iterations in agentic mode. Default: `100`.
     #[serde(default = "default_max_tool_iterations")]
     pub max_iterations: usize,
     /// Optional timeout in seconds for non-agentic sub-agent provider calls.
@@ -797,7 +797,7 @@ fn default_max_depth() -> u32 {
 }
 
 fn default_max_tool_iterations() -> usize {
-    10
+    100
 }
 
 // ── Hardware Config (wizard-driven) ─────────────────────────────
@@ -1470,8 +1470,8 @@ pub struct AgentConfig {
     /// When true: bootstrap_max_chars=6000, rag_chunk_limit=2. Use for 13B or smaller models.
     #[serde(default)]
     pub compact_context: bool,
-    /// Maximum tool-call loop turns per user message. Default: `10`.
-    /// Setting to `0` falls back to the safe default of `10`.
+    /// Maximum tool-call loop turns per user message. Default: `100`.
+    /// Setting to `0` falls back to the safe default of `100`.
     #[serde(default = "default_agent_max_tool_iterations")]
     pub max_tool_iterations: usize,
     /// Maximum conversation history messages retained per session. Default: `50`.
@@ -1557,7 +1557,7 @@ fn default_keep_tool_context_turns() -> usize {
 }
 
 fn default_agent_max_tool_iterations() -> usize {
-    10
+    100
 }
 
 fn default_agent_max_history_messages() -> usize {
@@ -12064,7 +12064,7 @@ reasoning_effort = "turbo"
     async fn agent_config_defaults() {
         let cfg = AgentConfig::default();
         assert!(cfg.compact_context);
-        assert_eq!(cfg.max_tool_iterations, 10);
+        assert_eq!(cfg.max_tool_iterations, 100);
         assert_eq!(cfg.max_history_messages, 50);
         assert!(!cfg.parallel_tools);
         assert_eq!(cfg.tool_dispatcher, "auto");

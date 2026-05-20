@@ -68,7 +68,8 @@ const STREAM_TOOL_MARKER_WINDOW_CHARS: usize = 512;
 
 /// Default maximum agentic tool-use iterations per user message to prevent runaway loops.
 /// Used as a safe fallback when `max_tool_iterations` is unset or configured as zero.
-const DEFAULT_MAX_TOOL_ITERATIONS: usize = 10;
+/// Increased from 10 to 100 to support multi-step competitive intelligence collection.
+const DEFAULT_MAX_TOOL_ITERATIONS: usize = 100;
 
 // History management moved to `super::history`.
 pub use super::history::{

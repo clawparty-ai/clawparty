@@ -7,6 +7,9 @@ export const radarService = {
   getProbes(agentName) {
     return get(`/radar/${encodeURIComponent(agentName)}/probes`)
   },
+  getProbesJson(agentName) {
+    return get(`/radar/${encodeURIComponent(agentName)}/probes-json`)
+  },
   getTargetsMd(agentName) {
     return get(`/radar/${encodeURIComponent(agentName)}/targets-md`)
   },

@@ -240,9 +240,9 @@ async function loadTargets() {
 async function loadProbes() {
   if (!props.agentName) return
   try {
-    var res = await radarService.getProbes(props.agentName)
-    if (res.data) {
-      probes.value = parseListMd(res.data, 'probes')
+    var res = await radarService.getProbesJson(props.agentName)
+    if (res.data && res.data.probes) {
+      probes.value = res.data.probes
     }
   } catch (e) {
     console.error('[Radar] Failed to load probes:', e)

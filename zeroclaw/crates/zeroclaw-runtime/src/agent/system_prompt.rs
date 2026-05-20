@@ -34,11 +34,6 @@ fn load_openclaw_bootstrap_files(
     // MEMORY.md — curated long-term memory (main session only)
     inject_workspace_file(prompt, workspace_dir, "MEMORY.md", max_chars_per_file);
 
-    // TASKS.md — task list snapshot (only if present; refreshed by external system)
-    let tasks_path = workspace_dir.join("TASKS.md");
-    if tasks_path.exists() {
-        inject_workspace_file(prompt, workspace_dir, "TASKS.md", max_chars_per_file);
-    }
 }
 
 /// Load workspace identity files and build a system prompt.
@@ -143,7 +138,8 @@ pub fn build_system_prompt_with_mode_and_autonomy(
         "## CRITICAL: Tool Honesty\n\n\
          - NEVER fabricate, invent, or guess tool results. If a tool returns empty results, say \"No results found.\"\n\
          - If a tool call fails, report the error — never make up data to fill the gap.\n\
-         - When unsure whether a tool call succeeded, ask the user rather than guessing.\n\n",
+         - When unsure whether a tool call succeeded, ask the user rather than guessing.\n\
+         - When a tool returns empty results (no files found, no search results, no matching records), report it immediately and stop. Do NOT retry with different arguments, tools, or strategies. One attempt per query is enough — repeated empty results mean the target does not exist.\n\n",
     );
 
     // ── 1. Tooling ──────────────────────────────────────────────

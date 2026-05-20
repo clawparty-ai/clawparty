@@ -55,6 +55,7 @@
       @confirmChange="handleConfirmTaskChange"
       @refreshTimeoutChange="refreshTimeout = $event"
       @reuse="handleTaskReuse"
+      @retry="handleTaskRetry"
       @generatePrompt="handleGeneratePrompt"
       @createPipelineTask="handleCreatePipelineTask"
       @savePipeline="handleSavePipeline"
@@ -496,6 +497,7 @@ watch(showWebSharePanel, (visible) => {
 
 watch(showTaskPanel, (visible) => {
   if (visible) {
+    showRadarPanel.value = false
     showWebSharePanel.value = false
     showWikiPanel.value = false
   }
@@ -915,6 +917,11 @@ const handleConfirmTaskChange = async (change) => {
 
 const handleTaskReuse = (prompt) => {
   emit('update:modelValue', prompt)
+}
+
+const handleTaskRetry = (task) => {
+  const text = task.prompt || (task.title + (task.description ? ': ' + task.description : ''))
+  if (text) emit('send', text)
 }
 
 const handleGeneratePrompt = async (task) => {

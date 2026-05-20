@@ -77,7 +77,7 @@ runtime_trace_max_entries = 200
 | 键 | 默认值 | 用途 |
 |---|---|---|
 | `compact_context` | `true` | 为 true 时：bootstrap_max_chars=6000，rag_chunk_limit=2。适用于 13B 或更小的模型 |
-| `max_tool_iterations` | `10` | 跨 CLI、网关和渠道的每条用户消息的最大工具调用循环轮次 |
+| `max_tool_iterations` | `100` | 跨 CLI、网关和渠道的每条用户消息的最大工具调用循环轮次 |
 | `max_history_messages` | `50` | 每个会话保留的最大对话历史消息数 |
 | `parallel_tools` | `false` | 在单次迭代中启用并行工具执行 |
 | `tool_dispatcher` | `auto` | 工具调度策略 |
@@ -85,7 +85,7 @@ runtime_trace_max_entries = 200
 
 注意事项：
 
-- 设置 `max_tool_iterations = 0` 会回退到安全默认值 `10`。
+- 设置 `max_tool_iterations = 0` 会回退到安全默认值 `100`。
 - 如果渠道消息超过此值，运行时返回：`Agent exceeded maximum tool iterations (<value>)`。
 - 在 CLI、网关和渠道工具循环中，当待处理调用不需要审批门控时，多个独立工具调用默认会并发执行；结果顺序保持稳定。
 - `parallel_tools` 适用于 `Agent::turn()` API 表面。它不控制 CLI、网关或渠道处理程序使用的运行时循环。

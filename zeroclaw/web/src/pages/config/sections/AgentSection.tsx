@@ -26,10 +26,10 @@ export default function AgentSection({ config, onUpdate }: Props) {
       </FieldRow>
       <FieldRow label={t('config.field.max_tool_iterations')} description={t('config.field.max_tool_iterations.desc')}>
         <NumberInput
-          value={(agent.max_tool_iterations as number) ?? 10}
+          value={(agent.max_tool_iterations as number) ?? 100}
           onChange={(v) => onUpdate('agent.max_tool_iterations', v)}
           min={1}
-          max={100}
+          max={1000}
         />
       </FieldRow>
       <FieldRow label={t('config.field.max_history_messages')} description={t('config.field.max_history_messages.desc')}>

@@ -108,6 +108,12 @@
                 :disabled="task._generatingPrompt"
                 title="生成重用提示词"
               >{{ task._generatingPrompt ? '...' : '生成提示词' }}</button>
+              <button
+                v-if="!task._isPendingCreate"
+                class="retry-btn"
+                @click.stop="emit('retry', task)"
+                title="重试此任务"
+              >重试</button>
             </div>
             <div v-if="task._pendingChange" class="pending-reason">
               <span class="reason-text">{{ task._pendingChange.reason }}</span>
@@ -259,7 +265,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutChange', 'reuse', 'generatePrompt', 'createPipelineTask', 'togglePipelinePanel', 'updateKanbanConfig', 'generateChart', 'savePipeline'])
+const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutChange', 'reuse', 'retry', 'generatePrompt', 'createPipelineTask', 'togglePipelinePanel', 'updateKanbanConfig', 'generateChart', 'savePipeline'])
 
 const logBodyRef = ref(null)
 const refreshTimeout = ref(120)
@@ -1282,6 +1288,26 @@ const taskStats = computed(() => {
 
 .reuse-btn:hover {
   background: #4a9eff;
+  color: #fff;
+}
+
+/* Retry button */
+.retry-btn {
+  margin-left: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  border: 1px solid #22c55e;
+  background: transparent;
+  color: #22c55e;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.retry-btn:hover {
+  background: #22c55e;
   color: #fff;
 }
 
