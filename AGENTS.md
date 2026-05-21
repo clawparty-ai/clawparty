@@ -2,14 +2,67 @@
 
 Guidance for coding agents working in `/Users/caishu/github/clawparty`.
 
+> **Quick orientation:** Before diving into source code, read `docs/整体架构和代码逻辑.md` for the full system overview. This file focuses on day-to-day coding rules and commands.
+
 ## Scope
 
 ClawParty is a mixed codebase:
-- Runtime + CLI: Pipy JavaScript in `cli/`, `agent/`, `hub/`, `ca/`
-- Web UI: Vue 3 + Vite in `chat-gui/`
-- Native build plumbing: shell scripts in `build/`
+- **Main gateway + process manager**: Rust in `tui/` (clawparty binary)
+- **AI Agent runtime**: Rust workspace in `zeroclaw/` (zeroclaw binary)
+- **Distributed mesh networking**: Pipy JavaScript in `agent/`, `hub/`, `ca/`, `cli/`
+- **Web UI**: Vue 3 + Vite in `chat-gui/`
+- **macOS GUI**: Swift/SwiftUI in `desktop/`
+- **Native build plumbing**: shell scripts in `build/`
 
 When making changes, preserve existing patterns by area (Pipy-side style differs from Vue-side style).
+
+## Architecture at a Glance
+
+```
+User (Browser / Desktop App)
+        │
+        ▼
+┌─────────────────────────────┐
+│  tui/clawparty (Rust)       │  ← HTTPS entry, auth, static files,
+│  - port 443/80              │     proxy to ztm & zeroclaw agents
+│  - embedded chat-gui SPA    │
+└─────────────────────────────┘
+        │
+   ┌────┴──────────────┐
+   │                   │
+   ▼                   ▼
+zeroclaw (Rust)    ztm agent (PipyJS)
+- 0#Agent @ 42617  - 127.0.0.1:6789
+- per-agent port   - mesh / P2P / filesystem
+- AI chat/tools    - distributed chats
+```
+
+Key relationships:
+- `tui` is the **only process that listens on external ports**. All HTTP/HTTPS/WebSocket traffic flows through it.
+- `tui` manages lifecycles of `zeroclaw` agents and optionally the `ztm agent`.
+- `chat-gui` is compiled into `tui/gui/` and served as embedded static files.
+- `desktop` is a standalone macOS wrapper that spawns `tui -s` (service mode).
+
+## Module Quick Reference
+
+Use this to locate the right file without grepping the entire tree.
+
+| If you need to change... | Go to... | Key files |
+|---|---|---|
+| HTTPS routing, auth, proxy | `tui/src/` | `proxy.rs` (route table), `static_files.rs` |
+| Agent CRUD, start/stop, workspace init | `tui/src/` | `agents.rs`, `db.rs` |
+| ZeroClaw daemon management | `tui/src/` | `zeroclaw.rs`, `main.rs` (startup) |
+| ZTM agent process management | `tui/src/` | `agent.rs`, `main.rs` (startup) |
+| Task / Wiki / Kanban / Radar / WebShare API | `tui/src/` | `tasks.rs`, `wiki.rs`, `radar.rs`, `webshare.rs`, `proxy.rs` (route table) |
+| TUI terminal interface | `tui/src/` | `ui.rs`, `app.rs` |
+| Web chat UI | `chat-gui/src/` | `App.vue`, `components/*.vue`, `services/chatService.js` |
+| Web-to-backend API calls | `chat-gui/src/services/` | `chatService.js`, `wsService.js`, `request.js` |
+| Mesh chat / file sync / apps | `agent/` | `main.js` (routes), `apps/ztm/chat/main.js` |
+| ZTM Hub (centralized) | `hub/` | `main.js` |
+| ZTM CLI commands | `cli/` | `main.js` |
+| Desktop macOS app | `desktop/` | `ProcessManager.swift`, `MainPanelView.swift` |
+| AI Agent runtime internals | `zeroclaw/crates/` | `zeroclaw-runtime/`, `zeroclaw-gateway/`, `zeroclaw-channels/`, `zeroclaw-tools/` |
+| Build scripts | `build/` | `*.sh` |
 
 ## Commands: Build, Lint, Test
 
@@ -134,6 +187,17 @@ cd chat-gui && npm run build && echo "Build successful"
 - Build scripts: `build/*.sh`
 - Version metadata: `version.env`, `*/version.json`
 
+## Agent Creation
+
+When creating an agent, create it under the `~/.clawparty/agents` directory.
+
+## Agent Workflow Expectations
+
+- Read nearby code before editing; mirror local patterns.
+- Make focused changes; avoid unrelated refactors.
+- Do not invent commands/scripts that do not exist.
+- When no tests exist, state that clearly and run the most relevant build/check command instead.
+
 ## Code Style and Conventions
 
 ### Language and modules
@@ -207,13 +271,6 @@ cd chat-gui && npm run build && echo "Build successful"
 ### Comments
 - Keep comments minimal.
 - Add comments only for non-obvious behavior or protocol constraints.
-
-## Agent Workflow Expectations
-
-- Read nearby code before editing; mirror local patterns.
-- Make focused changes; avoid unrelated refactors.
-- Do not invent commands/scripts that do not exist.
-- When no tests exist, state that clearly and run the most relevant build/check command instead.
 
 ## Cursor/Copilot Rules Check
 

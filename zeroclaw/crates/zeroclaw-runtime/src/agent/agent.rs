@@ -23,6 +23,29 @@ use zeroclaw_providers::{self, ChatMessage, ChatRequest, ConversationMessage, Pr
 // Re-export TurnEvent from zeroclaw-types for backwards compatibility.
 pub use zeroclaw_api::agent::TurnEvent;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemContextType {
+    Full,
+    Simple,
+}
+
+impl Default for SystemContextType {
+    fn default() -> Self {
+        SystemContextType::Simple
+    }
+}
+
+impl std::str::FromStr for SystemContextType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "full" => Ok(SystemContextType::Full),
+            "simple" => Ok(SystemContextType::Simple),
+            _ => Ok(SystemContextType::Simple),
+        }
+    }
+}
+
 pub struct Agent {
     provider: Box<dyn Provider>,
     tools: Vec<Box<dyn Tool>>,
@@ -61,6 +84,12 @@ pub struct Agent {
     /// Hook runner for tool-call auditing and lifecycle side effects.
     /// See issue #5462.
     hook_runner: Option<Arc<crate::hooks::HookRunner>>,
+    /// Context type for system prompt (full or simple).
+    /// Set per-message via `set_context_type()` before calling `turn()`/`turn_streamed()`.
+    context_type: SystemContextType,
+    /// Per-message history limit override.
+    /// When set, overrides `config.max_history_messages` for the next turn.
+    history_limit: Option<usize>,
 }
 
 pub struct AgentBuilder {
@@ -332,6 +361,8 @@ impl AgentBuilder {
                 .unwrap_or(crate::security::AutonomyLevel::Supervised),
             activated_tools: self.activated_tools,
             hook_runner: self.hook_runner,
+            context_type: SystemContextType::default(),
+            history_limit: None,
         })
     }
 }
@@ -359,9 +390,10 @@ impl Agent {
     /// non-system messages from the seed. System messages in the seed are skipped
     /// to avoid duplicating the system prompt.
     pub fn seed_history(&mut self, messages: &[ChatMessage]) {
-        if self.history.is_empty()
-            && let Ok(sys) = self.build_system_prompt()
-        {
+        if self.history.is_empty() {
+            let sys = self
+                .build_system_prompt(self.context_type)
+                .unwrap_or_default();
             self.history
                 .push(ConversationMessage::Chat(ChatMessage::system(sys)));
         }
@@ -583,7 +615,7 @@ impl Agent {
     }
 
     fn trim_history(&mut self) {
-        let max = self.config.max_history_messages;
+        let max = self.history_limit.unwrap_or(self.config.max_history_messages);
         if self.history.len() <= max {
             return;
         }
@@ -626,7 +658,7 @@ impl Agent {
         self.history.extend(other_messages);
     }
 
-    fn build_system_prompt(&self) -> Result<String> {
+    fn build_system_prompt(&self, context_type: SystemContextType) -> Result<String> {
         let instructions = self.tool_dispatcher.prompt_instructions(&self.tools);
         let ctx = PromptContext {
             workspace_dir: &self.workspace_dir,
@@ -640,7 +672,28 @@ impl Agent {
             security_summary: self.security_summary.clone(),
             autonomy_level: self.autonomy_level,
         };
-        self.prompt_builder.build(&ctx)
+        match context_type {
+            SystemContextType::Full => self.prompt_builder.build(&ctx),
+            SystemContextType::Simple => SystemPromptBuilder::with_simple().build(&ctx),
+        }
+    }
+
+    fn apply_system_prompt(&mut self, context_type: SystemContextType) {
+        let Ok(new_prompt) = self.build_system_prompt(context_type) else {
+            return;
+        };
+        if self.history.is_empty() {
+            self.history
+                .push(ConversationMessage::Chat(ChatMessage::system(
+                    new_prompt,
+                )));
+        } else if let Some(first) = self.history.first_mut() {
+            if let ConversationMessage::Chat(msg) = first {
+                if msg.role == "system" {
+                    msg.content = new_prompt;
+                }
+            }
+        }
     }
 
     async fn execute_tool_call(&self, call: &ParsedToolCall) -> ToolExecutionResult {
@@ -811,14 +864,29 @@ impl Agent {
         self.model_name.clone()
     }
 
+    pub fn set_context_type(&mut self, context_type: SystemContextType) {
+        self.context_type = context_type;
+    }
+
+    pub fn set_history_limit(&mut self, limit: Option<usize>) {
+        self.history_limit = limit;
+    }
+
     pub async fn turn(&mut self, user_message: &str) -> Result<String> {
-        if self.history.is_empty() {
-            let system_prompt = self.build_system_prompt()?;
-            self.history
-                .push(ConversationMessage::Chat(ChatMessage::system(
-                    system_prompt,
-                )));
-        }
+        self.apply_system_prompt(self.context_type);
+
+        tracing::info!(
+            context_type = %format!("{:?}", self.context_type),
+            prompt_size = self
+                .history
+                .first()
+                .and_then(|m| match m {
+                    ConversationMessage::Chat(c) if c.role == "system" => Some(c.content.len()),
+                    _ => None,
+                })
+                .unwrap_or(0),
+            "LLM call with system prompt type"
+        );
 
         let context = self
             .memory_loader
@@ -854,6 +922,9 @@ impl Agent {
         } else {
             format!("[CURRENT DATE & TIME: {date_str}]\n\n{context}\n\n{user_message}")
         };
+
+        // Apply per-message history limit before adding the new user message.
+        self.trim_history();
 
         self.history
             .push(ConversationMessage::Chat(ChatMessage::user(enriched)));
@@ -1001,13 +1072,20 @@ impl Agent {
         event_tx: tokio::sync::mpsc::Sender<TurnEvent>,
     ) -> Result<String> {
         // ── Preamble (identical to turn) ───────────────────────────────
-        if self.history.is_empty() {
-            let system_prompt = self.build_system_prompt()?;
-            self.history
-                .push(ConversationMessage::Chat(ChatMessage::system(
-                    system_prompt,
-                )));
-        }
+        self.apply_system_prompt(self.context_type);
+
+        tracing::info!(
+            context_type = %format!("{:?}", self.context_type),
+            prompt_size = self
+                .history
+                .first()
+                .and_then(|m| match m {
+                    ConversationMessage::Chat(c) if c.role == "system" => Some(c.content.len()),
+                    _ => None,
+                })
+                .unwrap_or(0),
+            "LLM call with system prompt type"
+        );
 
         let context = self
             .memory_loader
@@ -1037,6 +1115,9 @@ impl Agent {
         } else {
             format!("{context}[{now}] {user_message}")
         };
+
+        // Apply per-message history limit before adding the new user message.
+        self.trim_history();
 
         self.history
             .push(ConversationMessage::Chat(ChatMessage::user(enriched)));

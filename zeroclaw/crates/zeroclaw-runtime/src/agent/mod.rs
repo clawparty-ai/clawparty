@@ -22,6 +22,6 @@ pub mod tool_execution;
 mod tests;
 
 #[allow(unused_imports)]
-pub use agent::{Agent, AgentBuilder, TurnEvent};
+pub use agent::{Agent, AgentBuilder, SystemContextType, TurnEvent};
 #[allow(unused_imports)]
 pub use loop_::{process_message, run};

@@ -684,6 +684,10 @@ pub async fn run_gateway(
 
     // ── Session persistence for WS chat ─────────────────────
     let session_backend: Option<Arc<dyn SessionBackend>> = if config.gateway.session_persistence {
+        tracing::info!(
+            workspace_dir = %config.workspace_dir.display(),
+            "Initializing gateway session persistence"
+        );
         match SqliteSessionBackend::new(&config.workspace_dir) {
             Ok(b) => {
                 tracing::info!("Gateway session persistence enabled (SQLite)");
@@ -701,6 +705,7 @@ pub async fn run_gateway(
             }
         }
     } else {
+        tracing::warn!("Session persistence is disabled in config (gateway.session_persistence = false)");
         None
     };
 

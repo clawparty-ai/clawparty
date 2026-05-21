@@ -1335,6 +1335,12 @@ pub async fn handle_api_session_messages(
 
     let session_key = format!("gw_{id}");
     let msgs = backend.load(&session_key);
+    let msg_count = msgs.len();
+    tracing::info!(
+        session_key = %session_key,
+        message_count = msg_count,
+        "API query session messages"
+    );
     let messages: Vec<serde_json::Value> = msgs
         .into_iter()
         .map(|m| {

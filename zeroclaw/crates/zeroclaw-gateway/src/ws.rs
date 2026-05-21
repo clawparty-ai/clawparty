@@ -5,7 +5,12 @@
 //! Protocol:
 //! ```text
 //! Server -> Client: {"type":"session_start","session_id":"...","name":"...","resumed":true,"message_count":42}
-//! Client -> Server: {"type":"message","content":"Hello"}
+//! Client -> Server: {"type":"message","content":"Hello","context_type":"simple","history_limit":10}
+//!   context_type: "full" | "simple" (optional, defaults to "simple")
+//!     - "full":  Full system prompt with identity files, skills, safety, etc.
+//!     - "simple": Minimal prompt with only DateTime, ToolHonesty, and Tools sections
+//!   history_limit: 0 | 10 | 20 | 50 (optional, defaults to config.max_history_messages)
+//!     - Limits the number of historical messages sent to the LLM for this turn.
 //! Server -> Client: {"type":"chunk","content":"Hi! "}
 //! Server -> Client: {"type":"tool_call","name":"shell","args":{...}}
 //! Server -> Client: {"type":"tool_result","name":"shell","output":"..."}
@@ -29,6 +34,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tracing::debug;
+use zeroclaw_runtime::agent::SystemContextType;
 
 /// Optional connection parameters sent as the first WebSocket message.
 ///
@@ -160,6 +166,11 @@ async fn handle_socket(
     // Resolve session ID: use provided or generate a new UUID
     let session_id = session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let session_key = format!("{GW_SESSION_PREFIX}{session_id}");
+    tracing::info!(
+        session_id = %session_id,
+        session_key = %session_key,
+        "WebSocket connection established"
+    );
 
     // Build a persistent Agent for this connection so history is maintained across turns.
     let config = state.config.lock().clone();
@@ -191,6 +202,7 @@ async fn handle_socket(
     let mut message_count: usize = 0;
     let mut effective_name: Option<String> = None;
     if let Some(ref backend) = state.session_backend {
+        tracing::info!(session_key = %session_key, "Session persistence enabled, loading history");
         let mut messages = backend.load(&session_key);
         // Keep only the most recent 20 messages to avoid context overflow
         if messages.len() > 20 {
@@ -201,6 +213,12 @@ async fn handle_socket(
             agent.seed_history(&messages);
             resumed = true;
         }
+        tracing::info!(
+            session_key = %session_key,
+            loaded_messages = message_count,
+            resumed = resumed,
+            "Session history loaded"
+        );
         // Set session name if provided (non-empty) on connect
         if let Some(ref name) = session_name
             && !name.is_empty()
@@ -212,6 +230,8 @@ async fn handle_socket(
         if effective_name.is_none() {
             effective_name = backend.get_session_name(&session_key).unwrap_or(None);
         }
+    } else {
+        tracing::warn!(session_key = %session_key, "Session persistence is disabled; no history will be saved");
     }
 
     // Send session_start message to client
@@ -279,7 +299,18 @@ async fn handle_socket(
                     // Persist user message
                     if let Some(ref backend) = state.session_backend {
                         let user_msg = zeroclaw_providers::ChatMessage::user(&content);
-                        let _ = backend.append(&session_key, &user_msg);
+                        tracing::info!(
+                            session_key = %session_key,
+                            content_len = content.len(),
+                            "Persisting first user message"
+                        );
+                        if let Err(e) = backend.append(&session_key, &user_msg) {
+                            tracing::error!(
+                                session_key = %session_key,
+                                error = %e,
+                                "Failed to persist first user message"
+                            );
+                        }
                     }
                     process_chat_message(&state, &mut agent, &mut sender, &content, &session_key)
                         .await;
@@ -356,6 +387,16 @@ async fn handle_socket(
                     continue;
                 }
 
+                let context_type_str =
+                    parsed["context_type"].as_str().unwrap_or("simple");
+                let context_type: SystemContextType = context_type_str
+                    .parse()
+                    .unwrap_or(SystemContextType::Simple);
+                agent.set_context_type(context_type);
+
+                let history_limit = parsed["history_limit"].as_u64().map(|v| v as usize);
+                agent.set_history_limit(history_limit);
+
                 // Acquire session lock to serialize concurrent turns
                 let _session_guard = match state.session_queue.acquire(&session_key).await {
                     Ok(guard) => guard,
@@ -373,7 +414,18 @@ async fn handle_socket(
                 // Persist user message
                 if let Some(ref backend) = state.session_backend {
                     let user_msg = zeroclaw_providers::ChatMessage::user(&content);
-                    let _ = backend.append(&session_key, &user_msg);
+                    tracing::info!(
+                        session_key = %session_key,
+                        content_len = content.len(),
+                        "Persisting user message"
+                    );
+                    if let Err(e) = backend.append(&session_key, &user_msg) {
+                        tracing::error!(
+                            session_key = %session_key,
+                            error = %e,
+                            "Failed to persist user message"
+                        );
+                    }
                 }
 
                 process_chat_message(&state, &mut agent, &mut sender, &content, &session_key).await;
@@ -482,7 +534,18 @@ async fn process_chat_message(
             // Persist assistant response
             if let Some(ref backend) = state.session_backend {
                 let assistant_msg = zeroclaw_providers::ChatMessage::assistant(&response);
-                let _ = backend.append(session_key, &assistant_msg);
+                tracing::info!(
+                    session_key = %session_key,
+                    response_len = response.len(),
+                    "Persisting assistant response"
+                );
+                if let Err(e) = backend.append(session_key, &assistant_msg) {
+                    tracing::error!(
+                        session_key = %session_key,
+                        error = %e,
+                        "Failed to persist assistant response"
+                    );
+                }
             }
 
             // Fire-and-forget memory consolidation so facts from WS sessions

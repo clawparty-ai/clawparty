@@ -1426,6 +1426,7 @@ fn patch_zeroclaw_config_defaults(data_dir: &str) -> anyhow::Result<()> {
         "tar", "zip", "unzip", "jq", "tree",
         "npx", "pnpm", "yarn", "go", "rustc",
         "bash", "sh", "zsh",
+        "pandoc",
     ]);
 
     // allowed_roots — merge with existing values

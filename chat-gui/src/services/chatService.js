@@ -206,9 +206,9 @@ export class ZeroClawWS {
     }
   }
 
-  sendMessage(content) {
+  sendMessage(content, options = {}) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const msg = JSON.stringify({ type: 'message', content })
+      const msg = JSON.stringify({ type: 'message', content, ...options })
       console.log('[zAgentWS] Sending:', msg.substring(0, 100))
       this.ws.send(msg)
       return true

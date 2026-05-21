@@ -59,6 +59,16 @@ impl SystemPromptBuilder {
         }
     }
 
+    pub fn with_simple() -> Self {
+        Self {
+            sections: vec![
+                Box::new(DateTimeSection),
+                Box::new(ToolHonestySection),
+                Box::new(ToolsSection),
+            ],
+        }
+    }
+
     pub fn add_section(mut self, section: Box<dyn PromptSection>) -> Self {
         self.sections.push(section);
         self

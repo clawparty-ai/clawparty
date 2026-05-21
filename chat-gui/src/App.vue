@@ -194,6 +194,7 @@
       @leaveGroup="handleLeaveGroup"
       @back="activeOpenclawAgent ? (activeOpenclawAgent = null) : (activeZeroClawSession = null)"
     />
+    <!-- Toggle moved to MessageInput toolbar -->
     <div
       v-if="!isMobile && activeChat === null && !activeGroupId && !activeOpenclawAgent && !activeZeroClawSession && currentActiveChatId === null"
       class="empty-state"
@@ -256,6 +257,18 @@ const activeChat = ref(null)
 const activeOpenclawAgent = ref(null)  // 当前活动的 openclaw agent
 const newMessage = ref('')
 const sending = ref(false)
+const systemContextType = ref('simple')
+const HISTORY_MESSAGE_LIMIT_KEY = 'historyMessageLimit'
+const historyMessageLimit = ref(
+  typeof localStorage !== 'undefined'
+    ? (parseInt(localStorage.getItem(HISTORY_MESSAGE_LIMIT_KEY), 10) || 10)
+    : 10
+)
+watch(historyMessageLimit, (val) => {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(HISTORY_MESSAGE_LIMIT_KEY, String(val))
+  }
+})
 const showTokenDialog = ref(false)
 const tokenInput = ref('')
 const tokenChecking = ref(false)
@@ -1661,7 +1674,7 @@ const handleZAgentSend = (agentName, text) => {
   newMessage.value = ''
   
   if (cached.zeroclawWS && cached.zeroclawWS.isConnected()) {
-    cached.zeroclawWS.sendMessage(text)
+    cached.zeroclawWS.sendMessage(text, { context_type: systemContextType.value, history_limit: historyMessageLimit.value })
   } else {
     cached.messages.push({
       text: 'WebSocket not connected. Please try again.',
@@ -2117,7 +2130,7 @@ const sendMessage = async () => {
     
     // Send via WebSocket
     if (zeroclawWS && zeroclawWS.isConnected()) {
-      zeroclawWS.sendMessage(text)
+      zeroclawWS.sendMessage(text, { context_type: systemContextType.value, history_limit: historyMessageLimit.value })
     } else {
       // WebSocket not connected, show error
       const typingIdx = session.messages.findIndex(m => m.isTyping)
@@ -3020,6 +3033,8 @@ provide('deleteAgent', deleteAgent)
 provide('createSession', createSession)
 provide('fetchZeroClawSessions', fetchZeroClawSessions)
 provide('localOpenclawAvailable', localOpenclawAvailable)
+provide('systemContextType', systemContextType)
+provide('historyMessageLimit', historyMessageLimit)
 
 // --- beforeunload: cleanly close WebSocket connections to prevent zeroclaw hang on refresh ---
 function handleBeforeUnload() {
@@ -3380,4 +3395,6 @@ const submitToken = async () => {
     color: rgba(255, 255, 255, 0.35);
   }
 }
+
+
 </style>

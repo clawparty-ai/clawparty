@@ -98,6 +98,19 @@
             @click="$emit('update:peerMode', 'half')"
           >H</button>
         </div>
+        <!-- System Context Toggle (only for ZeroClaw / zAgent chats) -->
+        <div v-if="agentName || chatName?.startsWith('0#')" class="context-toggle-bar">
+          <label class="context-toggle-switch" title="切换系统上下文模式">
+            <input type="checkbox" v-model="systemContextType" true-value="full" false-value="simple" />
+            <span class="context-toggle-slider"></span>
+          </label>
+          <span class="context-toggle-label">{{ systemContextType === 'full' ? '完整上下文' : '精简上下文' }}</span>
+          <span class="context-toggle-sep"></span>
+          <span class="history-limit-label">历史消息:</span>
+          <select v-model="historyMessageLimit" class="history-limit-select" title="选择加载历史消息数量">
+            <option v-for="opt in historyLimitOptions" :key="opt" :value="opt">{{ opt }}</option>
+          </select>
+        </div>
         <button 
           class="toolbar-btn send-btn" 
           @click="handleSendBtnClick" 
@@ -167,6 +180,13 @@
 
 <script setup>
 import { ref, computed, inject } from 'vue'
+
+// Toggle for system context type (full / simple)
+const systemContextType = inject('systemContextType', ref('simple'))
+
+// History message limit selector (0/10/20/50)
+const historyMessageLimit = inject('historyMessageLimit', ref(10))
+const historyLimitOptions = [0, 10, 20, 50]
 
 
 const props = defineProps({
@@ -887,5 +907,98 @@ function handleSend() {
 .mention-item.active {
   background: #e3f2fd;
   color: #1565c0;
+}
+
+/* System Context Toggle */
+.context-toggle-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  background: #f3f6fc;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  margin-right: 8px;
+  user-select: none;
+}
+
+.context-toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.context-toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.context-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #c5c9d0;
+  border-radius: 18px;
+  transition: background-color 0.2s;
+}
+
+.context-toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 12px;
+  width: 12px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.context-toggle-switch input:checked + .context-toggle-slider {
+  background-color: #4a90d9;
+}
+
+.context-toggle-switch input:checked + .context-toggle-slider::before {
+  transform: translateX(14px);
+}
+
+.context-toggle-label {
+  font-size: 11px;
+  color: #666;
+  white-space: nowrap;
+}
+
+.context-toggle-sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(0, 0, 0, 0.12);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.history-limit-label {
+  font-size: 11px;
+  color: #666;
+  white-space: nowrap;
+}
+
+.history-limit-select {
+  font-size: 11px;
+  color: #333;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  padding: 2px 4px;
+  cursor: pointer;
+  outline: none;
+  min-width: 42px;
+}
+
+.history-limit-select:focus {
+  border-color: #4a90d9;
 }
 </style>

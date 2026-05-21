@@ -191,7 +191,10 @@ impl SessionBackend for SqliteSessionBackend {
             .prepare("SELECT role, content, created_at FROM (SELECT role, content, created_at, id FROM sessions WHERE session_key = ?1 ORDER BY id DESC LIMIT 50) sub ORDER BY id ASC")
         {
             Ok(s) => s,
-            Err(_) => return Vec::new(),
+            Err(e) => {
+                tracing::error!(session_key = %session_key, error = %e, "Failed to prepare session load statement");
+                return Vec::new();
+            }
         };
 
         let rows = match stmt.query_map(params![session_key], |row| {
@@ -202,22 +205,46 @@ impl SessionBackend for SqliteSessionBackend {
             })
         }) {
             Ok(r) => r,
-            Err(_) => return Vec::new(),
+            Err(e) => {
+                tracing::error!(session_key = %session_key, error = %e, "Failed to query session messages");
+                return Vec::new();
+            }
         };
 
-        rows.filter_map(|r| r.ok()).collect()
+        let messages: Vec<ChatMessage> = rows.filter_map(|r| r.ok()).collect();
+        tracing::debug!(
+            session_key = %session_key,
+            count = messages.len(),
+            "SQLite session load"
+        );
+        messages
     }
 
     fn append(&self, session_key: &str, message: &ChatMessage) -> std::io::Result<()> {
         let conn = self.conn.lock();
         let now = Utc::now().to_rfc3339();
 
+        tracing::debug!(
+            session_key = %session_key,
+            role = %message.role,
+            content_len = message.content.len(),
+            "SQLite session append"
+        );
+
         conn.execute(
             "INSERT INTO sessions (session_key, role, content, created_at)
              VALUES (?1, ?2, ?3, ?4)",
             params![session_key, message.role, message.content, now],
         )
-        .map_err(std::io::Error::other)?;
+        .map_err(|e| {
+            tracing::error!(
+                session_key = %session_key,
+                role = %message.role,
+                error = %e,
+                "SQLite INSERT sessions failed"
+            );
+            std::io::Error::other(e)
+        })?;
 
         // Upsert metadata
         conn.execute(
@@ -228,8 +255,16 @@ impl SessionBackend for SqliteSessionBackend {
                 message_count = message_count + 1",
             params![session_key, now, now],
         )
-        .map_err(std::io::Error::other)?;
+        .map_err(|e| {
+            tracing::error!(
+                session_key = %session_key,
+                error = %e,
+                "SQLite UPSERT session_metadata failed"
+            );
+            std::io::Error::other(e)
+        })?;
 
+        tracing::debug!(session_key = %session_key, role = %message.role, "SQLite session append succeeded");
         Ok(())
     }
 

@@ -209,13 +209,26 @@ async fn proxy_http(req: Request<Incoming>) -> anyhow::Result<Response<BoxBody>>
     }
 }
 
-/// Handle a WebSocket upgrade by proxying directly to zeroclaw:42617.
+/// Handle a WebSocket upgrade by proxying to the correct zeroclaw instance.
+/// Routes to the agent-specific port when an `agent` query param is present,
+/// otherwise falls back to the 0#Agent daemon on port 42617.
 async fn proxy_websocket(
     mut req: Request<Incoming>,
 ) -> anyhow::Result<Response<BoxBody>> {
-    // WebSocket always goes directly to zeroclaw:42617 (bypass ztm agent)
     let path_and_query = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/");
-    let ws_url = format!("ws://127.0.0.1:42617{}", path_and_query);
+
+    // Resolve target port from ?agent= query parameter
+    let target_port = DATA_DIR.get().and_then(|data_dir| {
+        let query = req.uri().query().unwrap_or("");
+        for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
+            if key == "agent" {
+                return get_agent_port_clawparty(data_dir, &value);
+            }
+        }
+        None
+    }).unwrap_or(42617u16);
+
+    let ws_url = format!("ws://127.0.0.1:{target_port}{path_and_query}");
     log::debug!("[Proxy][WS] Upgrade request: {} -> {}", path_and_query, ws_url);
 
     // Collect upgrade future from the request before building response

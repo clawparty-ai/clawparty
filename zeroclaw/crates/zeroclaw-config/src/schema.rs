@@ -5703,6 +5703,7 @@ impl Default for AutonomyConfig {
                 "pip".into(),
                 "node".into(),
                 "opencode".into(),
+                "pandoc".into(),
             ],
             forbidden_paths: vec![
                 "/etc".into(),
