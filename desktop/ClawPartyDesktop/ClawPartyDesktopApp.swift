@@ -17,12 +17,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var llmConfigWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(.regular)
         statusBarController = StatusBarController(appDelegate: self)
         showMainWindow()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        TerminalManager.shared.terminateAll()
         ProcessManager.shared.stopClawParty()
     }
 

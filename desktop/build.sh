@@ -17,35 +17,22 @@ mkdir -p "$BUILD_DIR"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
-# 复制 Info.plist
+# 复制 Info.plist 和图标
 cp ClawPartyDesktop/Info.plist "$APP_BUNDLE/Contents/"
+cp ClawPartyDesktop/ClawPartyDesktop.icns "$APP_BUNDLE/Contents/Resources/"
 
 echo ""
-echo "正在编译 Swift 应用..."
+echo "正在使用 Swift Package Manager 编译..."
 
-# 编译 Swift 源文件
-swiftc \
-    -o "$BUILD_DIR/$APP_NAME" \
-    -framework Cocoa \
-    -framework Foundation \
-    -framework UserNotifications \
-    -framework SwiftUI \
-    -framework Combine \
-    -target arm64-apple-macosx13.0 \
-    ClawPartyDesktop/ClawPartyDesktopApp.swift \
-    ClawPartyDesktop/StatusBarController.swift \
-    ClawPartyDesktop/ProcessManager.swift \
-    ClawPartyDesktop/ConfigManager.swift \
-    ClawPartyDesktop/LLMConfigView.swift \
-    ClawPartyDesktop/ContentView.swift \
-    ClawPartyDesktop/MainPanelView.swift
+# SPM 构建
+swift build -c release
 
 echo ""
 echo "编译完成!"
 echo ""
 
 # 复制二进制到 .app
-mv "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
+cp ".build/release/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
 
 # 检查签名
 if command -v codesign &> /dev/null; then

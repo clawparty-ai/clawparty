@@ -4,6 +4,7 @@ enum RightPanelMode {
     case log
     case editor
     case llmConfig
+    case terminal(AgentInfo)
 }
 
 struct MainPanelView: View {
@@ -58,6 +59,14 @@ struct MainPanelView: View {
 
             // 控制按钮
             HStack(spacing: 12) {
+                Button {
+                    rightPanelMode = .log
+                } label: {
+                    Label("查看日志", systemImage: "doc.text")
+                        .frame(width: 90)
+                }
+                .buttonStyle(BorderedButtonStyle())
+
                 Button {
                     rightPanelMode = .llmConfig
                 } label: {
@@ -158,6 +167,7 @@ struct MainPanelView: View {
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 selectedAgent = agent
+                                rightPanelMode = .terminal(agent)
                             }
                         }
                         .listStyle(PlainListStyle())
@@ -177,7 +187,10 @@ struct MainPanelView: View {
                             agent: editingAgent,
                             content: $tomlContent,
                             onSave: saveCurrentConfig,
-                            onCancel: cancelEditing
+                            onCancel: cancelEditing,
+                            onTerm: {
+                                rightPanelMode = .terminal(editingAgent)
+                            }
                         )
                     } else {
                         LogPanelView(autoScroll: $logAutoScroll)
@@ -186,6 +199,18 @@ struct MainPanelView: View {
                     LLMConfigPanelView(
                         agents: agents,
                         onClose: { rightPanelMode = .log }
+                    )
+                case .terminal:
+                    TerminalPanelView(
+                        selectedAgent: $selectedAgent,
+                        onConfig: {
+                            if let agent = selectedAgent {
+                                startEditing(agent: agent)
+                            }
+                        },
+                        onClose: {
+                            rightPanelMode = .log
+                        }
                     )
                 }
             }
@@ -209,8 +234,10 @@ struct MainPanelView: View {
     }
 
     private func startEditing(agent: AgentInfo) {
-        editingAgent = agent
-        tomlContent = ConfigManager.shared.loadAgentConfigRaw(agent: agent)
+        if editingAgent?.id != agent.id {
+            editingAgent = agent
+            tomlContent = ConfigManager.shared.loadAgentConfigRaw(agent: agent)
+        }
         rightPanelMode = .editor
     }
 
@@ -527,6 +554,7 @@ struct ConfigEditorView: View {
     @Binding var content: String
     let onSave: () -> Void
     let onCancel: () -> Void
+    let onTerm: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -542,6 +570,15 @@ struct ConfigEditorView: View {
                 }
 
                 Spacer()
+
+                Button {
+                    onTerm()
+                } label: {
+                    Label("终端", systemImage: "terminal")
+                }
+                .buttonStyle(BorderedButtonStyle())
+                .controlSize(.small)
+                .help("切换到终端")
 
                 Button {
                     onSave()
