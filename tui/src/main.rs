@@ -227,7 +227,12 @@ async fn main() -> anyhow::Result<()> {
     // First-run: write the api-key into 0#Agent config.toml now that it exists
     if let Some(ref api_key) = first_run_api_key {
         match handle_set_api_key(api_key, &args.data) {
-            Ok(()) => state.add_log("INFO", "API key written to 0#Agent config"),
+            Ok(()) => {
+                state.add_log("INFO", "API key written to 0#Agent config");
+                if let Err(e) = patch_zeroclaw_config_defaults(&args.data) {
+                    state.add_log("WARN", &format!("Failed to patch config defaults: {}", e));
+                }
+            }
             Err(e) => state.add_log("WARN", &format!("Failed to write API key: {}", e)),
         }
     }
@@ -953,7 +958,12 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
     // First-run: write the api-key now that 0#Agent config.toml exists
     if let Some(ref api_key) = first_run_api_key {
         match handle_set_api_key(api_key, &data_dir) {
-            Ok(()) => ts_print!("API key written to 0#Agent config"),
+            Ok(()) => {
+                ts_print!("API key written to 0#Agent config");
+                if let Err(e) = patch_zeroclaw_config_defaults(&data_dir) {
+                    ts_eprint!("Failed to patch config defaults: {}", e);
+                }
+            }
             Err(e) => ts_eprint!("Failed to write API key: {}", e),
         }
     }
@@ -1244,9 +1254,9 @@ fn validate_agent_config(agent_name: &str, config_dir: &str) -> Vec<String> {
                     let raw_val = trimmed[eq_pos + 1..].trim();
                     // Strip surrounding quotes if present
                     let val = raw_val.trim_matches('"').trim_matches('\'');
-                    // Absolute path: starts with '/', '~', or Windows drive 'X:'
+                    // Absolute path: starts with '/' or Windows drive 'X:'
+                    // '~' is allowed because zeroclaw supports tilde expansion.
                     let is_absolute = val.starts_with('/')
-                        || val.starts_with('~')
                         || (val.len() >= 2 && val.as_bytes()[1] == b':' && val.as_bytes()[0].is_ascii_alphabetic());
                     if is_absolute {
                         errors.push(format!(
@@ -1326,14 +1336,151 @@ fn handle_set_api_key(api_key: &str, data_dir: &str) -> anyhow::Result<()> {
         let insert_pos = output_lines
             .iter()
             .position(|l| l.trim().starts_with('[') && !l.trim().starts_with("[["))
-            .unwrap_or(0);
-        output_lines.insert(insert_pos, new_line);
+            .unwrap_or(output_lines.len());
+        let mut pos = insert_pos;
+        // If there's a blank line right before the section, remove it
+        // so we don't get a double blank above api_key.
+        if pos > 0 && output_lines[pos - 1].trim().is_empty() {
+            output_lines.remove(pos - 1);
+            pos -= 1;
+        }
+        // Insert api_key followed by a blank line before the section.
+        output_lines.insert(pos, new_line);
+        output_lines.insert(pos + 1, String::new());
     }
 
     let new_content = output_lines.join("\n") + "\n";
     std::fs::write(&config_path, new_content)?;
 
     println!("API key updated in {}", config_path.display());
+    Ok(())
+}
+
+/// Merge a string array config field with default values. Existing entries are preserved;
+/// missing defaults are appended (deduplicated).
+fn merge_string_array(table: &mut toml::Table, key: &str, defaults: &[&str]) {
+    let existing: Vec<String> = table
+        .get(key)
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+
+    let mut merged = existing;
+    for item in defaults {
+        if !merged.iter().any(|e| e == *item) {
+            merged.push(item.to_string());
+        }
+    }
+
+    let arr: Vec<toml::Value> = merged.into_iter().map(toml::Value::String).collect();
+    table.insert(key.into(), toml::Value::Array(arr));
+}
+
+/// Patch 0#Agent config.toml with clawparty-friendly defaults.
+///
+/// - Scalar fields (bool, string, int): only inserted if absent.
+/// - Array fields (allowed_commands, allowed_roots, etc.): merged with existing values.
+fn patch_zeroclaw_config_defaults(data_dir: &str) -> anyhow::Result<()> {
+    let expanded = expand_data_dir(data_dir);
+    let config_path = std::path::Path::new(&expanded)
+        .join("agents")
+        .join("0#Agent")
+        .join("config.toml");
+
+    if !config_path.exists() {
+        anyhow::bail!("Config file not found: {}", config_path.display());
+    }
+
+    let content = std::fs::read_to_string(&config_path)?;
+    let mut doc: toml::Value = toml::from_str(&content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse config.toml: {e}"))?;
+    let root = doc.as_table_mut()
+        .ok_or_else(|| anyhow::anyhow!("config.toml root is not a table"))?;
+
+    // -- workspace_dir (top-level) --
+    if !root.contains_key("workspace_dir") {
+        root.insert(
+            "workspace_dir".into(),
+            toml::Value::String("~/.clawparty/.zeroclaw/workspace".into()),
+        );
+    }
+
+    // -- [autonomy] --
+    let autonomy = root.entry("autonomy")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .unwrap();
+
+    if !autonomy.contains_key("workspace_only") {
+        autonomy.insert("workspace_only".into(), toml::Value::Boolean(false));
+    }
+
+    // allowed_commands — merge with existing values
+    merge_string_array(autonomy, "allowed_commands", &[
+        "git", "npm", "cargo", "ls", "cat", "grep", "find", "echo", "pwd",
+        "wc", "head", "tail", "date", "python", "python3", "pip", "node", "opencode",
+        "mkdir", "cp", "mv", "touch", "rm", "trash",
+        "curl", "wget", "brew", "make", "cmake", "clang",
+        "du", "df", "uname", "uptime", "hostname",
+        "xargs", "sed", "awk", "sort", "uniq", "diff",
+        "tar", "zip", "unzip", "jq", "tree",
+        "npx", "pnpm", "yarn", "go", "rustc",
+        "bash", "sh", "zsh",
+    ]);
+
+    // allowed_roots — merge with existing values
+    merge_string_array(autonomy, "allowed_roots", &[
+        "/dev/null",
+        "/dev/zero",
+        "/dev/urandom",
+        "/dev/random",
+        "~/.clawparty/agents",
+    ]);
+
+    // -- [agent] --
+    let agent = root.entry("agent")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .unwrap();
+
+    if !agent.contains_key("max_tool_result_chars") {
+        agent.insert("max_tool_result_chars".into(), toml::Value::Integer(0));
+    }
+
+    if !agent.contains_key("compact_context") {
+        agent.insert("compact_context".into(), toml::Value::Boolean(false));
+    }
+
+    // context_compression.enabled = false
+    let cc = agent.entry("context_compression")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .unwrap();
+    if !cc.contains_key("enabled") {
+        cc.insert("enabled".into(), toml::Value::Boolean(false));
+    }
+
+    // -- [security.sandbox] --
+    let security = root.entry("security")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .unwrap();
+    let sandbox = security.entry("sandbox")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .unwrap();
+    if !sandbox.contains_key("enabled") {
+        sandbox.insert("enabled".into(), toml::Value::Boolean(false));
+    }
+    if !sandbox.contains_key("backend") {
+        sandbox.insert("backend".into(), toml::Value::String("none".into()));
+    }
+
+    let new_toml = toml::to_string_pretty(&doc)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize patched config: {e}"))?;
+    std::fs::write(&config_path, new_toml)?;
+
+    println!("Default config patched in {}", config_path.display());
     Ok(())
 }
 
