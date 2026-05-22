@@ -1,0 +1,68 @@
+{
+  "": {
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/master.swiftdeps"
+  },
+  "/Users/caishu/github/clawparty/desktop/ClawPartyDesktop/ClawPartyDesktopApp.swift": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ClawPartyDesktopApp.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ClawPartyDesktopApp.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ClawPartyDesktopApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ClawPartyDesktopApp.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ClawPartyDesktopApp.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/ClawPartyDesktop/ConfigManager.swift": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ConfigManager.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ConfigManager.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ConfigManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ConfigManager.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ConfigManager.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/ClawPartyDesktop/ContentView.swift": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ContentView.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ContentView.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ContentView.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ContentView.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/ClawPartyDesktop/LLMConfigView.swift": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/LLMConfigView.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/LLMConfigView.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/LLMConfigView~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/LLMConfigView.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/LLMConfigView.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/ClawPartyDesktop/MainPanelView.swift": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/MainPanelView.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/MainPanelView.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/MainPanelView~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/MainPanelView.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/MainPanelView.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/ClawPartyDesktop/ProcessManager.swift": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ProcessManager.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ProcessManager.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ProcessManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ProcessManager.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/ProcessManager.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/ClawPartyDesktop/StatusBarController.swift": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/StatusBarController.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/StatusBarController.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/StatusBarController~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/StatusBarController.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/StatusBarController.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/ClawPartyDesktop/TerminalManager.swift": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/TerminalManager.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/TerminalManager.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/TerminalManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/TerminalManager.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/TerminalManager.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/ClawPartyDesktop/TerminalPanelView.swift": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/TerminalPanelView.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/TerminalPanelView.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/TerminalPanelView~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/TerminalPanelView.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/ClawPartyDesktop.build/TerminalPanelView.dia"
+  }
+}

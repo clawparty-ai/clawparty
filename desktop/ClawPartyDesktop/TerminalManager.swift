@@ -5,7 +5,7 @@ import Foundation
 class TerminalManager {
     static let shared = TerminalManager()
 
-    private var terminals: [UUID: LocalProcessTerminalView] = [:]
+    private var terminals: [String: LocalProcessTerminalView] = [:]
     private let queue = DispatchQueue(label: "com.clawparty.terminal-manager", attributes: .concurrent)
 
     private init() {}

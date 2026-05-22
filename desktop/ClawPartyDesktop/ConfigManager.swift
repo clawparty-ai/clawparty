@@ -1,18 +1,18 @@
 import Foundation
 
 struct AgentInfo: Identifiable, Hashable, Equatable {
-    let id = UUID()
+    var id: String { agentName }
     let agentName: String
     let displayName: String
     let configPath: String
     let status: String
 
     func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
+        hasher.combine(agentName)
     }
 
     static func == (lhs: AgentInfo, rhs: AgentInfo) -> Bool {
-        lhs.id == rhs.id
+        lhs.agentName == rhs.agentName
     }
 }
 

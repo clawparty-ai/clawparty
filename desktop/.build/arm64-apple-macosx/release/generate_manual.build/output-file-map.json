@@ -1,0 +1,187 @@
+{
+  "": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/generate_manual.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/generate_manual.o",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/master.swiftdeps"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/AuthorArgument.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/AuthorArgument.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/AuthorArgument~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/AuthorArgument.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/AuthorArgument.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/ArgumentSynopsis.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/ArgumentSynopsis.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/ArgumentSynopsis~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/ArgumentSynopsis.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/ArgumentSynopsis.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Author.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Author.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Author~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Author.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Author.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Authors.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Authors.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Authors~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Authors.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Authors.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Core/Container.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Container.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Container~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Container.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Container.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Core/Empty.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Empty.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Empty~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Empty.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Empty.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Core/ForEach.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/ForEach.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/ForEach~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/ForEach.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/ForEach.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Core/MDocASTNodeWrapper.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocASTNodeWrapper.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocASTNodeWrapper~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocASTNodeWrapper.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocASTNodeWrapper.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Core/MDocBuilder.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocBuilder.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocBuilder~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocBuilder.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocBuilder.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Core/MDocComponent.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocComponent.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocComponent~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocComponent.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocComponent.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Discussion.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Discussion.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Discussion~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Discussion.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Discussion.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Document.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Document.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Document~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Document.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Document.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/DocumentDate.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/DocumentDate.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/DocumentDate~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/DocumentDate.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/DocumentDate.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Exit.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Exit.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Exit~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Exit.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Exit.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/List.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/List.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/List~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/List.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/List.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/MultiPageDescription.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MultiPageDescription.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MultiPageDescription~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MultiPageDescription.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MultiPageDescription.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Name.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Name.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Name~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Name.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Name.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Preamble.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Preamble.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Preamble~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Preamble.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Preamble.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Section.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Section.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Section~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Section.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Section.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/SeeAlso.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/SeeAlso.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/SeeAlso~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/SeeAlso.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/SeeAlso.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/SinglePageDescription.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/SinglePageDescription.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/SinglePageDescription~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/SinglePageDescription.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/SinglePageDescription.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/DSL/Synopsis.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Synopsis.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Synopsis~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Synopsis.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Synopsis.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/Extensions/ArgumentParser+MDoc.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/ArgumentParser+MDoc.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/ArgumentParser+MDoc~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/ArgumentParser+MDoc.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/ArgumentParser+MDoc.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/Extensions/Date+ExpressibleByArgument.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Date+ExpressibleByArgument.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Date+ExpressibleByArgument~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Date+ExpressibleByArgument.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Date+ExpressibleByArgument.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/Extensions/Process+SimpleAPI.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Process+SimpleAPI.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Process+SimpleAPI~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Process+SimpleAPI.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/Process+SimpleAPI.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/GenerateManual.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/GenerateManual.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/GenerateManual~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/GenerateManual.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/GenerateManual.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/MDoc/MDocASTNode.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocASTNode.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocASTNode~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocASTNode.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocASTNode.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/MDoc/MDocMacro.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocMacro.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocMacro~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocMacro.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocMacro.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/MDoc/MDocSerializationContext.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocSerializationContext.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocSerializationContext~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocSerializationContext.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/MDocSerializationContext.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Tools/generate-manual/MDoc/String+Escaping.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/String+Escaping.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/String+Escaping~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/String+Escaping.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/generate_manual.build/String+Escaping.dia"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/ArgumentParserToolInfo.build/ArgumentParserToolInfo.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/ArgumentParserToolInfo.build/ArgumentParserToolInfo.o",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/ArgumentParserToolInfo.build/master.swiftdeps"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/swift-argument-parser/Sources/ArgumentParserToolInfo/ToolInfo.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/ArgumentParserToolInfo.build/ToolInfo.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/ArgumentParserToolInfo.build/ToolInfo~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/ArgumentParserToolInfo.build/ToolInfo.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/ArgumentParserToolInfo.build/ToolInfo.dia"
+  }
+}

@@ -3,9 +3,22 @@
 <plist version="1.0">
 <dict>
 	<key>files</key>
-	<dict/>
+	<dict>
+		<key>Resources/ClawPartyDesktop.icns</key>
+		<data>
+		C0i+NmjY5Y82S8/u3Vq5CkhNuBQ=
+		</data>
+	</dict>
 	<key>files2</key>
-	<dict/>
+	<dict>
+		<key>Resources/ClawPartyDesktop.icns</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			ENWXfUBfiyX70m/sPdvbaJEZ7xauQm/j5VFRAuwH3Nc=
+			</data>
+		</dict>
+	</dict>
 	<key>rules</key>
 	<dict>
 		<key>^Resources/</key>

@@ -1,0 +1,33 @@
+{
+  "": {
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/master.swiftdeps"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/SwiftTerm/Sources/Termcast/AsciicastFormat.swift": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/AsciicastFormat.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/AsciicastFormat.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/AsciicastFormat~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/AsciicastFormat.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/AsciicastFormat.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/SwiftTerm/Sources/Termcast/TermcastPlayer.swift": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/TermcastPlayer.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/TermcastPlayer.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/TermcastPlayer~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/TermcastPlayer.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/TermcastPlayer.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/SwiftTerm/Sources/Termcast/TermcastRecorder.swift": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/TermcastRecorder.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/TermcastRecorder.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/TermcastRecorder~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/TermcastRecorder.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/TermcastRecorder.dia"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/SwiftTerm/Sources/Termcast/main.swift": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/main.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/main.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/main.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/debug/Termcast.build/main.dia"
+  }
+}

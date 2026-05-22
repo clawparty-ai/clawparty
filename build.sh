@@ -41,6 +41,13 @@ for arg in "$@"; do
       BUILD_ZEROCLAW=true
       BUILD_TUI=true
       BUILD_PIPY=true
+      if [ "$(uname)" = "Darwin" ]; then
+        BUILD_DESKTOP=true
+      fi
+      ;;
+    desktop)
+      has_positional=true
+      BUILD_DESKTOP=true
       ;;
     zeroclaw)
       has_positional=true
@@ -63,6 +70,9 @@ if [ "$has_positional" = false ]; then
   BUILD_ZEROCLAW=true
   BUILD_TUI=true
   BUILD_PIPY=true
+  if [ "$(uname)" = "Darwin" ]; then
+    BUILD_DESKTOP=true
+  fi
 fi
 
 # Legacy --ztm-only with no positional arg also triggers full ZTM build

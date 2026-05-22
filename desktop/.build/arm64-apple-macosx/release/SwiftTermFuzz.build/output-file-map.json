@@ -1,0 +1,13 @@
+{
+  "": {
+    "dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/SwiftTermFuzz.build/SwiftTermFuzz.d",
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/SwiftTermFuzz.build/SwiftTermFuzz.o",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/SwiftTermFuzz.build/master.swiftdeps"
+  },
+  "/Users/caishu/github/clawparty/desktop/.build/checkouts/SwiftTerm/Sources/SwiftTermFuzz/main.swift": {
+    "object": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/SwiftTermFuzz.build/main.swift.o",
+    "swiftmodule": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/SwiftTermFuzz.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/SwiftTermFuzz.build/main.swiftdeps",
+    "diagnostics": "/Users/caishu/github/clawparty/desktop/.build/arm64-apple-macosx/release/SwiftTermFuzz.build/main.dia"
+  }
+}
