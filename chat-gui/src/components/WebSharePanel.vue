@@ -220,19 +220,22 @@ const props = defineProps({
   refreshing: {
     type: Boolean,
     default: false
+  },
+  isFullscreen: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['toggle', 'refresh', 'uploaded'])
+const emit = defineEmits(['toggle', 'refresh', 'uploaded', 'toggleFullscreen'])
 
 const currentPath = ref('')
 const previewUrl = ref('')
 const previewName = ref('')
 const fullPreview = ref(false)
-const isFullscreen = ref(false)
 
 const toggleFullscreen = () => {
-  isFullscreen.value = !isFullscreen.value
+  emit('toggleFullscreen')
 }
 const markdownContent = ref('')
 const textContent = ref('')
@@ -658,7 +661,7 @@ const stopResize = () => {
 
 .webshare-panel.fullscreen {
   position: fixed;
-  top: 0;
+  top: var(--header-height, 56px);
   left: 0;
   right: 0;
   bottom: 0;

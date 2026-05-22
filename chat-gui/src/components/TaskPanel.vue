@@ -262,10 +262,14 @@ const props = defineProps({
         ]
       }
     })
+  },
+  isFullscreen: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutChange', 'reuse', 'retry', 'generatePrompt', 'createPipelineTask', 'togglePipelinePanel', 'updateKanbanConfig', 'generateChart', 'savePipeline'])
+const emit = defineEmits(['toggle', 'refresh', 'confirmChange', 'refreshTimeoutChange', 'reuse', 'retry', 'generatePrompt', 'createPipelineTask', 'togglePipelinePanel', 'updateKanbanConfig', 'generateChart', 'savePipeline', 'toggleFullscreen'])
 
 const logBodyRef = ref(null)
 const refreshTimeout = ref(120)
@@ -274,10 +278,8 @@ const showPipelinePanel = ref(false)
 const showKanbanPanel = ref(false)
 const pipelineEditorMode = ref('create')
 const editingPipelineTask = ref(null)
-const isFullscreen = ref(false)
-
 const toggleFullscreen = () => {
-  isFullscreen.value = !isFullscreen.value
+  emit('toggleFullscreen')
 }
 
 // Task detail logs
@@ -589,7 +591,7 @@ const taskStats = computed(() => {
 
 .task-panel.fullscreen {
   position: fixed;
-  top: 0;
+  top: var(--header-height, 56px);
   left: 0;
   right: 0;
   bottom: 0;

@@ -150,10 +150,14 @@ const props = defineProps({
   refreshing: {
     type: Boolean,
     default: false
+  },
+  isFullscreen: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['toggle', 'refresh'])
+const emit = defineEmits(['toggle', 'refresh', 'toggleFullscreen'])
 
 const panelHeight = ref(props.initialHeight)
 const activeTab = ref('pages')
@@ -165,7 +169,6 @@ const activePageTitle = ref('')
 const pageContent = ref('')
 const searchQuery = ref('')
 const searchTimeout = ref(null)
-const isFullscreen = ref(false)
 const viewerRef = ref(null)
 const graphContainer = ref(null)
 const graphLoading = ref(false)
@@ -432,7 +435,7 @@ const performSearch = async () => {
 }
 
 const toggleFullscreen = () => {
-  isFullscreen.value = !isFullscreen.value
+  emit('toggleFullscreen')
 }
 
 const onRefresh = async () => {
@@ -765,7 +768,7 @@ watch(() => props.agentName, () => {
 
 .wiki-panel.fullscreen {
   position: fixed;
-  top: 0;
+  top: var(--header-height, 56px);
   left: 0;
   right: 0;
   bottom: 0;

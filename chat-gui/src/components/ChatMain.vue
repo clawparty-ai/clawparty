@@ -1,6 +1,7 @@
 <template>
   <main ref="chatMainEl" class="chat-main">
     <ChatHeader
+      :class="{ 'header-in-fullscreen': !!fullscreenPanel }"
       :chat="chat"
       :openclawSessions="openclawSessions"
       :currentUserName="currentUserName"
@@ -21,10 +22,10 @@
       @download-md="handleDownloadMd"
       @download-pdf="handleDownloadPdf"
       @reload="fetchMessages"
-      @toggleTaskPanel="showTaskPanel = !showTaskPanel"
-      @toggleWebSharePanel="showWebSharePanel = !showWebSharePanel"
-      @toggleWikiPanel="showWikiPanel = !showWikiPanel"
-      @toggleRadarPanel="showRadarPanel = !showRadarPanel"
+      @toggleTaskPanel="togglePanel('task')"
+      @toggleWebSharePanel="togglePanel('webshare')"
+      @toggleWikiPanel="togglePanel('wiki')"
+      @toggleRadarPanel="togglePanel('radar')"
       @showMembers="showMembersPanel = !showMembersPanel"
     />
     <div class="chat-body-wrapper">
@@ -36,9 +37,11 @@
       :expanded="webSharePanelExpanded"
       :initialHeight="taskPanelInitialHeight"
       :refreshing="isWebShareRefreshing"
+      :isFullscreen="fullscreenPanel === 'webshare'"
       @toggle="webSharePanelExpanded = !webSharePanelExpanded"
       @refresh="loadWebShareFiles"
       @uploaded="handleWebShareUploaded"
+      @toggleFullscreen="toggleFullscreenPanel('webshare')"
     />
     <TaskPanel
       v-if="(chat.isZeroClaw || chat.isGroupChat) && showTaskPanel"
@@ -50,6 +53,7 @@
       :pendingChanges="pendingTaskChanges"
       :refreshLogs="refreshLogs"
       :kanbanConfig="kanbanConfig"
+      :isFullscreen="fullscreenPanel === 'task'"
       @toggle="taskPanelBodyExpanded = !taskPanelBodyExpanded"
       @refresh="handleTaskRefresh"
       @confirmChange="handleConfirmTaskChange"
@@ -62,6 +66,7 @@
       @togglePipelinePanel="handleTogglePipelinePanel"
       @updateKanbanConfig="handleUpdateKanbanConfig"
       @generateChart="handleGenerateChart"
+      @toggleFullscreen="toggleFullscreenPanel('task')"
     />
     <WikiPanel
       v-if="chat.isZeroClaw && showWikiPanel"
@@ -69,8 +74,10 @@
       :expanded="wikiPanelBodyExpanded"
       :initialHeight="taskPanelInitialHeight"
       :refreshing="isWikiRefreshing"
+      :isFullscreen="fullscreenPanel === 'wiki'"
       @toggle="wikiPanelBodyExpanded = !wikiPanelBodyExpanded"
       @refresh="handleWikiRefresh"
+      @toggleFullscreen="toggleFullscreenPanel('wiki')"
     />
     <RadarPanel
       v-if="(chat.isZeroClaw || chat.isGroupChat) && showRadarPanel"
@@ -78,10 +85,12 @@
       :expanded="radarPanelExpanded"
       :initialHeight="taskPanelInitialHeight"
       :refreshing="isRadarRefreshing"
+      :isFullscreen="fullscreenPanel === 'radar'"
       @toggle="radarPanelExpanded = !radarPanelExpanded"
       @refresh="handleRadarRefresh"
       @createTarget="handleRadarCreate"
       @createProbe="handleRadarCreate"
+      @toggleFullscreen="toggleFullscreenPanel('radar')"
     />
     <div class="messages" ref="messagesContainer" @click="handleMessagesClick">
       <div class="date-divider">
@@ -492,6 +501,10 @@ watch(showWebSharePanel, (visible) => {
     showWikiPanel.value = false
     showRadarPanel.value = false
     loadWebShareFiles()
+    // If another panel was fullscreen, keep fullscreen for this panel
+    if (fullscreenPanel.value && fullscreenPanel.value !== 'webshare') {
+      fullscreenPanel.value = 'webshare'
+    }
   }
 })
 
@@ -500,6 +513,10 @@ watch(showTaskPanel, (visible) => {
     showRadarPanel.value = false
     showWebSharePanel.value = false
     showWikiPanel.value = false
+    // If another panel was fullscreen, keep fullscreen for this panel
+    if (fullscreenPanel.value && fullscreenPanel.value !== 'task') {
+      fullscreenPanel.value = 'task'
+    }
   }
 })
 
@@ -508,6 +525,10 @@ watch(showWikiPanel, (visible) => {
     showTaskPanel.value = false
     showWebSharePanel.value = false
     showRadarPanel.value = false
+    // If another panel was fullscreen, keep fullscreen for this panel
+    if (fullscreenPanel.value && fullscreenPanel.value !== 'wiki') {
+      fullscreenPanel.value = 'wiki'
+    }
   }
 })
 
@@ -538,8 +559,54 @@ watch(showRadarPanel, (visible) => {
     showTaskPanel.value = false
     showWebSharePanel.value = false
     showWikiPanel.value = false
+    // If another panel was fullscreen, keep fullscreen for this panel
+    if (fullscreenPanel.value && fullscreenPanel.value !== 'radar') {
+      fullscreenPanel.value = 'radar'
+    }
   }
 })
+
+// Fullscreen panel state: 'task' | 'wiki' | 'radar' | 'webshare' | null
+const fullscreenPanel = ref(null)
+
+const toggleFullscreenPanel = (panelName) => {
+  if (fullscreenPanel.value === panelName) {
+    fullscreenPanel.value = null
+  } else {
+    fullscreenPanel.value = panelName
+  }
+}
+
+const togglePanel = (panelName) => {
+  const panelMap = {
+    task: showTaskPanel,
+    wiki: showWikiPanel,
+    radar: showRadarPanel,
+    webshare: showWebSharePanel
+  }
+  const targetRef = panelMap[panelName]
+  if (!targetRef) return
+  
+  const isCurrentlyVisible = targetRef.value
+  
+  // Hide all panels first
+  showTaskPanel.value = false
+  showWikiPanel.value = false
+  showRadarPanel.value = false
+  showWebSharePanel.value = false
+  
+  if (!isCurrentlyVisible) {
+    // Show the target panel
+    targetRef.value = true
+    // If another panel was fullscreen, keep fullscreen for the new panel
+    if (fullscreenPanel.value && fullscreenPanel.value !== panelName) {
+      fullscreenPanel.value = panelName
+    }
+  } else {
+    // Panel was visible and clicked again - hide it and clear fullscreen
+    fullscreenPanel.value = null
+  }
+}
 
 const handleWebShareUploaded = () => {
   // Refresh the file list after successful upload
@@ -2275,6 +2342,7 @@ const handleMessagesClick = (e) => {
   showTaskPanel.value = false
   showWikiPanel.value = false
   showRadarPanel.value = false
+  fullscreenPanel.value = null
 }
 
 onUnmounted(() => {
@@ -2290,6 +2358,15 @@ onUnmounted(() => {
   background: var(--bg-chat);
   min-width: 0;
 	z-index: 1;
+}
+
+.chat-header.header-in-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1001;
+  background: var(--bg-secondary);
 }
 
 .messages {

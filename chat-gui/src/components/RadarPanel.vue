@@ -197,12 +197,11 @@ const props = defineProps({
   agentName: { type: String, required: true },
   expanded: { type: Boolean, default: true },
   initialHeight: { type: Number, default: 180 },
-  refreshing: { type: Boolean, default: false }
+  refreshing: { type: Boolean, default: false },
+  isFullscreen: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['toggle', 'refresh', 'createTarget', 'createProbe'])
-
-const isFullscreen = ref(false)
+const emit = defineEmits(['toggle', 'refresh', 'createTarget', 'createProbe', 'toggleFullscreen'])
 const panelHeight = ref(props.initialHeight)
 const activeSubPanel = ref('targets')
 
@@ -511,7 +510,7 @@ function toggleExpanded() {
 }
 
 function toggleFullscreen() {
-  isFullscreen.value = !isFullscreen.value
+  emit('toggleFullscreen')
 }
 
 var startResize = (function () {
@@ -584,9 +583,9 @@ onBeforeUnmount(function () {
 }
 .radar-panel.fullscreen {
   position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
+  top: var(--header-height, 56px); left: 0; right: 0; bottom: 0;
   z-index: 1000;
-  height: 100vh !important;
+  height: calc(100vh - var(--header-height, 56px)) !important;
 }
 
 /* ── Header ────────────────────────────────────────── */
