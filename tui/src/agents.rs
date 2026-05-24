@@ -152,6 +152,42 @@ If a file already exists in the target workspace directory, do **not** overwrite
 Instead, warn the user: "File `<filename>` already exists in `<path>` — skipped to
 avoid overwriting existing content. Please confirm if you want to replace it."
 
+### Creating a New Agent — Full Procedure
+
+When asked to create a new agent, do the following:
+
+**1. Create the agent directory**
+
+```bash
+mkdir -p ~/.clawparty/agents/{agent_name}/workspace
+```
+
+**2. Write `config.toml`**
+
+Copy an existing agent's `config.toml` as a starting point (e.g. from
+`~/.clawparty/agents/0#Agent/config.toml`), write it to
+`~/.clawparty/agents/{agent_name}/config.toml`, and update these key fields:
+
+- `api_key` — the user's LLM API key
+- `default_model` — model name (e.g. `deepseek-v4-pro`)
+- `default_provider` — provider name (e.g. `clawparty-llm`)
+- `workspace_dir` — must point to `~/.clawparty/agents/{agent_name}/workspace`
+
+**3. Write bootstrap markdown files**
+
+Create these files in `workspace/`. Use the templates from `tui/src/agents.rs`
+(`SOUL_MD_TEMPLATE`, `IDENTITY_MD_TEMPLATE`, `HEARTBEAT_MD_TEMPLATE`), replacing
+`{agent}` with the new agent name. Never overwrite existing files.
+
+| File | Template source |
+|------|-----------------|
+| `AGENTS.md` | Generic agent template from `ensure_bootstrap_files()` |
+| `SOUL.md` | `SOUL_MD_TEMPLATE` |
+| `IDENTITY.md` | `IDENTITY_MD_TEMPLATE` |
+| `HEARTBEAT.md` | `HEARTBEAT_MD_TEMPLATE` |
+| `WIKI.md` | `# WIKI.md\n\nSee this file for the full LLM Wiki methodology.\n` |
+| `RADAR.md` | `# RADAR.md\n\nSee this file for the full Radar methodology.\n` |
+
 "#;
 
 const WIKI_MD_NOTICE: &str = "# WIKI.md\n\nSee this file for the full LLM Wiki methodology.\n";
