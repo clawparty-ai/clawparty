@@ -182,7 +182,7 @@
 import { ref, computed, inject } from 'vue'
 
 // Toggle for system context type (full / simple)
-const systemContextType = inject('systemContextType', ref('simple'))
+const systemContextType = inject('systemContextType', ref('full'))
 
 // History message limit selector (0/10/20/50)
 const historyMessageLimit = inject('historyMessageLimit', ref(10))

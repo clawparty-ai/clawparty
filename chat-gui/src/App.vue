@@ -257,7 +257,7 @@ const activeChat = ref(null)
 const activeOpenclawAgent = ref(null)  // 当前活动的 openclaw agent
 const newMessage = ref('')
 const sending = ref(false)
-const systemContextType = ref('simple')
+const systemContextType = ref('full')
 const HISTORY_MESSAGE_LIMIT_KEY = 'historyMessageLimit'
 const historyMessageLimit = ref(
   typeof localStorage !== 'undefined'
