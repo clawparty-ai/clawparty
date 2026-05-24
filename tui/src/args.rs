@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 #[derive(Parser, Debug)]
 #[command(name = "clawparty")]
 #[command(about = "Terminal UI for ClawParty (ZeroClaw)")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Args {
     #[command(subcommand)]
     pub command: Option<Command>,
