@@ -22,8 +22,17 @@ struct MainPanelView: View {
     @State private var saveError = ""
     @State private var showSaveError = false
 
+    // First-run setup state
+    @State private var showFirstRunSetup = false
+    @State private var firstRunPassword = ""
+    @State private var firstRunApiKey = ""
+    @State private var isStarting = false
+
     // Right panel mode
     @State private var rightPanelMode: RightPanelMode = .log
+
+    // Check & Repair
+    @State private var showCheckRepairSheet = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -84,12 +93,24 @@ struct MainPanelView: View {
                 .buttonStyle(BorderedButtonStyle())
 
                 Button {
-                    ProcessManager.shared.startClawParty { _, _ in }
+                    runCheckAndFix()
+                } label: {
+                    Label("检查与修复", systemImage: "wrench.and.screwdriver")
+                        .frame(width: 110)
+                }
+                .buttonStyle(BorderedButtonStyle())
+
+                Button {
+                    if ProcessManager.isFirstRun() {
+                        showFirstRunSetup = true
+                    } else {
+                        ProcessManager.shared.startClawParty { _, _ in }
+                    }
                 } label: {
                     Label("启动", systemImage: "play.fill")
                         .frame(width: 90)
                 }
-                .disabled(processManager.isClawPartyRunning)
+                .disabled(processManager.isClawPartyRunning || isStarting)
                 .buttonStyle(BorderedProminentButtonStyle())
                 .tint(.green)
 
@@ -231,6 +252,30 @@ struct MainPanelView: View {
         } message: {
             Text(saveError)
         }
+        .sheet(isPresented: $showCheckRepairSheet, onDismiss: {
+            ProcessManager.shared.resetCheckState()
+        }) {
+            CheckRepairSheetView(agents: agents)
+        }
+        .sheet(isPresented: $showFirstRunSetup) {
+            FirstRunSetupView(
+                password: $firstRunPassword,
+                apiKey: $firstRunApiKey,
+                isStarting: $isStarting,
+                onSetup: {
+                    showFirstRunSetup = false
+                    ProcessManager.shared.startClawParty(
+                        adminPassword: firstRunPassword,
+                        apiKey: firstRunApiKey
+                    ) { _, _ in }
+                },
+                onCancel: {
+                    showFirstRunSetup = false
+                    firstRunPassword = ""
+                    firstRunApiKey = ""
+                }
+            )
+        }
     }
 
     private func startEditing(agent: AgentInfo) {
@@ -255,6 +300,10 @@ struct MainPanelView: View {
             saveError = "无法保存到 \(agent.configPath)"
             showSaveError = true
         }
+    }
+
+    private func runCheckAndFix() {
+        showCheckRepairSheet = true
     }
 
     private func openDownloadPage() {
@@ -771,6 +820,573 @@ struct LogRowView: View {
         case .error: return .red
         case .warn: return .orange
         case .debug: return .blue
+        }
+    }
+}
+
+// MARK: - First-Run Setup Sheet
+
+struct FirstRunSetupView: View {
+    @Binding var password: String
+    @Binding var apiKey: String
+    @Binding var isStarting: Bool
+    let onSetup: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "lobster")
+                .font(.system(size: 40))
+                .foregroundColor(.red)
+
+            Text("首次运行设置")
+                .font(.title2)
+                .fontWeight(.bold)
+
+            Text("检测到 ClawParty 初次运行，请设置管理员密码和 API Key。")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("管理员密码")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                SecureField("输入管理员密码", text: $password)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+
+                Text("API Key")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                SecureField("输入 API Key", text: $apiKey)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+            }
+            .padding(.horizontal)
+
+            HStack(spacing: 12) {
+                Button("取消") {
+                    onCancel()
+                }
+                .buttonStyle(BorderedButtonStyle())
+                .disabled(isStarting)
+
+                Button {
+                    isStarting = true
+                    onSetup()
+                } label: {
+                    HStack(spacing: 6) {
+                        if isStarting {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                        }
+                        Text("启动")
+                    }
+                    .frame(width: 80)
+                }
+                .buttonStyle(BorderedProminentButtonStyle())
+                .tint(.green)
+                .disabled(password.isEmpty || apiKey.isEmpty || isStarting)
+            }
+        }
+        .padding(30)
+        .frame(width: 420)
+    }
+}
+
+struct CheckRepairSheetView: View {
+    let agents: [AgentInfo]
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var pm = ProcessManager.shared
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Image(systemName: "wrench.and.screwdriver")
+                    .foregroundColor(.accentColor)
+                Text("检查与修复")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                Spacer()
+                if pm.checkPhase == .report || pm.checkPhase == .plan || {
+                    if case .done = pm.checkPhase { return true }; return false
+                }() {
+                    Button("关闭") { dismiss() }
+                        .buttonStyle(BorderedButtonStyle())
+                        .controlSize(.small)
+                }
+            }
+            .padding()
+            Divider()
+
+            switch pm.checkPhase {
+            case .idle:
+                idleView
+            case .checking:
+                checkingView
+            case .report:
+                reportView
+            case .plan:
+                planView
+            case .repairing:
+                repairingView
+            case .done(let successCount, let failCount):
+                doneView(successCount: successCount, failCount: failCount)
+            }
+        }
+        .frame(minWidth: 600, minHeight: 450)
+        .onAppear {
+            if pm.checkPhase == .idle {
+                pm.runAllChecks(agents: agents)
+            }
+        }
+    }
+
+    private var idleView: some View {
+        VStack(spacing: 20) {
+            ProgressView()
+                .scaleEffect(1.5)
+            Text("准备检查...")
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var checkingView: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(CheckCategory.allCases) { category in
+                        let items = pm.checkItems.filter { $0.category == category }
+                        if !items.isEmpty {
+                            CategoryCheckRow(category: category, items: items)
+                            Divider().padding(.leading, 44)
+                        }
+                    }
+                }
+                .padding()
+            }
+            HStack {
+                ProgressView()
+                    .scaleEffect(0.7)
+                let done = pm.checkItems.filter { $0.status != .pending && $0.status != .checking }.count
+                Text("检查中... \(done)/\(pm.checkItems.count)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 12)
+        }
+    }
+
+    private var reportView: some View {
+        let problemItems = pm.checkItems.filter { $0.status.isProblem }
+        let fixableCount = problemItems.filter { !$0.fixDescription.isEmpty }.count
+
+        return VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("检查完成")
+                        .font(.headline)
+                    if problemItems.isEmpty {
+                        Text("所有检查项均通过 ✅")
+                            .font(.subheadline)
+                            .foregroundColor(.green)
+                    } else {
+                        Text("发现 \(problemItems.count) 个问题，其中 \(fixableCount) 个可自动修复")
+                            .font(.subheadline)
+                            .foregroundColor(.orange)
+                    }
+                }
+                Spacer()
+                if !problemItems.isEmpty {
+                    Button("全选") {
+                        for i in 0..<pm.checkItems.count where pm.checkItems[i].status.isProblem && !pm.checkItems[i].fixDescription.isEmpty {
+                            pm.checkItems[i].selected = true
+                        }
+                    }
+                    .buttonStyle(BorderedButtonStyle())
+                    .controlSize(.small)
+                }
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(CheckCategory.allCases) { category in
+                        let items = pm.checkItems.filter { $0.category == category }
+                        if !items.isEmpty {
+                            VStack(alignment: .leading, spacing: 0) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: category.icon)
+                                        .foregroundColor(.accentColor)
+                                        .frame(width: 20)
+                                    Text(category.label)
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    Spacer()
+                                    let catProblems = items.filter { $0.status.isProblem }.count
+                                    let catTotal = items.count
+                                    Text("\(catTotal - catProblems)/\(catTotal) 通过")
+                                        .font(.caption)
+                                        .foregroundColor(catProblems == 0 ? .green : .orange)
+                                }
+                                .padding(.horizontal)
+                                .padding(.vertical, 8)
+                                .background(Color(NSColor.controlBackgroundColor))
+
+                                ForEach(items) { item in
+                                    ReportItemRow(
+                                        item: item,
+                                        onToggle: {
+                                            if let idx = pm.checkItems.firstIndex(where: { $0.id == item.id }) {
+                                                pm.checkItems[idx].selected.toggle()
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                            Divider()
+                        }
+                    }
+                }
+                .padding(.bottom, 20)
+            }
+
+            if !problemItems.isEmpty {
+                Divider()
+                HStack {
+                    Spacer()
+                    Button {
+                        dismiss()
+                    } label: {
+                        Text("取消")
+                            .frame(width: 80)
+                    }
+                    .buttonStyle(BorderedButtonStyle())
+
+                    Button {
+                        pm.checkPhase = .plan
+                    } label: {
+                        Text("开始修复 (\(pm.checkItems.filter { $0.selected }.count) 项)")
+                            .frame(width: 160)
+                    }
+                    .buttonStyle(BorderedProminentButtonStyle())
+                    .tint(.blue)
+                    .disabled(pm.checkItems.filter { $0.selected }.isEmpty)
+                }
+                .padding()
+            }
+        }
+    }
+
+    private var planView: some View {
+        let selected = pm.checkItems.filter { $0.selected && $0.status.isProblem && !$0.fixDescription.isEmpty }
+        let grouped = Dictionary(grouping: selected) { $0.category }
+
+        return VStack(spacing: 0) {
+            HStack {
+                Image(systemName: "checklist")
+                    .foregroundColor(.blue)
+                Text("修复计划")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("将执行以下 \(selected.count) 项修复：")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                        .padding(.top, 8)
+
+                    ForEach(CheckCategory.allCases) { category in
+                        if let items = grouped[category], !items.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: category.icon)
+                                        .foregroundColor(.accentColor)
+                                    Text(category.label)
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                }
+                                ForEach(items) { item in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text("•")
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(item.name)
+                                                .font(.callout)
+                                            Text(item.fixDescription)
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    .padding(.leading, 12)
+                                }
+                            }
+                            .padding(.horizontal)
+                            Divider().padding(.leading, 44)
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+
+            Divider()
+            HStack {
+                Button {
+                    pm.checkPhase = .report
+                } label: {
+                    Text("返回")
+                        .frame(width: 80)
+                }
+                .buttonStyle(BorderedButtonStyle())
+
+                Spacer()
+
+                Button {
+                    pm.executeSelectedFixes()
+                } label: {
+                    Label("确认并开始修复", systemImage: "play.fill")
+                        .frame(width: 160)
+                }
+                .buttonStyle(BorderedProminentButtonStyle())
+                .tint(.green)
+            }
+            .padding()
+        }
+    }
+
+    private var repairingView: some View {
+        VStack(spacing: 0) {
+            HStack {
+                ProgressView()
+                    .scaleEffect(0.8)
+                Text("正在修复...")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(pm.repairLog.indices, id: \.self) { idx in
+                        let log = pm.repairLog[idx]
+                        HStack(spacing: 6) {
+                            Text(log)
+                                .font(.system(size: 12, design: .monospaced))
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                        .padding(.vertical, 3)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func doneView(successCount: Int, failCount: Int) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                if failCount == 0 {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.title2)
+                    Text("修复完成")
+                        .font(.headline)
+                        .foregroundColor(.green)
+                } else {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                        .font(.title2)
+                    Text("修复完成（部分失败）")
+                        .font(.headline)
+                        .foregroundColor(.orange)
+                }
+                Spacer()
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 16) {
+                        Label("成功: \(successCount) 项", systemImage: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Label("失败: \(failCount) 项", systemImage: "xmark.circle.fill")
+                            .foregroundColor(failCount > 0 ? .red : .secondary)
+                    }
+                    .font(.subheadline)
+                    .padding(.horizontal)
+                    .padding(.top, 12)
+
+                    Divider().padding(.horizontal)
+
+                    ForEach(pm.repairLog.indices, id: \.self) { idx in
+                        let log = pm.repairLog[idx]
+                        HStack(spacing: 6) {
+                            Text(log)
+                                .font(.system(size: 12, design: .monospaced))
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+                .padding(.bottom, 20)
+            }
+
+            Divider()
+            HStack {
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Text("关闭")
+                        .frame(width: 80)
+                }
+                .buttonStyle(BorderedProminentButtonStyle())
+                .tint(.blue)
+            }
+            .padding()
+        }
+    }
+}
+
+private struct CategoryCheckRow: View {
+    let category: CheckCategory
+    let items: [CheckItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Image(systemName: category.icon)
+                    .foregroundColor(.accentColor)
+                    .frame(width: 20)
+                Text(category.label)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+                let done = items.filter { $0.status != .pending && $0.status != .checking }.count
+                Text("\(done)/\(items.count)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            ForEach(items) { item in
+                HStack(spacing: 6) {
+                    Image(systemName: item.status.icon)
+                        .font(.caption)
+                        .foregroundColor(statusColor(item.status))
+                        .frame(width: 16)
+                    Text(item.name)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(item.status.label)
+                        .font(.caption2)
+                        .foregroundColor(statusColor(item.status))
+                }
+                .padding(.leading, 26)
+                .padding(.vertical, 1)
+            }
+        }
+    }
+
+    private func statusColor(_ status: CheckStatus) -> Color {
+        switch status {
+        case .pending: return .secondary
+        case .checking: return .blue
+        case .pass: return .green
+        case .warning: return .orange
+        case .fail: return .red
+        }
+    }
+}
+
+private struct ReportItemRow: View {
+    let item: CheckItem
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if item.status.isProblem && !item.fixDescription.isEmpty {
+                Button {
+                    onToggle()
+                } label: {
+                    Image(systemName: item.selected ? "checkmark.square.fill" : "square")
+                        .foregroundColor(item.selected ? .blue : .secondary)
+                        .font(.system(size: 14))
+                }
+                .buttonStyle(BorderlessButtonStyle())
+            } else {
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(width: 14)
+            }
+
+            Image(systemName: item.status.icon)
+                .font(.caption)
+                .foregroundColor(statusColor)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name)
+                    .font(.callout)
+                if case .pass(let detail) = item.status {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                } else if !item.status.label.isEmpty {
+                    HStack(spacing: 4) {
+                        Text(item.status.label)
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundColor(statusColor)
+                        if case .fail(let detail) = item.status {
+                            Text(detail)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        } else if case .warning(let detail) = item.status {
+                            Text(detail)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                if item.selected, !item.fixDescription.isEmpty {
+                    Text("修复方案: \(item.fixDescription)")
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                        .padding(.top, 2)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 6)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+    }
+
+    private var statusColor: Color {
+        switch item.status {
+        case .pass: return .green
+        case .warning: return .orange
+        case .fail: return .red
+        case .checking: return .blue
+        case .pending: return .secondary
         }
     }
 }

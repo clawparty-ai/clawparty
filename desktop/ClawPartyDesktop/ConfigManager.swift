@@ -6,6 +6,7 @@ struct AgentInfo: Identifiable, Hashable, Equatable {
     let displayName: String
     let configPath: String
     let status: String
+    let port: Int
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(agentName)
@@ -47,7 +48,7 @@ class ConfigManager {
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        task.arguments = [dbPath, "SELECT agent_name, display_name, config_path, status FROM agents WHERE deleted = 0;"]
+        task.arguments = [dbPath, "SELECT agent_name, display_name, config_path, status, port FROM agents WHERE deleted = 0;"]
 
         let pipe = Pipe()
         task.standardOutput = pipe
@@ -65,12 +66,13 @@ class ConfigManager {
 
             for line in lines {
                 let parts = line.components(separatedBy: "|")
-                guard parts.count >= 4 else { continue }
+                guard parts.count >= 5 else { continue }
 
                 let agentName = parts[0].trimmingCharacters(in: .whitespaces)
                 let displayName = parts[1].trimmingCharacters(in: .whitespaces)
                 let configPath = parts[2].trimmingCharacters(in: .whitespaces)
                 let status = parts[3].trimmingCharacters(in: .whitespaces)
+                let port = Int(parts[4].trimmingCharacters(in: .whitespaces)) ?? 0
 
                 guard !agentName.isEmpty else { continue }
 
@@ -78,7 +80,8 @@ class ConfigManager {
                     agentName: agentName,
                     displayName: displayName.isEmpty ? agentName : displayName,
                     configPath: configPath,
-                    status: status
+                    status: status,
+                    port: port
                 ))
             }
 

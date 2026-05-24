@@ -20,14 +20,29 @@ class TerminalManager {
         let term = LocalProcessTerminalView(frame: .zero)
         let workspaceDir = workspaceDirectory(for: agent)
 
-        // 构建环境变量，确保 PATH 包含 opencode 所在路径
+        let envPath = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
         var env = ProcessInfo.processInfo.environment
-        let currentPath = env["PATH"] ?? "/usr/bin:/bin"
-        env["PATH"] = currentPath + ":/usr/local/bin:/opt/homebrew/bin"
+        env["PATH"] = envPath
         let envStrings = env.map { "\($0.key)=\($0.value)" }
 
-        // 启动 zsh，cd 到 agent workspace，然后执行 opencode -c
-        let shellCommand = "cd '\(workspaceDir)' && opencode -c"
+        let opencodeBin = findBinary("opencode")
+        let shellCommand: String
+        if let bin = opencodeBin {
+            shellCommand = """
+            export PATH="\(envPath)"
+            cd '\(workspaceDir)' || { echo "[ERROR] cd to workspace failed"; exec /bin/zsh; }
+            echo "[ClawParty] Starting opencode in \(workspaceDir)..."
+            exec '\(bin)'
+            """
+        } else {
+            shellCommand = """
+            export PATH="\(envPath)"
+            cd '\(workspaceDir)' || { echo "[ERROR] cd to workspace failed"; }
+            echo "[ERROR] opencode not found in PATH"
+            echo "PATH=\(envPath)"
+            exec /bin/zsh
+            """
+        }
         term.startProcess(
             executable: "/bin/zsh",
             args: ["-c", shellCommand],
@@ -76,8 +91,22 @@ class TerminalManager {
     private func workspaceDirectory(for agent: AgentInfo) -> String {
         let configDir = (agent.configPath as NSString).deletingLastPathComponent
         let workspace = "\(configDir)/workspace"
-        // 确保 workspace 目录存在
         try? FileManager.default.createDirectory(atPath: workspace, withIntermediateDirectories: true)
         return workspace
+    }
+
+    private func findBinary(_ name: String) -> String? {
+        let envPath = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.environment = ["PATH": envPath]
+        task.arguments = ["-c", "command -v \(name)"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        do { try task.run(); task.waitUntilExit() } catch { return nil }
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (output?.isEmpty == false) ? output : nil
     }
 }
