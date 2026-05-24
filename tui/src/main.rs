@@ -112,8 +112,17 @@ async fn main() -> anyhow::Result<()> {
     let first_run_api_key: Option<String>;
 
     if first_run {
-        let (password, api_key) = prompt_first_run_setup()?;
-        // Create data dir + DB so we can write the password immediately
+        let (password, api_key) = if args.service {
+            env_first_run_setup().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "First-run setup required in service mode.\n\
+                     Set CLAWPARTY_ADMIN_PASSWORD and CLAWPARTY_API_KEY\n\
+                     environment variables, or run interactively in a terminal."
+                )
+            })?
+        } else {
+            prompt_first_run_setup()?
+        };
         std::fs::create_dir_all(&expanded_data)
             .map_err(|e| anyhow::anyhow!("Cannot create data directory {}: {}", expanded_data, e))?;
         let _ = db::init_clawparty_db(&expanded_data);
@@ -1415,6 +1424,10 @@ fn patch_zeroclaw_config_defaults(data_dir: &str) -> anyhow::Result<()> {
         autonomy.insert("workspace_only".into(), toml::Value::Boolean(false));
     }
 
+    if !autonomy.contains_key("require_approval_for_medium_risk") {
+        autonomy.insert("require_approval_for_medium_risk".into(), toml::Value::Boolean(false));
+    }
+
     // allowed_commands — merge with existing values
     merge_string_array(autonomy, "allowed_commands", &[
         "git", "npm", "cargo", "ls", "cat", "grep", "find", "echo", "pwd",
@@ -1531,6 +1544,17 @@ fn prompt_first_run_setup() -> anyhow::Result<(String, String)> {
 
     println!();
     Ok((password, api_key))
+}
+
+/// Non-interactive first-run setup: read password + api key from environment variables.
+/// Used by the desktop app to avoid interactive prompts in service mode.
+fn env_first_run_setup() -> Option<(String, String)> {
+    let password = std::env::var("CLAWPARTY_ADMIN_PASSWORD").ok()?;
+    let api_key = std::env::var("CLAWPARTY_API_KEY").ok()?;
+    if password.is_empty() || api_key.is_empty() {
+        return None;
+    }
+    Some((password, api_key))
 }
 
 /// Read a line from stdin without echoing (password input).
