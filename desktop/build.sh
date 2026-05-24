@@ -24,6 +24,9 @@ cp ClawPartyDesktop/ClawPartyDesktop.icns "$APP_BUNDLE/Contents/Resources/"
 echo ""
 echo "正在使用 Swift Package Manager 编译..."
 
+# 清理 SPM 缓存，确保 CI 干净构建
+rm -rf .build
+
 # SPM 构建
 swift build -c release
 
