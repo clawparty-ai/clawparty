@@ -187,7 +187,15 @@ if [ "$BUILD_DESKTOP" = true ]; then
     if [ -f "build.sh" ]; then
       chmod +x build.sh
       ./build.sh
-      echo "Desktop app built: $ZTM_DIR/desktop/build/ClawPartyDesktop.app"
+      mkdir -p "$ZTM_DIR/bin"
+      DESKTOP_SRC="$ZTM_DIR/desktop/build/ClawPartyDesktop.app"
+      DESKTOP_DST="$ZTM_DIR/bin/ClawPartyDesktop.app"
+      rm -rf "$DESKTOP_DST"
+      cp -R "$DESKTOP_SRC" "$DESKTOP_DST"
+      if command -v xattr &> /dev/null; then
+        xattr -cr "$DESKTOP_DST" 2>/dev/null || true
+      fi
+      echo "Desktop app built: $DESKTOP_DST"
     else
       echo "Desktop build script not found, skipping..."
     fi
