@@ -566,6 +566,12 @@ fn extract_token(req: &Request<Incoming>) -> String {
     String::new()
 }
 
+fn decode_agent_name(encoded: &str) -> String {
+    urlencoding::decode(encoded)
+        .unwrap_or_else(|_| encoded.into())
+        .to_string()
+}
+
 /// Main request handler.
 async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Infallible> {
     let path = req.uri().path().to_string();
@@ -806,18 +812,20 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
                     }
                 }
                 if rest.ends_with("/start") && method == hyper::Method::POST {
-                    let name = &rest[..rest.len() - "/start".len()];
-                    crate::agents::start_agent(data_dir, name).await
+                    let name = decode_agent_name(&rest[..rest.len() - "/start".len()]);
+                    crate::agents::start_agent(data_dir, &name).await
                 } else if rest.ends_with("/stop") && method == hyper::Method::POST {
-                    let name = &rest[..rest.len() - "/stop".len()];
-                    crate::agents::stop_agent(data_dir, name).await
+                    let name = decode_agent_name(&rest[..rest.len() - "/stop".len()]);
+                    crate::agents::stop_agent(data_dir, &name).await
                 } else if rest.ends_with("/status") && method == hyper::Method::GET {
-                    let name = &rest[..rest.len() - "/status".len()];
-                    crate::agents::get_agent(data_dir, name).await
+                    let name = decode_agent_name(&rest[..rest.len() - "/status".len()]);
+                    crate::agents::get_agent(data_dir, &name).await
                 } else if method == hyper::Method::GET {
-                    crate::agents::get_agent(data_dir, rest).await
+                    let name = decode_agent_name(rest);
+                    crate::agents::get_agent(data_dir, &name).await
                 } else if method == hyper::Method::DELETE {
-                    crate::agents::delete_agent(data_dir, rest).await
+                    let name = decode_agent_name(rest);
+                    crate::agents::delete_agent(data_dir, &name).await
                 } else {
                     Response::builder().status(StatusCode::NOT_FOUND).header(header::CONTENT_TYPE, "application/json").body(box_body(Bytes::from(r#"{"error":"Agent route not found"}"#))).unwrap()
                 }
