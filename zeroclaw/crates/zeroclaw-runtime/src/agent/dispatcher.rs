@@ -38,14 +38,25 @@ impl XmlToolDispatcher {
         let mut calls = Vec::new();
         let mut remaining = cleaned.as_str();
 
-        while let Some(start) = remaining.find("<tool_call>") {
+        loop {
+            // Support both <tool_call> and <tool_calls> (some models use plural)
+            let (open_tag, open_len, close_tag, close_len) = match (
+                remaining.find("<tool_calls>"),
+                remaining.find("<tool_call>"),
+            ) {
+                (Some(p), Some(s)) if p <= s => ("<tool_calls>", 12, "</tool_calls>", 13),
+                (_, Some(s)) => ("<tool_call>", 11, "</tool_call>", 12),
+                (Some(_p), _) => ("<tool_calls>", 12, "</tool_calls>", 13),
+                (None, None) => break,
+            };
+            let start = remaining.find(open_tag).unwrap();
             let before = &remaining[..start];
             if !before.trim().is_empty() {
                 text_parts.push(before.trim().to_string());
             }
 
-            if let Some(end) = remaining[start..].find("</tool_call>") {
-                let inner = &remaining[start + 11..start + end];
+            if let Some(end) = remaining[start..].find(close_tag) {
+                let inner = &remaining[start + open_len..start + end];
                 match serde_json::from_str::<Value>(inner.trim()) {
                     Ok(parsed) => {
                         let name = parsed
@@ -54,7 +65,7 @@ impl XmlToolDispatcher {
                             .unwrap_or("")
                             .to_string();
                         if name.is_empty() {
-                            remaining = &remaining[start + end + 12..];
+                            remaining = &remaining[start + end + close_len..];
                             continue;
                         }
                         let arguments = parsed
@@ -68,10 +79,10 @@ impl XmlToolDispatcher {
                         });
                     }
                     Err(e) => {
-                        tracing::warn!("Malformed <tool_call> JSON: {e}");
+                        tracing::warn!("Malformed {open_tag} JSON: {e}");
                     }
                 }
-                remaining = &remaining[start + end + 12..];
+                remaining = &remaining[start + end + close_len..];
             } else {
                 break;
             }
@@ -81,7 +92,111 @@ impl XmlToolDispatcher {
             text_parts.push(remaining.trim().to_string());
         }
 
+        // Fallback: detect bare JSON tool calls without any XML wrapping.
+        // Some models output {"name":"tool","arguments":{...}} directly.
+        if calls.is_empty() {
+            let (bare_text, bare_calls) = Self::parse_bare_json_tool_calls(&text_parts.join("\n"));
+            if !bare_calls.is_empty() {
+                return (bare_text, bare_calls);
+            }
+        }
+
         (text_parts.join("\n"), calls)
+    }
+
+    /// Parse bare `{"name":"tool","arguments":{...}}` JSON tool calls from text
+    /// when no `<tool_call>` or `<tool_calls>` XML wrapping is present.
+    fn parse_bare_json_tool_calls(text: &str) -> (String, Vec<ParsedToolCall>) {
+        let mut text_parts = Vec::new();
+        let mut calls = Vec::new();
+        let mut remaining = text;
+
+        while let Some(start) = remaining.find("{\"name\":") {
+            let before = &remaining[..start];
+            if !before.trim().is_empty() {
+                text_parts.push(before.trim().to_string());
+            }
+
+            let slice = &remaining[start..];
+            match Self::extract_json_object(slice) {
+                Some(json_str) => {
+                    let obj_len = json_str.len();
+                    if let Ok(parsed) = serde_json::from_str::<Value>(json_str) {
+                        let name = parsed
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string();
+                        if !name.is_empty()
+                            && parsed.get("arguments").is_some()
+                        {
+                            let arguments = parsed
+                                .get("arguments")
+                                .cloned()
+                                .unwrap_or(Value::Object(serde_json::Map::new()));
+                            calls.push(ParsedToolCall {
+                                name,
+                                arguments,
+                                tool_call_id: None,
+                            });
+                        } else {
+                            text_parts.push(json_str.to_string());
+                        }
+                    } else {
+                        text_parts.push(json_str.to_string());
+                    }
+                    remaining = &remaining[start + obj_len..];
+                }
+                None => {
+                    remaining = &remaining[start + 9..];
+                }
+            }
+        }
+
+        if !remaining.trim().is_empty() {
+            text_parts.push(remaining.trim().to_string());
+        }
+
+        (text_parts.join("\n"), calls)
+    }
+
+    /// Extract a balanced JSON object starting at the given string position.
+    /// Returns the JSON string including the outermost `{` and `}`.
+    fn extract_json_object(s: &str) -> Option<&str> {
+        let bytes = s.as_bytes();
+        if bytes.is_empty() || bytes[0] != b'{' {
+            return None;
+        }
+        let mut depth = 0u32;
+        let mut in_string = false;
+        let mut escaped = false;
+        for (i, &ch) in bytes.iter().enumerate() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if in_string {
+                match ch {
+                    b'"' => in_string = false,
+                    b'\\' => escaped = true,
+                    _ => {}
+                }
+                continue;
+            }
+            match ch {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(&s[..=i]);
+                    }
+                }
+                b'"' => in_string = true,
+                b'\\' => escaped = true,
+                _ => {}
+            }
+        }
+        None
     }
 
     /// Remove `<think>...</think>` blocks from model output.
@@ -195,7 +310,7 @@ impl ToolDispatcher for NativeToolDispatcher {
         // Some models (especially when streaming) output tool calls in
         // XML format as text rather than as structured tool_calls, even
         // when the provider advertises native tool call support.
-        if calls.is_empty() && text.contains("<tool_call>") {
+        if calls.is_empty() && (text.contains("<tool_call>") || text.contains("<tool_calls>") || text.contains("{\"name\":")) {
             return XmlToolDispatcher::parse_xml_tool_calls(&text);
         }
 
@@ -449,5 +564,79 @@ mod tests {
         // XmlToolDispatcher returns text only, not JSON payload
         assert_eq!(messages[0].content, "answer");
         assert!(!messages[0].content.contains("reasoning_content"));
+    }
+
+    #[test]
+    fn xml_dispatcher_parses_tool_calls_plural_tag() {
+        let response = ChatResponse {
+            text: Some("OK\n<tool_calls>{\"name\":\"shell\",\"arguments\":{\"command\":\"ls\"}}</tool_calls>".into()),
+            tool_calls: vec![],
+            usage: None,
+            reasoning_content: None,
+        };
+        let dispatcher = XmlToolDispatcher;
+        let (_, calls) = dispatcher.parse_response(&response);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "shell");
+    }
+
+    #[test]
+    fn xml_dispatcher_parses_bare_json_tool_calls() {
+        let response = ChatResponse {
+            text: Some("Let me check.\n{\"name\":\"shell\",\"arguments\":{\"command\":\"ls\"}}\n{\"name\":\"weather\",\"arguments\":{\"location\":\"dalian\"}}".into()),
+            tool_calls: vec![],
+            usage: None,
+            reasoning_content: None,
+        };
+        let dispatcher = XmlToolDispatcher;
+        let (text, calls) = dispatcher.parse_response(&response);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "shell");
+        assert_eq!(calls[1].name, "weather");
+        assert!(!text.contains("{\"name\":"));
+    }
+
+    #[test]
+    fn xml_dispatcher_parses_nested_json_in_bare_tool_call() {
+        let json = r#"<tool_call>{"name": "shell", "arguments": {"command": "curl -d '{\"model\":\"seedream\"}'"}}</tool_call>"#;
+        let response = ChatResponse {
+            text: Some(json.into()),
+            tool_calls: vec![],
+            usage: None,
+            reasoning_content: None,
+        };
+        let dispatcher = XmlToolDispatcher;
+        let (_, calls) = dispatcher.parse_response(&response);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "shell");
+        assert!(calls[0].arguments["command"].as_str().unwrap().contains("seedream"));
+    }
+
+    #[test]
+    fn native_dispatcher_falls_back_to_xml_for_bare_json() {
+        let response = ChatResponse {
+            text: Some("OK\n{\"name\":\"echo\",\"arguments\":{}}".into()),
+            tool_calls: vec![],
+            usage: None,
+            reasoning_content: None,
+        };
+        let dispatcher = NativeToolDispatcher;
+        let (_, calls) = dispatcher.parse_response(&response);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "echo");
+    }
+
+    #[test]
+    fn native_dispatcher_falls_back_to_xml_for_plural_tag() {
+        let response = ChatResponse {
+            text: Some("<tool_calls>{\"name\":\"echo\",\"arguments\":{}}</tool_calls>".into()),
+            tool_calls: vec![],
+            usage: None,
+            reasoning_content: None,
+        };
+        let dispatcher = NativeToolDispatcher;
+        let (_, calls) = dispatcher.parse_response(&response);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "echo");
     }
 }
