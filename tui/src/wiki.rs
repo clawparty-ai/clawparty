@@ -326,6 +326,7 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
     let mut dirs = vec![(wiki_dir.clone(), "page")];
     let mut scanned_files = 0usize;
     let mut skipped_empty = 0usize;
+    let mut table_edge_count = 0usize;
     while let Some((dir, category)) = dirs.pop() {
         let mut entries = match tokio::fs::read_dir(&dir).await {
             Ok(e) => e,
@@ -348,6 +349,9 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
                     "entities" => "entity",
                     "concepts" => "concept",
                     "pages" => "page",
+                    "characters" => "entity",
+                    "bridges" | "episodes" | "plot" => "page",
+                    "lore" => "concept",
                     _ => category,
                 };
                 ts_eprint!("[Wiki::graph] push dir {:?} category={}", path, sub_category);
@@ -376,7 +380,8 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
                         let target_id = get_node_id(target_name, "page");
                         links.push(serde_json::json!({
                             "source": page_id,
-                            "target": target_id
+                            "target": target_id,
+                            "edge_type": "wiki-link"
                         }));
                     }
                 }
@@ -391,8 +396,61 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
                         let target_id = get_node_id(target_name, "page");
                         links.push(serde_json::json!({
                             "source": page_id,
-                            "target": target_id
+                            "target": target_id,
+                            "edge_type": "md-link"
                         }));
+                    }
+                }
+
+                // Parse ## 人物关系 table rows as graph edges
+                if let Some(rel_start) = content.find("## 人物关系") {
+                    let after_header = &content[rel_start + "## 人物关系".len()..];
+                    let section_end = after_header.find("\n## ").unwrap_or(after_header.len());
+                    let section = &after_header[..section_end];
+
+                    for line in section.lines() {
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() || !trimmed.starts_with('|') {
+                            continue;
+                        }
+                        if trimmed.contains("---|---") || trimmed.contains("------") {
+                            continue;
+                        }
+                        if trimmed.contains("关系") && trimmed.contains("对象") {
+                            continue;
+                        }
+
+                        let cells: Vec<&str> = trimmed.split('|').collect();
+                        if cells.len() < 3 {
+                            continue;
+                        }
+                        let relation_type = cells[1].trim();
+                        let target_names = cells[2].trim();
+
+                        if relation_type.is_empty() || target_names.is_empty() {
+                            continue;
+                        }
+
+                        for target_name in target_names.split('/') {
+                            let name = target_name.trim();
+                            if name.is_empty() {
+                                continue;
+                            }
+                            let clean_name = name
+                                .trim_start_matches("[[")
+                                .trim_end_matches("]]")
+                                .trim();
+                            let clean_name = clean_name
+                                .split('\u{ff08}').next().unwrap_or(clean_name)
+                                .trim();
+                            let target_id = get_node_id(clean_name, "page");
+                            links.push(serde_json::json!({
+                                "source": page_id,
+                                "target": target_id,
+                                "edge_type": relation_type
+                            }));
+                            table_edge_count += 1;
+                        }
                     }
                 }
             }
@@ -400,8 +458,8 @@ pub async fn graph(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, 
     }
 
     ts_eprint!(
-        "[Wiki::graph] done: {} nodes, {} links (scanned {} files, {} empty)",
-        nodes.len(), links.len(), scanned_files, skipped_empty
+        "[Wiki::graph] done: {} nodes, {} links ({} table-relations, scanned {} files, {} empty)",
+        nodes.len(), links.len(), table_edge_count, scanned_files, skipped_empty
     );
 
     ok_response(&serde_json::json!({

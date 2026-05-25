@@ -114,10 +114,23 @@
         <div ref="graphContainer" class="wiki-graph-container-inner"></div>
         <div v-if="graphError" class="wiki-graph-error">{{ graphError }}</div>
         <div class="wiki-graph-legend">
-          <div class="legend-item"><span class="legend-dot" style="background: #2eb67d;"></span> 实体</div>
-          <div class="legend-item"><span class="legend-dot" style="background: #1d9bd1;"></span> 概念</div>
-          <div class="legend-item"><span class="legend-dot" style="background: #797979;"></span> 页面</div>
-          <div class="legend-item"><span class="legend-dot" style="background: #ecb22e;"></span> 原始资料</div>
+          <div class="legend-section">
+            <span class="legend-section-title">节点</span>
+            <div class="legend-item"><span class="legend-dot" style="background: #2eb67d;"></span> 角色</div>
+            <div class="legend-item"><span class="legend-dot" style="background: #1d9bd1;"></span> 世界观</div>
+            <div class="legend-item"><span class="legend-dot" style="background: #797979;"></span> 页面</div>
+            <div class="legend-item"><span class="legend-dot" style="background: #ecb22e;"></span> 原始资料</div>
+          </div>
+          <div class="legend-section">
+            <span class="legend-section-title">关系</span>
+            <div class="legend-item"><span class="legend-line" style="background: #e01e5a;"></span> 真爱</div>
+            <div class="legend-item"><span class="legend-line dashed" style="background: #c2185b;"></span> 错付</div>
+            <div class="legend-item"><span class="legend-line" style="background: #d32f2f;"></span> 仇敌</div>
+            <div class="legend-item"><span class="legend-line" style="background: #2eb67d;"></span> 忠臣</div>
+            <div class="legend-item"><span class="legend-line" style="background: #ecb22e;"></span> 恩人</div>
+            <div class="legend-item"><span class="legend-line" style="background: #e91e63;"></span> 姐妹</div>
+            <div class="legend-item"><span class="legend-line" style="background: #ff7043;"></span> 保护</div>
+          </div>
         </div>
       </div>
     </div>
@@ -536,6 +549,23 @@ const renderGraph = async () => {
       raw: '#ecb22e'
     }
 
+    const edgeColors = {
+      '\u771f\u7231': '#e01e5a',
+      '\u9519\u4ed8': '#c2185b',
+      '\u5fe0\u81e3': '#2eb67d',
+      '\u4ec7\u654c': '#d32f2f',
+      '\u6069\u4eba': '#ecb22e',
+      '\u90e8\u4e0b': '#1d9bd1',
+      '\u540c\u50da': '#7c4dff',
+      '\u5bf9\u624b': '#f57c00',
+      '\u5e08\u5f92': '#00897b',
+      '\u4eb2\u5c5e': '#5c6bc0',
+      '\u5408\u4f5c': '#009688',
+      '\u59d0\u59b9': '#e91e63',
+      '\u4fdd\u62a4': '#ff7043',
+      default: 'rgba(0,0,0,0.15)'
+    }
+
     const nodeSize = (cat) => cat === 'entity' ? 16 : 12
 
     cyInstance = cytoscape({
@@ -549,12 +579,18 @@ const renderGraph = async () => {
             size: nodeSize(node.category)
           }
         })),
-        ...links.map(link => ({
-          data: {
-            source: String(link.source),
-            target: String(link.target)
+        ...links.map(link => {
+          const et = link.edge_type || ''
+          const isTableRel = et && et !== 'wiki-link' && et !== 'md-link'
+          return {
+            data: {
+              source: String(link.source),
+              target: String(link.target),
+              edge_type: et,
+              label: isTableRel ? et : ''
+            }
           }
-        }))
+        })
       ],
       layout: {
         name: 'cose',
@@ -588,8 +624,117 @@ const renderGraph = async () => {
             'width': 1,
             'line-color': 'rgba(0,0,0,0.15)',
             'curve-style': 'bezier',
-            'target-arrow-shape': 'none'
+            'target-arrow-shape': 'none',
+            'label': 'data(label)',
+            'text-rotation': 'autorotate',
+            'font-size': '10px',
+            'color': '#666',
+            'text-background-color': 'rgba(255,255,255,0.85)',
+            'text-background-opacity': 0.85,
+            'text-background-padding': '1px 3px',
+            'text-background-shape': 'roundrectangle',
+            'text-margin-y': -6
           }
+        },
+        {
+          selector: 'edge[edge_type="真爱"]',
+          style: { 'line-color': '#e01e5a', 'width': 2, 'color': '#c2185b' }
+        },
+        {
+          selector: 'edge[edge_type="错付"]',
+          style: { 'line-color': '#c2185b', 'width': 2, 'line-style': 'dashed', 'color': '#ad1457' }
+        },
+        {
+          selector: 'edge[edge_type="忠臣"]',
+          style: { 'line-color': '#2eb67d', 'width': 2, 'color': '#1e8c5e' }
+        },
+        {
+          selector: 'edge[edge_type="仇敌"]',
+          style: { 'line-color': '#d32f2f', 'width': 2, 'color': '#b71c1c' }
+        },
+        {
+          selector: 'edge[edge_type="恩人"]',
+          style: { 'line-color': '#ecb22e', 'width': 2, 'color': '#c49000' }
+        },
+        {
+          selector: 'edge[edge_type="部下"]',
+          style: { 'line-color': '#1d9bd1', 'width': 1.5, 'color': '#1565c0' }
+        },
+        {
+          selector: 'edge[edge_type="同僚"]',
+          style: { 'line-color': '#7c4dff', 'width': 1.5, 'color': '#651fff' }
+        },
+        {
+          selector: 'edge[edge_type="对手"]',
+          style: { 'line-color': '#f57c00', 'width': 1.5, 'color': '#e65100' }
+        },
+        {
+          selector: 'edge[edge_type="师徒"]',
+          style: { 'line-color': '#00897b', 'width': 1.5, 'color': '#00695c' }
+        },
+        {
+          selector: 'edge[edge_type="亲属"]',
+          style: { 'line-color': '#5c6bc0', 'width': 1.5, 'color': '#3949ab' }
+        },
+        {
+          selector: 'edge[edge_type="合作"]',
+          style: { 'line-color': '#009688', 'width': 1.5, 'color': '#00796b' }
+        },
+        {
+          selector: 'edge[edge_type="姐妹"]',
+          style: { 'line-color': '#e91e63', 'width': 2, 'color': '#c2185b' }
+        },
+        {
+          selector: 'edge[edge_type="保护"]',
+          style: { 'line-color': '#ff7043', 'width': 1.5, 'color': '#d84315' }
+        },
+        {
+          selector: 'edge[edge_type="错付"]',
+          style: { 'line-color': '#c2185b', 'width': 2, 'line-style': 'dashed' }
+        },
+        {
+          selector: 'edge[edge_type="忠臣"]',
+          style: { 'line-color': '#2eb67d', 'width': 2 }
+        },
+        {
+          selector: 'edge[edge_type="仇敌"]',
+          style: { 'line-color': '#d32f2f', 'width': 2 }
+        },
+        {
+          selector: 'edge[edge_type="恩人"]',
+          style: { 'line-color': '#ecb22e', 'width': 2 }
+        },
+        {
+          selector: 'edge[edge_type="部下"]',
+          style: { 'line-color': '#1d9bd1', 'width': 1.5 }
+        },
+        {
+          selector: 'edge[edge_type="同僚"]',
+          style: { 'line-color': '#7c4dff', 'width': 1.5 }
+        },
+        {
+          selector: 'edge[edge_type="对手"]',
+          style: { 'line-color': '#f57c00', 'width': 1.5 }
+        },
+        {
+          selector: 'edge[edge_type="师徒"]',
+          style: { 'line-color': '#00897b', 'width': 1.5 }
+        },
+        {
+          selector: 'edge[edge_type="亲属"]',
+          style: { 'line-color': '#5c6bc0', 'width': 1.5 }
+        },
+        {
+          selector: 'edge[edge_type="合作"]',
+          style: { 'line-color': '#009688', 'width': 1.5 }
+        },
+        {
+          selector: 'edge[edge_type="姐妹"]',
+          style: { 'line-color': '#e91e63', 'width': 2 }
+        },
+        {
+          selector: 'edge[edge_type="保护"]',
+          style: { 'line-color': '#ff7043', 'width': 1.5 }
         }
       ],
       minZoom: 0.2,
@@ -1068,11 +1213,27 @@ watch(() => props.agentName, () => {
   bottom: 8px;
   left: 8px;
   display: flex;
-  gap: 12px;
+  flex-direction: column;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.9);
   padding: 6px 10px;
   border-radius: 4px;
   font-size: 11px;
+}
+
+.legend-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.legend-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: #888;
+  margin-right: 2px;
+  min-width: 24px;
 }
 
 .legend-item {
@@ -1086,5 +1247,19 @@ watch(() => props.agentName, () => {
   height: 8px;
   border-radius: 50%;
   display: inline-block;
+}
+
+.legend-line {
+  width: 18px;
+  height: 2px;
+  border-radius: 1px;
+  display: inline-block;
+}
+
+.legend-line.dashed {
+  height: 0;
+  border-top: 2px dashed;
+  border-color: inherit;
+  background: none;
 }
 </style>
