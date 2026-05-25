@@ -549,7 +549,7 @@ watch(function () { return props.agentName }, function () {
   loadAll()
 })
 
-watch(isFullscreen, function () {
+watch(() => props.isFullscreen, function () {
   if (activeSubPanel.value !== 'logs') {
     nextTick(function () { startRadar() })
   }
