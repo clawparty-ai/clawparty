@@ -152,7 +152,7 @@ If a file already exists in the target workspace directory, do **not** overwrite
 Instead, warn the user: "File `<filename>` already exists in `<path>` — skipped to
 avoid overwriting existing content. Please confirm if you want to replace it."
 
-### Creating a New Agent — Full Procedure
+## Creating a New Agent
 
 When asked to create a new agent, do the following:
 
@@ -175,16 +175,16 @@ Copy an existing agent's `config.toml` as a starting point (e.g. from
 
 **3. Write bootstrap markdown files**
 
-Create these files in `workspace/`. Use the templates from `tui/src/agents.rs`
-(`SOUL_MD_TEMPLATE`, `IDENTITY_MD_TEMPLATE`, `HEARTBEAT_MD_TEMPLATE`), replacing
-`{agent}` with the new agent name. Never overwrite existing files.
+Create these files in `workspace/`. Write the actual content for each file based
+on the user's instructions and the new agent's name — do NOT use generic templates.
+Never overwrite existing files.
 
-| File | Template source |
-|------|-----------------|
-| `AGENTS.md` | Generic agent template from `ensure_bootstrap_files()` |
-| `SOUL.md` | `SOUL_MD_TEMPLATE` |
-| `IDENTITY.md` | `IDENTITY_MD_TEMPLATE` |
-| `HEARTBEAT.md` | `HEARTBEAT_MD_TEMPLATE` |
+| File | Purpose |
+|------|---------|
+| `AGENTS.md` | Agent behavior guidelines and session checklist |
+| `SOUL.md` | Agent identity, core truths, and communication style |
+| `IDENTITY.md` | Who the agent is: name, creature, vibe, emoji |
+| `HEARTBEAT.md` | Periodic autonomous tasks (empty by default) |
 | `WIKI.md` | `# WIKI.md\n\nSee this file for the full LLM Wiki methodology.\n` |
 | `RADAR.md` | `# RADAR.md\n\nSee this file for the full Radar methodology.\n` |
 
@@ -425,8 +425,19 @@ fn spawn_agent_process(data_dir: &str, agent_name: &str, agent_dir: &str, port: 
         .stdin(Stdio::null())
         .spawn()
     {
-        Ok(child) => {
+        Ok(mut child) => {
             let pid = child.id() as u64;
+            ts_print!("[Agents] Spawning agent '{}' on port {} (pid {})...", agent_name, port, pid);
+
+            // Wait briefly and verify the process actually came up
+            std::thread::sleep(std::time::Duration::from_millis(500));
+
+            if !is_process_alive(pid) {
+                ts_eprint!("[Agents] Agent '{}' (pid {}) exited immediately - check zeroclaw config or logs", agent_name, pid);
+                let _ = db::update_agent_status(data_dir, agent_name, "error", Some(pid), Some("Process exited immediately after spawn"));
+                return;
+            }
+
             ts_print!("[Agents] Started agent '{}' on port {} (pid {})", agent_name, port, pid);
             let _ = db::update_agent_status(data_dir, agent_name, "running", Some(pid), None);
         }
@@ -666,6 +677,10 @@ require_pairing = false
 
 [agent]
 name = "{}"
+
+[memory]
+auto_save = true
+backend = "sqlite"
 "#,
         port, agent_name
     );
