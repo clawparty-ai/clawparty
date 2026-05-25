@@ -381,6 +381,14 @@ impl AcpServer {
                         "content": delta,
                     }),
                 },
+                TurnEvent::ChunkReset => JsonRpcNotification {
+                    jsonrpc: "2.0",
+                    method: "session/event",
+                    params: serde_json::json!({
+                        "sessionId": session_id,
+                        "type": "chunk_reset",
+                    }),
+                },
             };
             self.write_notification(&notification).await;
         }

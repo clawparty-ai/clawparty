@@ -522,6 +522,9 @@ async fn process_chat_message(
                     }
                     serde_json::json!({ "type": "tool_result", "name": name, "output": output })
                 }
+                TurnEvent::ChunkReset => {
+                    serde_json::json!({ "type": "chunk_reset" })
+                }
             };
             let _ = sender.send(Message::Text(ws_msg.to_string().into())).await;
         }

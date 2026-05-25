@@ -789,6 +789,12 @@ const createZeroClawMessageHandler = (connectionAgentName) => {
           })
         }
       }
+    } else if (data.type === 'chunk_reset') {
+      const idx = messages.findIndex(m => !!m.isTyping || !!m.isStreaming)
+      if (idx >= 0) {
+        messages[idx].text = ''
+        messages[idx].thinking = ''
+      }
     } else if (data.type === 'done') {
       let idx = messages.findIndex(m => !!m.isTyping)
       if (idx >= 0) {
@@ -1343,6 +1349,14 @@ const handleZeroClawMessage = (data) => {
         isTemp: true,
         isStreaming: true
       })
+    }
+  } else if (data.type === 'chunk_reset') {
+    if (target.messages) {
+      const idx = target.messages.findIndex(m => !!m.isTyping || !!m.isStreaming)
+      if (idx >= 0) {
+        target.messages[idx].text = ''
+        target.messages[idx].thinking = ''
+      }
     }
   } else if (data.type === 'done') {
     // Parse full_response for task tags (AI may have sent complete markdown/table in full msg)

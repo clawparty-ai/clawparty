@@ -14,4 +14,8 @@ pub enum TurnEvent {
     },
     /// A tool has returned a result.
     ToolResult { name: String, output: String },
+    /// Reset accumulated chunks on the client because the streamed text
+    /// contained tool call markup that has been stripped. The client should
+    /// clear its draft and wait for the next Chunk event with clean text.
+    ChunkReset,
 }

@@ -1325,6 +1325,16 @@ impl Agent {
                     )));
             }
 
+            // If text was streamed to the client and contained tool call
+            // markup, reset the client's draft so it doesn't show the raw
+            // <tool_call> XML, then re-send the clean text.
+            if got_stream {
+                let _ = event_tx.send(TurnEvent::ChunkReset).await;
+            }
+            if got_stream && !text.is_empty() {
+                let _ = event_tx.send(TurnEvent::Chunk { delta: text.clone() }).await;
+            }
+
             self.history.push(ConversationMessage::AssistantToolCalls {
                 text: response.text.clone(),
                 tool_calls: response.tool_calls.clone(),
