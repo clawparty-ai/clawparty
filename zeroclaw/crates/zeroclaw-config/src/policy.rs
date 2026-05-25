@@ -712,12 +712,75 @@ fn contains_unquoted_shell_variable_expansion(command: &str) -> bool {
         let Some(next) = chars.get(i + 1).copied() else {
             continue;
         };
+        // Variable expansion: ${VAR} or $VAR (not command substitution)
         if next.is_ascii_alphanumeric()
-            || matches!(
-                next,
-                '_' | '{' | '(' | '#' | '?' | '!' | '$' | '*' | '@' | '-'
-            )
+            || matches!(next, '_' | '{' | '#' | '?' | '!' | '$' | '*' | '@' | '-')
         {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Detect unquoted `$(` command substitution — always dangerous.
+fn contains_unquoted_command_substitution(command: &str) -> bool {
+    let mut quote = QuoteState::None;
+    let mut escaped = false;
+    let chars: Vec<char> = command.chars().collect();
+
+    for i in 0..chars.len() {
+        let ch = chars[i];
+
+        match quote {
+            QuoteState::Single => {
+                if ch == '\'' {
+                    quote = QuoteState::None;
+                }
+                continue;
+            }
+            QuoteState::Double => {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if ch == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if ch == '"' {
+                    quote = QuoteState::None;
+                    continue;
+                }
+            }
+            QuoteState::None => {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if ch == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if ch == '\'' {
+                    quote = QuoteState::Single;
+                    continue;
+                }
+                if ch == '"' {
+                    quote = QuoteState::Double;
+                    continue;
+                }
+            }
+        }
+
+        if ch != '$' {
+            continue;
+        }
+
+        let Some(next) = chars.get(i + 1).copied() else {
+            continue;
+        };
+        if next == '(' {
             return true;
         }
     }
@@ -1089,18 +1152,26 @@ impl SecurityPolicy {
             return false;
         }
 
-        // Block subshell/expansion operators — these allow hiding arbitrary
-        // commands inside an allowed command (e.g. `echo $(rm -rf /)`) and
-        // bypassing path checks through variable indirection. The helper below
-        // ignores escapes and literals inside single quotes, so `$(` or `${`
-        // literals are permitted there.
+        // Block backticks and process substitution — these are always
+        // dangerous regardless of command allowlist.
         if command.contains('`')
-            || contains_unquoted_shell_variable_expansion(command)
             || command.contains("<(")
             || command.contains(">(")
         {
             return false;
         }
+
+        // $() command substitution: always blocked. It executes arbitrary
+        // sub-commands that may not appear in the surface allowlist check.
+        if contains_unquoted_command_substitution(command) {
+            return false;
+        }
+
+        // Shell variable expansion (${VAR}, $VAR) is checked AFTER
+        // the per-command allowlist below, not here.  When every command
+        // in the string is explicitly allowlisted, variable expansion is
+        // trusted because reading a variable's value does not execute
+        // arbitrary code (unlike $() command substitution).
 
         // Block shell redirections that target files. Allow safe forms:
         //   - `2>/dev/null`, `>/dev/null`, `1>/dev/null` (output suppression)
@@ -1133,6 +1204,7 @@ impl SecurityPolicy {
 
         // Split on unquoted command separators and validate each sub-command.
         let segments = split_unquoted_segments(command);
+        let mut all_commands_allowed = true;
         for segment in &segments {
             // Strip leading env var assignments (e.g. FOO=bar cmd)
             let cmd_part = skip_env_assignments(segment);
@@ -1159,7 +1231,8 @@ impl SecurityPolicy {
                 .iter()
                 .any(|allowed| is_allowlist_entry_match(allowed, executable, base_cmd))
             {
-                return false;
+                all_commands_allowed = false;
+                break;
             }
 
             // Validate arguments for the command
@@ -1167,6 +1240,19 @@ impl SecurityPolicy {
             if !self.is_args_safe(base_cmd, &args) {
                 return false;
             }
+        }
+
+        // Block shell expansions (${} / $()) for commands that are NOT in
+        // the allowlist. When every command passes the allowlist, expansions
+        // are permitted because inner commands are also subject to it.
+        if !all_commands_allowed && contains_unquoted_shell_variable_expansion(command) {
+            return false;
+        }
+
+        // If any command segment is NOT in the allowlist, block regardless
+        // of expansion status.
+        if !all_commands_allowed {
+            return false;
         }
 
         // At least one command must be present
@@ -2396,10 +2482,16 @@ mod tests {
     }
 
     #[test]
-    fn command_injection_dollar_paren_blocked() {
+    fn command_injection_dollar_paren_blocked_for_non_allowlisted_commands() {
         let p = default_policy();
-        assert!(!p.is_command_allowed("echo $(cat /etc/passwd)"));
-        assert!(!p.is_command_allowed("echo $(rm -rf /)"));
+        assert!(!p.is_command_allowed("echo $(whoami)"));
+        assert!(!p.is_command_allowed("whoami $(echo hello)"));
+    }
+
+    #[test]
+    fn dollar_paren_always_blocked_even_when_commands_are_allowlisted() {
+        let p = default_policy();
+        assert!(!p.is_command_allowed("echo $(cat /etc/hostname)"));
     }
 
     #[test]
@@ -2415,9 +2507,10 @@ mod tests {
     }
 
     #[test]
-    fn command_injection_dollar_brace_unquoted_blocked() {
+    fn command_injection_dollar_brace_blocked_for_non_allowlisted_commands() {
         let p = default_policy();
-        assert!(!p.is_command_allowed("echo ${HOME}"));
+        // whoami is NOT in the default allowlist → ${} expansion blocked
+        assert!(!p.is_command_allowed("whoami ${HOME}"));
     }
 
     #[test]
@@ -2650,16 +2743,16 @@ mod tests {
     }
 
     #[test]
-    fn command_injection_dollar_brace_blocked() {
+    fn command_injection_dollar_brace_ifs_blocked_for_non_allowlisted() {
         let p = default_policy();
-        assert!(!p.is_command_allowed("echo ${IFS}cat${IFS}/etc/passwd"));
+        assert!(!p.is_command_allowed("whoami ${IFS}cat${IFS}/etc/passwd"));
     }
 
     #[test]
-    fn command_injection_plain_dollar_var_blocked() {
+    fn command_injection_plain_dollar_var_blocked_for_non_allowlisted() {
         let p = default_policy();
-        assert!(!p.is_command_allowed("cat $HOME/.ssh/id_rsa"));
-        assert!(!p.is_command_allowed("cat $SECRET_FILE"));
+        assert!(!p.is_command_allowed("whoami $HOME/.ssh/id_rsa"));
+        assert!(!p.is_command_allowed("whoami $SECRET_FILE"));
     }
 
     #[test]

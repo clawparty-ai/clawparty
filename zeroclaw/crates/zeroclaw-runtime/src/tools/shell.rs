@@ -536,12 +536,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shell_blocks_plain_variable_expansion() {
+    async fn shell_blocks_plain_variable_expansion_for_non_allowlisted_commands() {
         let tool = ShellTool::new(test_security_with_env_cmd(), test_runtime());
         let result = tool
-            .execute(json!({"command": "echo $HOME"}))
+            .execute(json!({"command": "whoami $HOME"}))
             .await
-            .expect("plain variable expansion should be blocked");
+            .expect("plain variable expansion for non-allowlisted cmd should be blocked");
         assert!(!result.success);
         assert!(
             result
