@@ -118,6 +118,10 @@ struct ProbeJson {
     channels: Vec<ProbeChannelJson>,
     #[serde(rename = "channelLabel")]
     channel_label: String,
+    #[serde(rename = "channel_type")]
+    channel_type: Option<String>,
+    #[serde(rename = "channel_location")]
+    channel_location: Option<String>,
     method: Option<String>,
     keywords: Option<Vec<String>>,
     schedule: Option<String>,
@@ -129,62 +133,148 @@ struct ProbeJson {
 }
 
 fn parse_probes_md(content: &str) -> Vec<ProbeJson> {
-    if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
-        return Vec::new();
+    if content.starts_with("---\n") || content.starts_with("---\r\n") {
+        let after_first = content.find("---\n").map(|i| i + 4)
+            .or_else(|| content.find("---\r\n").map(|i| i + 5));
+        let start = match after_first {
+            Some(s) => s,
+            None => return parse_probes_table(content),
+        };
+
+        let remaining = &content[start..];
+        let end = match remaining.find("\n---") {
+            Some(e) => e,
+            None => return parse_probes_table(content),
+        };
+
+        let yaml_str = &remaining[..end];
+
+        let parsed: Result<ProbesYaml, _> = serde_yaml::from_str(yaml_str);
+        let probes_raw = match parsed {
+            Ok(t) => t.probes,
+            Err(e) => {
+                ts_eprint!("[Radar] Failed to parse probes YAML: {}", e);
+                return parse_probes_table(content);
+            }
+        };
+
+        return probes_raw.into_iter().map(|p| {
+            let channels: Vec<ProbeChannelJson> = p.channel.map(|chs| {
+                chs.into_iter().map(|c| ProbeChannelJson {
+                    channel_type: c.channel_type,
+                    location: c.location,
+                }).collect()
+            }).unwrap_or_default();
+
+            let channel_label = channels.iter()
+                .map(|c| c.channel_type.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            ProbeJson {
+                id: p.id,
+                name: p.name,
+                description: p.description,
+                module_ref: p.module_ref,
+                channels,
+                channel_label,
+                channel_type: None,
+                channel_location: None,
+                method: p.method,
+                keywords: p.keywords,
+                schedule: p.schedule,
+                status: normalize_status(&p.status),
+                created_at: p.created_at,
+                last_run: p.last_run,
+            }
+        }).collect();
     }
 
-    let after_first = content.find("---\n").map(|i| i + 4)
-        .or_else(|| content.find("---\r\n").map(|i| i + 5));
-    let start = match after_first {
-        Some(s) => s,
-        None => return Vec::new(),
-    };
+    parse_probes_table(content)
+}
 
-    let remaining = &content[start..];
-    let end = match remaining.find("\n---") {
-        Some(e) => e,
-        None => return Vec::new(),
-    };
+/// Parse probe Markdown tables: expects `### P-XXX：...` sections with `| 字段 | 值 |` tables.
+fn parse_probes_table(content: &str) -> Vec<ProbeJson> {
+    let mut probes = Vec::new();
+    let sections: Vec<&str> = content.split("\n### ").collect();
 
-    let yaml_str = &remaining[..end];
+    for section in &sections {
+        let section = section.trim();
+        if section.is_empty() { continue; }
+        if section.starts_with("# ") { continue; }
 
-    let parsed: Result<ProbesYaml, _> = serde_yaml::from_str(yaml_str);
-    let probes_raw = match parsed {
-        Ok(t) => t.probes,
-        Err(e) => {
-            ts_eprint!("[Radar] Failed to parse probes YAML: {}", e);
-            return Vec::new();
+        let header_end = section.find('\n').unwrap_or(section.len());
+        let header = &section[..header_end].trim();
+        let body = &section[header_end..];
+
+        let fields = parse_md_table_fields(body);
+        if fields.is_empty() { continue; }
+
+        let id = fields.get("ID").cloned();
+        let name = id.clone().unwrap_or_else(|| {
+            header.split('：').next().unwrap_or(header).to_string()
+        });
+        let description = fields.get("描述").cloned();
+        let keywords = fields.get("搜索词").map(|kw| {
+            kw.split(|c: char| c == ',' || c == '、' || c == ' ')
+                .map(|s| s.trim().trim_matches('`'))
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect()
+        });
+        let schedule = fields.get("频率").cloned();
+        let channel_type = fields.get("平台").map(|p| {
+            p.split(|c: char| c == ' ' || c == '（' || c == '(').next().unwrap_or("").to_string()
+        });
+        let method_str = fields.get("方法").or_else(|| fields.get("查询模板")).cloned();
+
+        let status = match fields.get("状态").map(|s| s.as_str()) {
+            Some("active") | Some("running") => "active".to_string(),
+            Some("paused") => "paused".to_string(),
+            Some(s) => s.to_string(),
+            None => "active".to_string(),
+        };
+
+        probes.push(ProbeJson {
+            id,
+            name,
+            description,
+            module_ref: None,
+            channels: Vec::new(),
+            channel_label: channel_type.clone().unwrap_or_default(),
+            channel_type,
+            channel_location: fields.get("搜索范围").cloned(),
+            method: method_str,
+            keywords,
+            schedule,
+            status,
+            created_at: None,
+            last_run: None,
+        });
+    }
+
+    probes
+}
+
+/// Parse a markdown table with `| **key** | value |` rows into a HashMap.
+fn parse_md_table_fields(section: &str) -> std::collections::HashMap<String, String> {
+    let mut fields = std::collections::HashMap::new();
+    for line in section.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with('|') { continue; }
+        if trimmed.contains("---|---") || trimmed.contains("------") { continue; }
+        if trimmed.contains("字段") && trimmed.contains("值") { continue; }
+
+        let cells: Vec<&str> = trimmed.split('|').collect();
+        if cells.len() < 3 { continue; }
+
+        let key = cells[1].trim().trim_start_matches("**").trim_end_matches("**").trim();
+        let value = cells[2].trim();
+        if !key.is_empty() && !value.is_empty() {
+            fields.insert(key.to_string(), value.to_string());
         }
-    };
-
-    probes_raw.into_iter().map(|p| {
-        let channels: Vec<ProbeChannelJson> = p.channel.map(|chs| {
-            chs.into_iter().map(|c| ProbeChannelJson {
-                channel_type: c.channel_type,
-                location: c.location,
-            }).collect()
-        }).unwrap_or_default();
-
-        let channel_label = channels.iter()
-            .map(|c| c.channel_type.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        ProbeJson {
-            id: p.id,
-            name: p.name,
-            description: p.description,
-            module_ref: p.module_ref,
-            channels,
-            channel_label,
-            method: p.method,
-            keywords: p.keywords,
-            schedule: p.schedule,
-            status: normalize_status(&p.status),
-            created_at: p.created_at,
-            last_run: p.last_run,
-        }
-    }).collect()
+    }
+    fields
 }
 
 // ── Target types ────────────────────────────────────────────────────────
@@ -251,7 +341,6 @@ fn normalize_status(status: &Option<String>) -> String {
 }
 
 fn parse_targets_md(content: &str) -> Vec<TargetJson> {
-    // Extract YAML frontmatter between --- markers
     let yaml_str = if content.starts_with("---\n") || content.starts_with("---\r\n") {
         let after_first = content.find("---\n").map(|i| i + 4)
             .or_else(|| content.find("---\r\n").map(|i| i + 5));
@@ -269,54 +358,109 @@ fn parse_targets_md(content: &str) -> Vec<TargetJson> {
         None
     };
 
-    let yaml_content = match yaml_str {
-        Some(y) => y,
-        None => return Vec::new(),
-    };
+    if let Some(yaml_content) = yaml_str {
+        if let Ok(t) = serde_yaml::from_str::<TargetsYaml>(yaml_content) {
+            return t.targets.into_iter().map(|t| {
+                let spec_entries = t.spec.as_ref().map(|v| convert_spec(v)).unwrap_or_default();
+                let spec_label = spec_entries.iter()
+                    .map(|e| e.value.as_str())
+                    .filter(|v| !v.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(", ");
 
-    let parsed: Result<TargetsYaml, _> = serde_yaml::from_str(yaml_content);
-    let targets_raw = match parsed {
-        Ok(t) => t.targets,
-        Err(e) => {
-            ts_eprint!("[Radar] Failed to parse YAML frontmatter: {}", e);
-            return Vec::new();
+                let channels: Vec<ChannelJson> = t.channels.map(|chs| {
+                    chs.into_iter().map(|c| ChannelJson {
+                        channel_type: c.channel_type,
+                        location: c.location,
+                    }).collect()
+                }).unwrap_or_default();
+
+                let channel_label = channels.iter()
+                    .map(|c| c.channel_type.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                TargetJson {
+                    id: t.id,
+                    name: t.name,
+                    description: t.description,
+                    spec_entries,
+                    spec_label,
+                    channels,
+                    channel_label,
+                    source_probe: t.source_probe,
+                    status: normalize_status(&t.status),
+                    created_at: t.created_at,
+                    last_scan: t.last_scan,
+                }
+            }).collect();
         }
-    };
+    }
 
-    targets_raw.into_iter().map(|t| {
-        let spec_entries = t.spec.as_ref().map(|v| convert_spec(v)).unwrap_or_default();
+    parse_targets_table(content)
+}
+
+fn parse_targets_table(content: &str) -> Vec<TargetJson> {
+    let mut targets = Vec::new();
+    let sections: Vec<&str> = content.split("\n## ").collect();
+    let known_spec_keys = ["ID", "名称", "描述", "状态"];
+
+    for section in &sections {
+        let section = section.trim();
+        if section.is_empty() { continue; }
+        if section.starts_with("# ") { continue; }
+
+        let header_end = section.find('\n').unwrap_or(section.len());
+        let header = &section[..header_end].trim();
+        let body = &section[header_end..];
+
+        let fields = parse_md_table_fields(body);
+        if fields.is_empty() { continue; }
+
+        let id = fields.get("ID").cloned();
+        let name = fields.get("名称").cloned().unwrap_or_else(|| {
+            header.split('：').nth(1).unwrap_or(header).to_string()
+        });
+        let description = fields.get("描述").cloned();
+
+        let mut spec_entries = Vec::new();
+        for (key, value) in &fields {
+            if !known_spec_keys.contains(&key.as_str()) {
+                spec_entries.push(SpecEntry {
+                    key: key.clone(),
+                    value: value.clone(),
+                });
+            }
+        }
         let spec_label = spec_entries.iter()
             .map(|e| e.value.as_str())
             .filter(|v| !v.is_empty())
             .collect::<Vec<_>>()
             .join(", ");
-        
-        let channels: Vec<ChannelJson> = t.channels.map(|chs| {
-            chs.into_iter().map(|c| ChannelJson {
-                channel_type: c.channel_type,
-                location: c.location,
-            }).collect()
-        }).unwrap_or_default();
-        
-        let channel_label = channels.iter()
-            .map(|c| c.channel_type.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        
-        TargetJson {
-            id: t.id,
-            name: t.name,
-            description: t.description,
+
+        let status = match fields.get("状态").map(|s| s.as_str()) {
+            Some("active") | Some("running") => "active".to_string(),
+            Some("paused") => "paused".to_string(),
+            Some(s) => s.to_string(),
+            None => "active".to_string(),
+        };
+
+        targets.push(TargetJson {
+            id,
+            name,
+            description,
             spec_entries,
             spec_label,
-            channels,
-            channel_label,
-            source_probe: t.source_probe,
-            status: normalize_status(&t.status),
-            created_at: t.created_at,
-            last_scan: t.last_scan,
-        }
-    }).collect()
+            channels: Vec::new(),
+            channel_label: String::new(),
+            source_probe: fields.get("关联 Probe").cloned(),
+            status,
+            created_at: None,
+            last_scan: None,
+        });
+    }
+
+    targets
 }
 
 /// Ensure the radar directory tree exists for an agent.
