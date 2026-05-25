@@ -30,7 +30,7 @@ pub trait ToolDispatcher: Send + Sync {
 pub struct XmlToolDispatcher;
 
 impl XmlToolDispatcher {
-    fn parse_xml_tool_calls(response: &str) -> (String, Vec<ParsedToolCall>) {
+    pub(crate) fn parse_xml_tool_calls(response: &str) -> (String, Vec<ParsedToolCall>) {
         // Strip `<think>...</think>` blocks before parsing tool calls.
         // Qwen and other reasoning models may embed chain-of-thought inline.
         let cleaned = Self::strip_think_tags(response);
@@ -173,7 +173,7 @@ pub struct NativeToolDispatcher;
 impl ToolDispatcher for NativeToolDispatcher {
     fn parse_response(&self, response: &ChatResponse) -> (String, Vec<ParsedToolCall>) {
         let text = response.text.clone().unwrap_or_default();
-        let calls = response
+        let calls: Vec<ParsedToolCall> = response
             .tool_calls
             .iter()
             .map(|tc| ParsedToolCall {
@@ -189,6 +189,16 @@ impl ToolDispatcher for NativeToolDispatcher {
                 tool_call_id: Some(tc.id.clone()),
             })
             .collect();
+
+        // Fallback: if the provider returned no native tool calls but the
+        // text contains <tool_call> XML tags, try XML parsing instead.
+        // Some models (especially when streaming) output tool calls in
+        // XML format as text rather than as structured tool_calls, even
+        // when the provider advertises native tool call support.
+        if calls.is_empty() && text.contains("<tool_call>") {
+            return XmlToolDispatcher::parse_xml_tool_calls(&text);
+        }
+
         (text, calls)
     }
 
