@@ -113,7 +113,15 @@ async fn main() -> anyhow::Result<()> {
 
     if first_run {
         let (password, api_key) = if args.service {
-            env_first_run_setup().ok_or_else(|| {
+            // Service mode: try environment variables first (desktop app path);
+            // fall back to interactive prompt if stdin is a terminal.
+            env_first_run_setup().or_else(|| {
+                if std::io::stdin().is_terminal() {
+                    prompt_first_run_setup().ok()
+                } else {
+                    None
+                }
+            }).ok_or_else(|| {
                 anyhow::anyhow!(
                     "First-run setup required in service mode.\n\
                      Set CLAWPARTY_ADMIN_PASSWORD and CLAWPARTY_API_KEY\n\
