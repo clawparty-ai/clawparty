@@ -105,6 +105,7 @@ fn clone_headers(
             || name_str.eq_ignore_ascii_case("sec-websocket-extensions")
             || name_str.eq_ignore_ascii_case("sec-websocket-protocol")
             || name_str.eq_ignore_ascii_case("sec-websocket-version")
+            || name_str.eq_ignore_ascii_case("accept-encoding")
         {
             continue;
         }
@@ -204,6 +205,7 @@ fn resolve_http_backend(req: &Request<Incoming>) -> anyhow::Result<Uri> {
 /// Proxy an HTTP request to the backend and return the response.
 async fn proxy_http(req: Request<Incoming>) -> anyhow::Result<Response<BoxBody>> {
     let backend_uri = resolve_http_backend(&req)?;
+    let req_path = req.uri().path().to_string();
 
     let client = Client::builder(TokioExecutor::new())
         .build(
@@ -225,8 +227,16 @@ async fn proxy_http(req: Request<Incoming>) -> anyhow::Result<Response<BoxBody>>
 
     match client.request(backend_req).await {
         Ok(res) => {
+            let is_opencode_messages = req_path.ends_with("/messages") 
+                && req_path.starts_with("/api/zeroclaw/");
             let (parts, body) = res.into_parts();
             let collected = body.collect().await?.to_bytes();
+
+            if is_opencode_messages && parts.status.is_success() {
+                if let Ok(transformed) = transform_opencode_messages(&collected) {
+                    return Ok(Response::from_parts(parts, box_body(transformed)));
+                }
+            }
             Ok(Response::from_parts(parts, box_body(collected)))
         }
         Err(e) => {
@@ -706,6 +716,41 @@ async fn bridge_opencode_sse(
 
     log::debug!("[Proxy][SSE] bridge_opencode_sse completed");
     Ok(())
+}
+
+fn transform_opencode_messages(bytes: &[u8]) -> anyhow::Result<Bytes> {
+    let opencode_msgs: Vec<serde_json::Value> = serde_json::from_slice(bytes)?;
+    let mut messages: Vec<serde_json::Value> = Vec::new();
+
+    for msg in &opencode_msgs {
+        let role = msg["info"]["role"].as_str().unwrap_or("user");
+        let created = msg["info"]["time"]["created"].as_f64().unwrap_or(0.0);
+
+        let mut content = String::new();
+        if let Some(parts) = msg["parts"].as_array() {
+            for part in parts {
+                if part["type"].as_str() == Some("text") {
+                    if let Some(text) = part["text"].as_str() {
+                        if !content.is_empty() {
+                            content.push('\n');
+                        }
+                        content.push_str(text);
+                    }
+                }
+            }
+        }
+
+        if !content.is_empty() {
+            messages.push(serde_json::json!({
+                "content": content,
+                "role": role,
+                "created_at": created,
+            }));
+        }
+    }
+
+    let result = serde_json::json!({"messages": messages});
+    Ok(Bytes::from(serde_json::to_string(&result)?))
 }
 
 // ── Authentication helpers (login runs in proxy, not ztm) ──────────────────

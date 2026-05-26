@@ -609,10 +609,15 @@ const formatChatTime = (rfc3339) => {
 }
 
 const loadZAgentHistory = async (agentName, messages) => {
-  if (messages.length > 0) return
+  console.log('[zAgent] loadZAgentHistory called:', agentName, 'existing msgs:', messages.length)
+  if (messages.length > 0) {
+    console.log('[zAgent] Skipping history load - already has', messages.length, 'messages')
+    return
+  }
   try {
     const response = await zeroclawService.getMessages(agentName, 'me')
     const history = response.data?.messages || []
+    console.log('[zAgent] History loaded:', history.length, 'messages for', agentName)
     for (let i = 0; i < history.length; i++) {
       const msg = history[i]
       const sender = msg.role === 'user' ? (currentMeshAgentUsername.value || 'You') : agentName
