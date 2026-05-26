@@ -402,7 +402,7 @@ fn parse_targets_md(content: &str) -> Vec<TargetJson> {
 
 fn parse_targets_table(content: &str) -> Vec<TargetJson> {
     let mut targets = Vec::new();
-    let sections: Vec<&str> = content.split("\n## ").collect();
+    let sections: Vec<&str> = content.split("\n### ").collect();
     let known_spec_keys = ["ID", "名称", "描述", "状态"];
 
     for section in &sections {
@@ -419,7 +419,10 @@ fn parse_targets_table(content: &str) -> Vec<TargetJson> {
 
         let id = fields.get("ID").cloned();
         let name = fields.get("名称").cloned().unwrap_or_else(|| {
-            header.split('：').nth(1).unwrap_or(header).to_string()
+            let after_colon = header.find(':')
+                .or_else(|| header.find('：'))
+                .map(|i| header[i + 1..].trim());
+            after_colon.unwrap_or(header).to_string()
         });
         let description = fields.get("描述").cloned();
 
