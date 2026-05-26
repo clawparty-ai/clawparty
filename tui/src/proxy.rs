@@ -172,9 +172,7 @@ fn resolve_http_backend(req: &Request<Incoming>) -> anyhow::Result<Uri> {
                 if session == "me" {
                     session = OPENCODE_SESSION.get().cloned().unwrap_or_else(|| "me".to_string());
                 }
-                let target_url = format!("http://127.0.0.1:{}/session/{}/message", port, session);
-                ts_eprint!("[Proxy] OpenCode messages route: {} (port={}, session={})", target_url, port, session);
-                target_url
+                format!("http://127.0.0.1:{}/session/{}/message?limit=50", port, session)
             } else {
                 format!("http://127.0.0.1:{}/api/sessions/{}/messages", port, session)
             }
@@ -209,48 +207,57 @@ fn resolve_http_backend(req: &Request<Incoming>) -> anyhow::Result<Uri> {
 async fn proxy_http(req: Request<Incoming>) -> anyhow::Result<Response<BoxBody>> {
     let backend_uri = resolve_http_backend(&req)?;
     let req_path = req.uri().path().to_string();
-
-    let client = Client::builder(TokioExecutor::new())
-        .build(
-            hyper_util::client::legacy::connect::HttpConnector::new()
-        );
-
     let method = req.method().clone();
-    let version = req.version();
-
-    let builder = Request::builder()
-        .method(method)
-        .uri(backend_uri)
-        .version(version);
-
-    let builder = clone_headers(&req, builder);
 
     let body_bytes = req.collect().await?.to_bytes();
-    let backend_req = builder.body(box_body(body_bytes))?;
+    let backend_url = backend_uri.to_string();
 
-    match client.request(backend_req).await {
-        Ok(res) => {
-            let is_opencode_messages = req_path.ends_with("/messages") 
-                && req_path.starts_with("/api/zeroclaw/");
-            let (parts, body) = res.into_parts();
-            let collected = body.collect().await?.to_bytes();
-
-            if is_opencode_messages && parts.status.is_success() {
-                if let Ok(transformed) = transform_opencode_messages(&collected) {
-                    return Ok(Response::from_parts(parts, box_body(transformed)));
-                }
-            }
-            Ok(Response::from_parts(parts, box_body(collected)))
+    let reqwest_client = reqwest::Client::new();
+    let resp = match method {
+        hyper::Method::GET => {
+            reqwest_client.get(&backend_url).send().await
         }
+        hyper::Method::POST => {
+            reqwest_client.post(&backend_url)
+                .body(body_bytes.to_vec())
+                .send().await
+        }
+        _ => {
+            reqwest_client.get(&backend_url).send().await
+        }
+    };
+
+    let resp = match resp {
+        Ok(r) => r,
         Err(e) => {
             ts_eprint!("[Proxy] Backend request failed: {}", e);
             let mut resp = Response::new(box_body(Bytes::from(
                 "Backend service unavailable".to_string(),
             )));
             *resp.status_mut() = StatusCode::BAD_GATEWAY;
-            Ok(resp)
+            return Ok(resp);
+        }
+    };
+
+    let status = StatusCode::from_u16(resp.status().as_u16())?;
+    let collected = Bytes::from(resp.bytes().await?.to_vec());
+
+    let is_opencode_messages = req_path.ends_with("/messages") 
+        && req_path.starts_with("/api/zeroclaw/");
+
+    if is_opencode_messages && status.is_success() {
+        if let Ok(transformed) = transform_opencode_messages(&collected) {
+            let mut builder = Response::builder()
+                .status(status)
+                .header(header::CONTENT_TYPE, "application/json");
+            return Ok(builder.body(box_body(transformed))?);
         }
     }
+
+    let mut builder = Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, "application/json");
+    Ok(builder.body(box_body(collected))?)
 }
 
 /// Handle a WebSocket upgrade by proxying to the correct backend.

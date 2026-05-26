@@ -94,12 +94,15 @@ impl OpenCodeDaemon {
         log_tx: mpsc::Sender<String>,
     ) -> Self {
         let db_path = format!("{}/opencode.db", agent_dir);
+        let work_dir = format!("{}/workspace", agent_dir);
 
         let mut child = Command::new(&opencode_bin)
             .args([
                 "serve",
                 "--port",
                 &port.to_string(),
+                "--dir",
+                &work_dir,
             ])
             .env("OPENCODE_DB", &db_path)
             .stdout(Stdio::piped())

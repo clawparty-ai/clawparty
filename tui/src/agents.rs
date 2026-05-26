@@ -418,9 +418,10 @@ fn spawn_agent_process(data_dir: &str, agent_name: &str, agent_dir: &str, port: 
         }
 
         let db_path = format!("{}/opencode.db", agent_dir);
+        let work_dir = format!("{}/workspace", agent_dir);
 
         match Command::new(&opencode_bin)
-            .args(["serve", "--port", &port.to_string()])
+            .args(["serve", "--port", &port.to_string(), "--dir", &work_dir])
             .env("OPENCODE_DB", &db_path)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -533,11 +534,13 @@ fn sync_agents_from_fs_inner(data_dir: &str) -> usize {
         // Detect config file: config.toml (zeroclaw) or opencode.json (opencode)
         let zc_config = path.join("config.toml");
         let oc_config = path.join("opencode.json");
+        let has_opencode_config = oc_config.exists();
+        let is_opencode = has_opencode_config;
 
-        let (config_path, is_opencode) = if oc_config.exists() {
-            (oc_config, true)
+        let config_path = if is_opencode {
+            path.join("opencode.json")
         } else {
-            (zc_config, false)
+            path.join("config.toml")
         };
 
         // Read port from config; allocate a free port if none found
@@ -561,7 +564,54 @@ fn sync_agents_from_fs_inner(data_dir: &str) -> usize {
         let ws_str = workspace_dir.to_string_lossy().to_string();
         let description = format!("Auto-discovered agent: {}", agent_name);
 
-        let engine_type = if is_opencode { "opencode" } else { "zeroclaw" };
+        let engine_type = if is_opencode || crate::proxy::get_engine() == "opencode" {
+            "opencode"
+        } else {
+            "zeroclaw"
+        };
+
+        // If global engine is opencode and agent only has config.toml, generate opencode.json
+        if engine_type == "opencode" && !has_opencode_config {
+            let zc_path = path.join("config.toml");
+            if let Ok(content) = std::fs::read_to_string(&zc_path) {
+                let api_key = content.lines()
+                    .find(|l| l.trim().starts_with("api_key"))
+                    .and_then(|l| l.split('=').nth(1))
+                    .map(|v| v.trim().trim_matches('"').to_string())
+                    .unwrap_or_default();
+                let model = content.lines()
+                    .find(|l| l.trim().starts_with("default_model"))
+                    .and_then(|l| l.split('=').nth(1))
+                    .map(|v| v.trim().trim_matches('"').to_string())
+                    .unwrap_or_default();
+                let provider = content.lines()
+                    .find(|l| l.trim().starts_with("default_provider"))
+                    .and_then(|l| l.split('=').nth(1))
+                    .map(|v| v.trim().trim_matches('"').to_string())
+                    .unwrap_or_default();
+
+                let provider_key = if provider.is_empty() { "default".to_string() } else { provider };
+                let model_key = if model.is_empty() { "default".to_string() } else { model };
+
+                let mut provider_map = serde_json::Map::new();
+                provider_map.insert(provider_key.clone(), serde_json::json!({
+                    "name": format!("{} ({})", model_key, provider_key),
+                    "models": { model_key.clone(): { "name": provider_key.clone() } },
+                    "options": { "apiKey": api_key }
+                }));
+
+                let oc_json = serde_json::json!({
+                    "$schema": "https://opencode.ai/config.json",
+                    "model": model_key,
+                    "provider": provider_map
+                });
+                if let Ok(json_str) = serde_json::to_string_pretty(&oc_json) {
+                    let oc_path = path.join("opencode.json");
+                    let _ = std::fs::write(&oc_path, json_str);
+                    ts_print!("[Agents] Auto-generated opencode.json for '{}'", agent_name);
+                }
+            }
+        }
 
         let initial_status = if agent_name == "0#Agent" { "running" } else { "stopped" };
         match db::create_agent(
@@ -943,9 +993,10 @@ pub async fn start_agent(data_dir: &str, name: &str) -> Response<BoxBody<Bytes, 
         };
 
         let db_path = format!("{}/opencode.db", agent.directory);
+        let work_dir = format!("{}/workspace", agent.directory);
 
         let child = match Command::new(&opencode_bin)
-            .args(["serve", "--port", &agent.port.to_string()])
+            .args(["serve", "--port", &agent.port.to_string(), "--dir", &work_dir])
             .env("OPENCODE_DB", &db_path)
             .stdout(Stdio::null())
             .stderr(Stdio::null())

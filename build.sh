@@ -106,10 +106,12 @@ if [ "$CLEAN" = true ]; then
   echo "=== Clean build ==="
   rm -rf "$ZTM_DIR/pipy/build"
   rm -rf "$ZTM_DIR/tui/target"
+  rm -rf "$ZTM_DIR/tui/gui"
   rm -rf "$ZTM_DIR/zeroclaw/target"
   rm -rf "$ZTM_DIR/bin"
   rm -rf "$ZTM_DIR/chat-gui/node_modules"
   rm -rf "$ZTM_DIR/chat-gui/dist"
+  echo "✓ Cleaned pipy, tui (target + gui), zeroclaw, bin, chat-gui"
 fi
 
 # GUI build must happen FIRST because TUI embeds the built frontend via rust-embed
