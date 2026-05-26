@@ -366,18 +366,10 @@ This is a starting point. Add your own conventions, style, and rules.
         .map(|h| std::path::PathBuf::from(h).join("Desktop").join("llm-wiki.md"))
         .and_then(|p| std::fs::read_to_string(&p).ok());
 
-    // Read radar-design.md from docs/ — try several locations relative to exe
-    let radar_content = std::env::current_exe().ok().and_then(|exe| {
-        let mut dir = exe.as_path();
-        for _ in 0..4 {
-            let candidate = dir.join("docs").join("radar-design.md");
-            if candidate.exists() {
-                return std::fs::read_to_string(&candidate).ok();
-            }
-            dir = match dir.parent() { Some(p) => p, None => break };
-        }
-        None
-    });
+    let radar_content = std::env::var("HOME")
+        .ok()
+        .map(|h| std::path::PathBuf::from(h).join("zeroclaw-template").join("RADAR.md"))
+        .and_then(|p| std::fs::read_to_string(&p).ok());
 
     for (filename, default_content) in &files {
         let path = workspace_dir.join(filename);
