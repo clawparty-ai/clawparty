@@ -615,8 +615,14 @@ const loadZAgentHistory = async (agentName, messages) => {
     return
   }
   try {
-    const response = await zeroclawService.getMessages(agentName, 'me')
-    const history = response.data?.messages || []
+    console.log('[zAgent] Calling getMessages...')
+    const response = await zeroclawService.getMessages(agentName, 'me').catch(e => {
+      console.error('[zAgent] getMessages promise rejected:', e)
+      return null
+    })
+    console.log('[zAgent] getMessages response:', response)
+    console.log('[zAgent] response.data:', response?.data)
+    const history = response?.data?.messages || []
     console.log('[zAgent] History loaded:', history.length, 'messages for', agentName)
     for (let i = 0; i < history.length; i++) {
       const msg = history[i]

@@ -106,6 +106,7 @@ fn clone_headers(
             || name_str.eq_ignore_ascii_case("sec-websocket-protocol")
             || name_str.eq_ignore_ascii_case("sec-websocket-version")
             || name_str.eq_ignore_ascii_case("accept-encoding")
+            || name_str.eq_ignore_ascii_case("host")
         {
             continue;
         }
@@ -171,7 +172,9 @@ fn resolve_http_backend(req: &Request<Incoming>) -> anyhow::Result<Uri> {
                 if session == "me" {
                     session = OPENCODE_SESSION.get().cloned().unwrap_or_else(|| "me".to_string());
                 }
-                format!("http://127.0.0.1:{}/session/{}/message", port, session)
+                let target_url = format!("http://127.0.0.1:{}/session/{}/message", port, session);
+                ts_eprint!("[Proxy] OpenCode messages route: {} (port={}, session={})", target_url, port, session);
+                target_url
             } else {
                 format!("http://127.0.0.1:{}/api/sessions/{}/messages", port, session)
             }

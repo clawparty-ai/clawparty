@@ -40,6 +40,28 @@ impl OpenCodeDaemon {
         }
     }
 
+    pub async fn get_or_create_session(base_url: &str) -> anyhow::Result<String> {
+        // Try to reuse the most recent "ClawParty Agent" session
+        let resp = Client::new()
+            .get(format!("{}/session", base_url))
+            .send()
+            .await?;
+
+        if resp.status().is_success() {
+            let sessions: Vec<serde_json::Value> = resp.json().await?;
+            let existing = sessions.iter().find(|s| {
+                s.get("title").and_then(|t| t.as_str()) == Some("ClawParty Agent")
+            });
+            if let Some(session) = existing {
+                if let Some(id) = session["id"].as_str() {
+                    return Ok(id.to_string());
+                }
+            }
+        }
+        // No existing session found, create a new one
+        Self::create_session(base_url).await
+    }
+
     pub async fn send_message(
         base_url: &str,
         session_id: &str,

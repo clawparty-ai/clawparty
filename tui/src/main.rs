@@ -274,9 +274,9 @@ async fn main() -> anyhow::Result<()> {
         state.zeroclaw_mgr = None;
         state.add_log("INFO", "✅ OpenCode server started successfully");
 
-        match opencode::OpenCodeDaemon::create_session("http://localhost:42617").await {
+        match opencode::OpenCodeDaemon::get_or_create_session("http://localhost:42617").await {
             Ok(session_id) => {
-                state.add_log("INFO", &format!("OpenCode session created: {}", session_id));
+                state.add_log("INFO", &format!("OpenCode session: {}", session_id));
                 let _ = crate::proxy::OPENCODE_SESSION.get_or_init(|| session_id.clone());
                 state.zeroclaw_sessions.push(crate::app::ZeroClawSession {
                     session_id: session_id.clone(),
@@ -1111,9 +1111,9 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
         }
         ts_print!("✅ OpenCode server started successfully on port 42617");
 
-        match opencode::OpenCodeDaemon::create_session("http://localhost:42617").await {
+        match opencode::OpenCodeDaemon::get_or_create_session("http://localhost:42617").await {
             Ok(session_id) => {
-                ts_print!("OpenCode session created: {}", session_id);
+                ts_print!("OpenCode session: {}", session_id);
                 let _ = crate::proxy::OPENCODE_SESSION.get_or_init(|| session_id);
             }
             Err(e) => ts_eprint!("Failed to create OpenCode session: {}", e),
