@@ -418,10 +418,10 @@ fn spawn_agent_process(data_dir: &str, agent_name: &str, agent_dir: &str, port: 
         }
 
         let db_path = format!("{}/opencode.db", agent_dir);
-        let work_dir = format!("{}/workspace", agent_dir);
 
         match Command::new(&opencode_bin)
-            .args(["serve", "--port", &port.to_string(), "--dir", &work_dir])
+            .args(["serve", "--port", &port.to_string()])
+            .current_dir(agent_dir)
             .env("OPENCODE_DB", &db_path)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -993,10 +993,10 @@ pub async fn start_agent(data_dir: &str, name: &str) -> Response<BoxBody<Bytes, 
         };
 
         let db_path = format!("{}/opencode.db", agent.directory);
-        let work_dir = format!("{}/workspace", agent.directory);
 
         let child = match Command::new(&opencode_bin)
-            .args(["serve", "--port", &agent.port.to_string(), "--dir", &work_dir])
+            .args(["serve", "--port", &agent.port.to_string()])
+            .current_dir(&agent.directory)
             .env("OPENCODE_DB", &db_path)
             .stdout(Stdio::null())
             .stderr(Stdio::null())

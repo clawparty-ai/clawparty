@@ -418,11 +418,11 @@ async fn main() -> anyhow::Result<()> {
         if global_engine == "opencode" {
             let opencode_bin = find_opencode_bin();
             let db_path = format!("{}/opencode.db", agent_cfg.directory);
-            let work_dir = format!("{}/workspace", agent_cfg.directory);
 
             state.add_log("INFO", &format!("Starting opencode agent {} on port {}", agent_cfg.agent_name, agent_cfg.port));
             let child = match std::process::Command::new(&opencode_bin)
-                .args(["serve", "--port", &agent_cfg.port.to_string(), "--dir", &work_dir])
+                .args(["serve", "--port", &agent_cfg.port.to_string()])
+                .current_dir(&agent_cfg.directory)
                 .env("OPENCODE_DB", &db_path)
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
@@ -1231,10 +1231,10 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
         if engine == "opencode" {
             let opencode_bin = find_opencode_bin();
             let db_path = format!("{}/opencode.db", agent_cfg.directory);
-            let work_dir = format!("{}/workspace", agent_cfg.directory);
 
             match std::process::Command::new(&opencode_bin)
-                .args(["serve", "--port", &agent_cfg.port.to_string(), "--dir", &work_dir])
+                .args(["serve", "--port", &agent_cfg.port.to_string()])
+                .current_dir(&agent_cfg.directory)
                 .env("OPENCODE_DB", &db_path)
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
