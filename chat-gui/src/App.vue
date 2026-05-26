@@ -630,6 +630,10 @@ const loadZAgentHistory = async (agentName, messages) => {
         timestamp: msg.created_at ? new Date(msg.created_at).getTime() : Date.now()
       })
     }
+    // Update _msgCount so computed properties detect the change
+    const conn = wsConnections[agentName]
+    if (conn) conn._msgCount = messages.length
+    console.log('[zAgent] History loaded:', history.length, 'msgs, _msgCount:', conn?._msgCount)
   } catch (e) {
     console.warn('[zAgent] Failed to load history:', e)
   }
