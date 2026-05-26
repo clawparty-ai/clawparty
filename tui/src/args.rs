@@ -42,6 +42,10 @@ pub struct Args {
     #[arg(long, visible_alias = "no-ztm", default_value = "false")]
     pub zeroclaw_only: bool,
 
+    // Execution engine: "zeroclaw" (default) or "opencode"
+    #[arg(long, default_value = "zeroclaw")]
+    pub engine: String,
+
     // Watchdog: interval in seconds to health-check ZTM agent and auto-restart if hung (0 = disabled)
     #[arg(long, default_value = "0")]
     pub watchdog_interval: u64,

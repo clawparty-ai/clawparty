@@ -96,7 +96,8 @@ pub fn init_clawparty_db(data_dir: &str) -> anyhow::Result<()> {
             updated_at      REAL    NOT NULL,
             config_json     TEXT,
             error_msg       TEXT,
-            deleted         INTEGER NOT NULL DEFAULT 0
+            deleted         INTEGER NOT NULL DEFAULT 0,
+            engine          TEXT NOT NULL DEFAULT 'zeroclaw'
         );
         CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
         CREATE INDEX IF NOT EXISTS idx_agents_deleted ON agents(deleted);
@@ -144,6 +145,17 @@ pub fn init_clawparty_db(data_dir: &str) -> anyhow::Result<()> {
 
 
     )?;
+
+    // Migration: add engine column if it doesn't exist
+    let has_engine: bool = conn
+        .prepare("SELECT engine FROM agents LIMIT 0")
+        .is_ok();
+    if !has_engine {
+        conn.execute(
+            "ALTER TABLE agents ADD COLUMN engine TEXT NOT NULL DEFAULT 'zeroclaw'",
+            [],
+        )?;
+    }
 
     Ok(())
 }
@@ -596,6 +608,7 @@ pub struct AgentRecord {
     pub config_json: Option<String>,
     pub error_msg: Option<String>,
     pub deleted: bool,
+    pub engine: String,
 }
 
 fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<AgentRecord> {
@@ -614,6 +627,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<AgentRecord> {
         config_json: row.get("config_json")?,
         error_msg: row.get("error_msg")?,
         deleted: row.get::<_, i64>("deleted")? != 0,
+        engine: row.get::<_, String>("engine").unwrap_or_else(|_| "zeroclaw".to_string()),
     })
 }
 
@@ -658,6 +672,7 @@ pub fn create_agent(
     port: u16,
     config_json: Option<&str>,
     initial_status: &str,
+    engine: &str,
 ) -> anyhow::Result<AgentRecord> {
     let conn = open_db(data_dir)?;
     let t = std::time::SystemTime::now()
@@ -667,8 +682,8 @@ pub fn create_agent(
     conn.execute(
         "INSERT INTO agents
          (agent_name, display_name, description, directory, config_path, workspace_dir,
-          port, status, created_at, updated_at, config_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)",
+          port, status, created_at, updated_at, config_json, engine)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11)",
         rusqlite::params![
             agent_name,
             display_name,
@@ -680,6 +695,7 @@ pub fn create_agent(
             initial_status,
             t,
             config_json,
+            engine,
         ],
     )?;
 

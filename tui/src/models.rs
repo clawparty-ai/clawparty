@@ -217,6 +217,7 @@ pub struct AgentConfig {
     pub directory: String,
     pub port: u16,
     pub status: String,
+    pub engine: String,
 }
 
 impl Chat {
