@@ -356,15 +356,76 @@ function setupRadarAnimation() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   }
 
-  // Fixed dot positions based on item count
-  function getDotPositions(cx, cy, r, count) {
-    var positions = []
-    for (var i = 0; i < count; i++) {
-      var a = 2 * Math.PI * i / count + 0.2 * i
-      var d = r * (0.25 + ((i % 5) + 1) * 0.08)
-      positions.push({ angle: a, dist: d })
+  // Letter-pattern dot grid (5x5 per letter)
+  var LETTER_GRIDS = {
+    N: [
+      [1,0,0,0,1],
+      [1,1,0,0,1],
+      [1,0,1,0,1],
+      [1,0,0,1,1],
+      [1,0,0,0,1],
+    ],
+    B: [
+      [1,1,1,1,0],
+      [1,0,0,0,1],
+      [1,1,1,1,0],
+      [1,0,0,0,1],
+      [1,1,1,1,0],
+    ],
+  }
+
+  var dotPositions = []
+  var needsDotRegen = true
+
+  function generateDotPositions(cx, cy, r, items) {
+    if (!needsDotRegen) return
+    needsDotRegen = false
+    var usePattern = Math.random() < 0.6
+    var cells = []
+
+    if (usePattern) {
+      var letters = ['N', 'B']
+      var offsetX = 0
+      for (var li = 0; li < letters.length; li++) {
+        var grid = LETTER_GRIDS[letters[li]]
+        for (var gy = 0; gy < grid.length; gy++) {
+          for (var gx = 0; gx < grid[gy].length; gx++) {
+            if (grid[gy][gx]) {
+              cells.push({ gx: offsetX + gx, gy: gy })
+            }
+          }
+        }
+        offsetX += grid[0].length + 1
+      }
     }
-    return positions
+
+    dotPositions = []
+    for (var i = 0; i < items.length; i++) {
+      var px, py
+      if (cells.length > 0) {
+        var cell = cells[i % cells.length]
+        var totalW = LETTER_GRIDS.N[0].length * 2 + 1
+        var totalH = LETTER_GRIDS.N.length
+        var cellSize = (r * 1.7) / Math.max(totalW, totalH)
+        var baseX = cx - (totalW * cellSize) / 2
+        var baseY = cy - (totalH * cellSize) / 2
+        var jx = (Math.random() - 0.5) * cellSize * 0.7
+        var jy = (Math.random() - 0.5) * cellSize * 0.7
+        px = baseX + (cell.gx + 0.5) * cellSize + jx
+        py = baseY + (cell.gy + 0.5) * cellSize + jy
+      } else {
+        var a = Math.random() * Math.PI * 2
+        var d = r * (0.2 + Math.random() * 0.7)
+        px = cx + d * Math.cos(a)
+        py = cy + d * Math.sin(a)
+      }
+      var dx = px - cx
+      var dy = py - cy
+      dotPositions.push({
+        angle: Math.atan2(dy, dx),
+        dist: Math.sqrt(dx * dx + dy * dy)
+      })
+    }
   }
 
   function draw() {
@@ -423,7 +484,8 @@ function setupRadarAnimation() {
 
     // Dots
     var items = activeSubPanel.value === 'targets' ? targets.value : probes.value
-    var positions = getDotPositions(cx, cy, r, items.length)
+    generateDotPositions(cx, cy, r, items)
+    var positions = dotPositions
 
     for (var di = 0; di < items.length; di++) {
       var p = positions[di]
@@ -698,7 +760,8 @@ onBeforeUnmount(function () {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border-subtle, rgba(0,0,0,0.07));
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .radar-left-header {
   display: flex;
