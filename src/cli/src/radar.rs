@@ -731,8 +731,9 @@ pub async fn get_targets_json(data_dir: &str, agent_name: &str) -> Response<BoxB
         Err(_) => String::new(),
     };
     let mut targets = parse_targets_md(&content);
-    let mut seen: std::collections::HashSet<String> = targets.iter()
-        .map(|t| t.name.clone())
+    let mut name_to_index: std::collections::HashMap<String, usize> = targets.iter()
+        .enumerate()
+        .map(|(i, t)| (t.name.clone(), i))
         .collect();
 
     let detailed_dir = workspace.join("radar").join("targets");
@@ -743,9 +744,12 @@ pub async fn get_targets_json(data_dir: &str, agent_name: &str) -> Response<BoxB
                 continue;
             }
             if let Ok(file_content) = tokio::fs::read_to_string(entry.path()).await {
-                if let Some(target) = parse_detailed_target(&file_content) {
-                    if seen.insert(target.name.clone()) {
-                        targets.push(target);
+                if let Some(detailed) = parse_detailed_target(&file_content) {
+                    if let Some(&idx) = name_to_index.get(&detailed.name) {
+                        targets[idx] = detailed;
+                    } else {
+                        name_to_index.insert(detailed.name.clone(), targets.len());
+                        targets.push(detailed);
                     }
                 }
             }
