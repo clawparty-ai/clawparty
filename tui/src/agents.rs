@@ -8,7 +8,6 @@ use http_body_util::combinators::BoxBody;
 use std::path::Path;
 
 use crate::db;
-use crate::db::AgentRecord;
 use crate::proxy::box_body;
 
 fn json_response<T: serde::Serialize>(status: StatusCode, body: &T) -> Response<BoxBody<Bytes, hyper::Error>> {
@@ -402,48 +401,91 @@ This is a starting point. Add your own conventions, style, and rules.
 
 /// Spawn a zeroclaw daemon for a newly discovered agent and update DB status to "running".
 /// Mirrors the startup launch in main.rs. Sync (no await).
-fn spawn_agent_process(data_dir: &str, agent_name: &str, agent_dir: &str, port: u16) {
-    let zeroclaw_bin = match find_zeroclaw_bin() {
-        Some(p) => p,
-        None => {
-            ts_eprint!("[Agents] zeroclaw binary not found, cannot start '{}'", agent_name);
-            return;
-        }
-    };
-
-    // Skip if port already in use (agent may already be running)
-    if is_port_in_use(port) {
-        ts_print!("[Agents] Port {} already in use, marking '{}' as running", port, agent_name);
-        let _ = db::update_agent_status(data_dir, agent_name, "running", None, None);
-        return;
-    }
-
-    match Command::new(&zeroclaw_bin)
-        .args(["daemon", "--config-dir", agent_dir, "-p", &port.to_string()])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .stdin(Stdio::null())
-        .spawn()
-    {
-        Ok(mut child) => {
-            let pid = child.id() as u64;
-            ts_print!("[Agents] Spawning agent '{}' on port {} (pid {})...", agent_name, port, pid);
-
-            // Wait briefly and verify the process actually came up
-            std::thread::sleep(std::time::Duration::from_millis(500));
-
-            if !is_process_alive(pid) {
-                ts_eprint!("[Agents] Agent '{}' (pid {}) exited immediately - check zeroclaw config or logs", agent_name, pid);
-                let _ = db::update_agent_status(data_dir, agent_name, "error", Some(pid), Some("Process exited immediately after spawn"));
+fn spawn_agent_process(data_dir: &str, agent_name: &str, agent_dir: &str, port: u16, engine: &str) {
+    if engine == "opencode" {
+        let opencode_bin = match find_opencode_bin() {
+            Some(p) => p,
+            None => {
+                ts_eprint!("[Agents] opencode binary not found, cannot start '{}'", agent_name);
                 return;
             }
+        };
 
-            ts_print!("[Agents] Started agent '{}' on port {} (pid {})", agent_name, port, pid);
-            let _ = db::update_agent_status(data_dir, agent_name, "running", Some(pid), None);
+        if is_port_in_use(port) {
+            ts_print!("[Agents] Port {} already in use, marking '{}' as running", port, agent_name);
+            let _ = db::update_agent_status(data_dir, agent_name, "running", None, None);
+            return;
         }
-        Err(e) => {
-            ts_eprint!("[Agents] Failed to start agent '{}': {}", agent_name, e);
-            let _ = db::update_agent_status(data_dir, agent_name, "error", None, Some(&e.to_string()));
+
+        let db_path = format!("{}/opencode.db", agent_dir);
+
+        match Command::new(&opencode_bin)
+            .args(["serve", "--port", &port.to_string()])
+            .env("OPENCODE_DB", &db_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .stdin(Stdio::null())
+            .spawn()
+        {
+            Ok(child) => {
+                let pid = child.id() as u64;
+                ts_print!("[Agents] Spawning opencode agent '{}' on port {} (pid {})...", agent_name, port, pid);
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                if !is_process_alive(pid) {
+                    ts_eprint!("[Agents] Agent '{}' (pid {}) exited immediately", agent_name, pid);
+                    let _ = db::update_agent_status(data_dir, agent_name, "error", Some(pid), Some("Process exited immediately after spawn"));
+                    return;
+                }
+                ts_print!("[Agents] Started opencode agent '{}' on port {} (pid {})", agent_name, port, pid);
+                let _ = db::update_agent_status(data_dir, agent_name, "running", Some(pid), None);
+            }
+            Err(e) => {
+                ts_eprint!("[Agents] Failed to start opencode agent '{}': {}", agent_name, e);
+                let _ = db::update_agent_status(data_dir, agent_name, "error", None, Some(&e.to_string()));
+            }
+        }
+    } else {
+        let zeroclaw_bin = match find_zeroclaw_bin() {
+            Some(p) => p,
+            None => {
+                ts_eprint!("[Agents] zeroclaw binary not found, cannot start '{}'", agent_name);
+                return;
+            }
+        };
+
+        if is_port_in_use(port) {
+            ts_print!("[Agents] Port {} already in use, marking '{}' as running", port, agent_name);
+            let _ = db::update_agent_status(data_dir, agent_name, "running", None, None);
+            return;
+        }
+
+        match Command::new(&zeroclaw_bin)
+            .args(["daemon", "--config-dir", agent_dir, "-p", &port.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .stdin(Stdio::null())
+            .spawn()
+        {
+            Ok(mut child) => {
+                let pid = child.id() as u64;
+                ts_print!("[Agents] Spawning agent '{}' on port {} (pid {})...", agent_name, port, pid);
+
+                // Wait briefly and verify the process actually came up
+                std::thread::sleep(std::time::Duration::from_millis(500));
+
+                if !is_process_alive(pid) {
+                    ts_eprint!("[Agents] Agent '{}' (pid {}) exited immediately - check zeroclaw config or logs", agent_name, pid);
+                    let _ = db::update_agent_status(data_dir, agent_name, "error", Some(pid), Some("Process exited immediately after spawn"));
+                    return;
+                }
+
+                ts_print!("[Agents] Started agent '{}' on port {} (pid {})", agent_name, port, pid);
+                let _ = db::update_agent_status(data_dir, agent_name, "running", Some(pid), None);
+            }
+            Err(e) => {
+                ts_eprint!("[Agents] Failed to start agent '{}': {}", agent_name, e);
+                let _ = db::update_agent_status(data_dir, agent_name, "error", None, Some(&e.to_string()));
+            }
         }
     }
 }
@@ -488,24 +530,38 @@ fn sync_agents_from_fs_inner(data_dir: &str) -> usize {
             continue;
         }
 
-        let config_path = path.join("config.toml");
+        // Detect config file: config.toml (zeroclaw) or opencode.json (opencode)
+        let zc_config = path.join("config.toml");
+        let oc_config = path.join("opencode.json");
 
-        // Read port from config.toml; allocate a free port if none found
-        let port = std::fs::read_to_string(&config_path)
-            .ok()
-            .and_then(|content| {
-                content.lines()
-                    .find(|l| l.trim().starts_with("port"))
-                    .and_then(|l| l.split('=').nth(1))
-                    .and_then(|v| v.trim().split(|c: char| !c.is_ascii_digit()).next())
-                    .and_then(|v| v.parse::<u16>().ok())
-            })
-            .unwrap_or_else(|| allocate_port(data_dir).unwrap_or(42617));
+        let (config_path, is_opencode) = if oc_config.exists() {
+            (oc_config, true)
+        } else {
+            (zc_config, false)
+        };
+
+        // Read port from config; allocate a free port if none found
+        let port = if is_opencode {
+            allocate_port(data_dir).unwrap_or(42617)
+        } else {
+            std::fs::read_to_string(&config_path)
+                .ok()
+                .and_then(|content| {
+                    content.lines()
+                        .find(|l| l.trim().starts_with("port"))
+                        .and_then(|l| l.split('=').nth(1))
+                        .and_then(|v| v.trim().split(|c: char| !c.is_ascii_digit()).next())
+                        .and_then(|v| v.parse::<u16>().ok())
+                })
+                .unwrap_or_else(|| allocate_port(data_dir).unwrap_or(42617))
+        };
 
         let dir_str = path.to_string_lossy().to_string();
         let config_str = config_path.to_string_lossy().to_string();
         let ws_str = workspace_dir.to_string_lossy().to_string();
         let description = format!("Auto-discovered agent: {}", agent_name);
+
+        let engine_type = if is_opencode { "opencode" } else { "zeroclaw" };
 
         let initial_status = if agent_name == "0#Agent" { "running" } else { "stopped" };
         match db::create_agent(
@@ -519,13 +575,14 @@ fn sync_agents_from_fs_inner(data_dir: &str) -> usize {
             port,
             None,
             initial_status,
+            engine_type,
         ) {
             Ok(_) => {
                 ts_print!("[Agents] Created DB record for agent '{}' on port {}", agent_name, port);
                 count += 1;
                 // Start the agent immediately (skip 0#Agent — managed separately)
                 if agent_name != "0#Agent" {
-                    spawn_agent_process(data_dir, &agent_name, &dir_str, port);
+                    spawn_agent_process(data_dir, &agent_name, &dir_str, port, engine_type);
                 }
             }
             Err(e) => {
@@ -564,6 +621,26 @@ fn find_zeroclaw_bin() -> Option<String> {
     }
     // 2. From PATH
     if let Ok(output) = Command::new("which").arg("zeroclaw").output() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn find_opencode_bin() -> Option<String> {
+    // 1. Same directory as current executable
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let oc = dir.join("opencode");
+            if oc.exists() {
+                return Some(oc.to_string_lossy().to_string());
+            }
+        }
+    }
+    // 2. From PATH
+    if let Ok(output) = Command::new("which").arg("opencode").output() {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !path.is_empty() {
             return Some(path);
@@ -668,10 +745,52 @@ pub async fn create_agent(data_dir: &str, body_bytes: Bytes) -> Response<BoxBody
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to create directory: {}", e));
     }
 
-    // Write config.toml
-    let config_path = agent_dir.join("config.toml");
-    let mut config_content = format!(
-        r#"[gateway]
+    let engine = crate::proxy::get_engine();
+    let config_filename = if engine == "opencode" {
+        "opencode.json"
+    } else {
+        "config.toml"
+    };
+    let config_path = agent_dir.join(config_filename);
+
+    if engine == "opencode" {
+        let provider = req.provider.clone().unwrap_or_else(|| "openai".to_string());
+        let model = req.model.clone().unwrap_or_default();
+        let api_key = req.api_key.clone().unwrap_or_default();
+        let api_endpoint = req.api_endpoint.clone().unwrap_or_default();
+
+        let provider_config = serde_json::json!({
+            &provider: {
+                "name": format!("{} ({})", model, provider),
+                "models": {
+                    &model: {
+                        "name": &provider,
+                    }
+                },
+                "options": {
+                    "apiKey": api_key,
+                }
+            }
+        });
+
+        let mut config_json = serde_json::json!({
+            "$schema": "https://opencode.ai/config.json",
+            "model": model,
+            "provider": provider_config,
+        });
+
+        if !api_endpoint.is_empty() {
+            config_json["provider"][&provider]["options"]["baseURL"] =
+                serde_json::Value::String(api_endpoint);
+        }
+
+        let config_str = serde_json::to_string_pretty(&config_json).unwrap_or_default();
+        if let Err(e) = std::fs::write(&config_path, config_str) {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to write opencode config: {}", e));
+        }
+    } else {
+        let mut config_content = format!(
+            r#"[gateway]
 port = {}
 require_pairing = false
 
@@ -682,17 +801,16 @@ name = "{}"
 auto_save = true
 backend = "sqlite"
 "#,
-        port, agent_name
-    );
+            port, agent_name
+        );
 
-    // Add model config if provided
-    if req.api_key.is_some() || req.provider.is_some() || req.model.is_some() {
-        let provider = req.provider.unwrap_or_else(|| "openai".to_string());
-        let model = req.model.unwrap_or_default();
-        let api_key = req.api_key.unwrap_or_default();
-        let api_endpoint = req.api_endpoint.unwrap_or_default();
-        config_content.push_str(&format!(
-            r#"
+        if req.api_key.is_some() || req.provider.is_some() || req.model.is_some() {
+            let provider = req.provider.unwrap_or_else(|| "openai".to_string());
+            let model = req.model.unwrap_or_default();
+            let api_key = req.api_key.unwrap_or_default();
+            let api_endpoint = req.api_endpoint.unwrap_or_default();
+            config_content.push_str(&format!(
+                r#"
 
 [model]
 provider = "{}"
@@ -700,12 +818,13 @@ model = "{}"
 api_key = "{}"
 api_endpoint = "{}"
 "#,
-            provider, model, api_key, api_endpoint
-        ));
-    }
+                provider, model, api_key, api_endpoint
+            ));
+        }
 
-    if let Err(e) = std::fs::write(&config_path, config_content) {
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to write config: {}", e));
+        if let Err(e) = std::fs::write(&config_path, config_content) {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to write config: {}", e));
+        }
     }
 
     // Write SOUL.md if provided
@@ -740,6 +859,7 @@ api_endpoint = "{}"
         port,
         None,
         "stopped",
+        &engine,
     ) {
         Ok(agent) => json_response(StatusCode::CREATED, &agent),
         Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("DB error: {}", e)),
@@ -812,6 +932,51 @@ pub async fn start_agent(data_dir: &str, name: &str) -> Response<BoxBody<Bytes, 
                 return error_response(StatusCode::BAD_REQUEST, "Agent already running");
             }
         }
+    }
+
+    let is_opencode = agent.engine == "opencode";
+
+    if is_opencode {
+        let opencode_bin = match find_opencode_bin() {
+            Some(p) => p,
+            None => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "opencode binary not found"),
+        };
+
+        let db_path = format!("{}/opencode.db", agent.directory);
+
+        let child = match Command::new(&opencode_bin)
+            .args(["serve", "--port", &agent.port.to_string()])
+            .env("OPENCODE_DB", &db_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .stdin(Stdio::null())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = db::update_agent_status(data_dir, name, "error", None, Some(&e.to_string()));
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to start agent: {}", e));
+            }
+        };
+
+        let pid = child.id() as u64;
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        if !is_process_alive(pid) {
+            let _ = db::update_agent_status(data_dir, name, "error", Some(pid), Some("Process exited immediately"));
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Agent process exited immediately");
+        }
+
+        if let Err(e) = db::update_agent_status(data_dir, name, "running", Some(pid), None) {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("DB error: {}", e));
+        }
+
+        return ok_response(&serde_json::json!({
+            "status": "running",
+            "agent_name": name,
+            "pid": pid,
+            "port": agent.port
+        }));
     }
 
     let zeroclaw_bin = match find_zeroclaw_bin() {
