@@ -1,0 +1,23 @@
+{
+  "name": "clawparty-tui",
+  "version": "1.0.0",
+  "description": "Terminal User Interface for ClawParty",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "clawparty",
+    "tui",
+    "terminal",
+    "chat"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.2",
+    "blessed": "^0.1.81",
+    "blessed-contrib": "^4.11.0"
+  }
+}

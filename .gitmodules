@@ -1,0 +1,6 @@
+[submodule "ztm"]
+	path = ztm
+	url = https://github.com/flomesh-io/ztm.git
+[submodule "zeroclaw"]
+	path = zeroclaw
+	url = https://github.com/zeroclaw-labs/zeroclaw.git

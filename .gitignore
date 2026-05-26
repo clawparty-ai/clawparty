@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+bin/
+dist/
+build/
+out/
+src/cli/gui/
+src/tui/gui/
+
+# Symlink (src/tui -> src/cli)
+src/tui
+
+# Rust
+target/
+
+# Tauri
+src-tauri/target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Cache
+.cache/
+*.tsbuildinfo
+
+# OpenCode internal state
+.omo/
+.opencode/
+
+# Credentials / keys
+*.keystore
+*.pem
+*.key
+clawparty.db
