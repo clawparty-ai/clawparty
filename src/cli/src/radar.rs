@@ -331,6 +331,191 @@ fn convert_spec(value: &serde_yaml::Value) -> Vec<SpecEntry> {
     entries
 }
 
+/// Parse a detailed target markdown file from radrar/targets/*.md.
+///
+/// Each file has:
+///   - H1 title → target name
+///   - Blockquote lines (`> ...`) → description
+///   - H2/H3 sections with 2-column tables → spec entries (prefixed with section name)
+///   - H2/H3 sections with list items (`- ...`) → spec entries
+fn parse_detailed_target(content: &str) -> Option<TargetJson> {
+    let mut name = String::new();
+    let mut description_parts: Vec<String> = Vec::new();
+    let mut spec_entries: Vec<SpecEntry> = Vec::new();
+    let mut current_section = String::new();
+
+    let lines: Vec<&str> = content.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i].trim();
+
+        if line.starts_with("# ") && !line.starts_with("## ") {
+            name = line[2..].trim().to_string();
+            i += 1;
+            continue;
+        }
+
+        if line.starts_with("## ") {
+            current_section = line.trim_start_matches('#').trim().to_string();
+            i += 1;
+            let (consumed, entries) = parse_section_entries(&lines[i..], &current_section);
+            spec_entries.extend(entries);
+            i += consumed;
+            continue;
+        }
+        if line.starts_with("### ") {
+            current_section = line.trim_start_matches('#').trim().to_string();
+            i += 1;
+            let (consumed, entries) = parse_section_entries(&lines[i..], &current_section);
+            spec_entries.extend(entries);
+            i += consumed;
+            continue;
+        }
+
+        if line.starts_with('>') {
+            let text = line[1..].trim();
+            if !text.is_empty() {
+                description_parts.push(text.to_string());
+            }
+            i += 1;
+            continue;
+        }
+
+        i += 1;
+    }
+
+    if name.is_empty() {
+        return None;
+    }
+
+    let description = if description_parts.is_empty() {
+        None
+    } else {
+        Some(description_parts.join("\n"))
+    };
+
+    let spec_label = spec_entries.iter()
+        .map(|e| e.value.as_str())
+        .filter(|v| !v.is_empty())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    Some(TargetJson {
+        id: None,
+        name,
+        description,
+        spec_entries,
+        spec_label,
+        channels: Vec::new(),
+        channel_label: String::new(),
+        source_probe: None,
+        status: "active".to_string(),
+        created_at: None,
+        last_scan: None,
+    })
+}
+
+/// Parse entries after a section heading: tables, multi-column tables, and list items.
+/// Returns (lines consumed, spec entries).
+fn parse_section_entries(lines: &[&str], section: &str) -> (usize, Vec<SpecEntry>) {
+    let mut consumed = 0;
+    let mut entries: Vec<SpecEntry> = Vec::new();
+
+    while consumed < lines.len() && lines[consumed].trim().is_empty() {
+        consumed += 1;
+    }
+
+    if consumed >= lines.len() {
+        return (consumed, entries);
+    }
+
+    let first_line = lines[consumed].trim();
+    if first_line.starts_with('|') && first_line.contains('|') {
+        let header_cells: Vec<&str> = first_line.split('|').collect();
+        let col_count = header_cells.iter().filter(|c| !c.trim().is_empty()).count();
+
+        if col_count == 2 {
+            while consumed < lines.len() {
+                let line = lines[consumed].trim();
+                if !line.starts_with('|') { break; }
+                if line.contains("---|---") || line.contains("------") { consumed += 1; continue; }
+                let cells: Vec<&str> = line.split('|').collect();
+                if cells.len() < 3 { consumed += 1; continue; }
+                let key = cells[1].trim().trim_start_matches("**").trim_end_matches("**").trim();
+                let value = cells[2].trim();
+                if !key.is_empty() && !value.is_empty() {
+                    let prefixed_key = format!("{}-{}", section, key);
+                    entries.push(SpecEntry { key: prefixed_key, value: value.to_string() });
+                }
+                consumed += 1;
+            }
+        } else {
+            let headers: Vec<String> = header_cells.iter()
+                .map(|c| c.trim().to_string())
+                .filter(|c| !c.is_empty())
+                .collect();
+            consumed += 1;
+            while consumed < lines.len() {
+                let line = lines[consumed].trim();
+                if line.starts_with('|') && (line.contains("---") || line.contains("------")) {
+                    consumed += 1;
+                } else {
+                    break;
+                }
+            }
+            let mut row_idx = 0;
+            while consumed < lines.len() {
+                let line = lines[consumed].trim();
+                if !line.starts_with('|') { break; }
+                let cells: Vec<&str> = line.split('|').collect();
+                let values: Vec<&str> = cells.iter()
+                    .map(|c| c.trim().trim_start_matches("**").trim_end_matches("**"))
+                    .filter(|c| !c.is_empty())
+                    .collect();
+                if values.is_empty() { consumed += 1; continue; }
+                let label = if !headers.is_empty() && values.len() <= headers.len() {
+                    values.iter().enumerate()
+                        .map(|(j, v)| format!("{}:{}", headers.get(j).unwrap_or(&String::new()), v))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                } else {
+                    values.join(", ")
+                };
+                let key = format!("{}-row{}", section, row_idx + 1);
+                entries.push(SpecEntry { key, value: label });
+                consumed += 1;
+                row_idx += 1;
+            }
+        }
+        return (consumed, entries);
+    }
+
+    if first_line.starts_with('-') {
+        let mut items: Vec<String> = Vec::new();
+        while consumed < lines.len() {
+            let line = lines[consumed].trim();
+            if line.starts_with('-') {
+                items.push(line[1..].trim().to_string());
+                consumed += 1;
+            } else if line.is_empty() {
+                consumed += 1;
+            } else {
+                break;
+            }
+        }
+        if !items.is_empty() {
+            entries.push(SpecEntry {
+                key: section.to_string(),
+                value: items.join("\n"),
+            });
+        }
+        return (consumed, entries);
+    }
+
+    (consumed, entries)
+}
+
 fn normalize_status(status: &Option<String>) -> String {
     match status.as_deref() {
         Some("monitoring") | Some("active") | Some("running") => "active".to_string(),
@@ -531,7 +716,7 @@ pub async fn get_targets_md(data_dir: &str, agent_name: &str) -> Response<BoxBod
 }
 
 /// GET /api/radar/{agent}/targets-json
-/// Returns parsed targets from YAML frontmatter as structured JSON.
+/// Returns parsed targets from targets.md and individual target/*.md files.
 pub async fn get_targets_json(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
     let workspace = match get_agent_workspace(data_dir, agent_name) {
         Ok(w) => w,
@@ -543,12 +728,30 @@ pub async fn get_targets_json(data_dir: &str, agent_name: &str) -> Response<BoxB
     let path = workspace.join("radar").join("targets.md");
     let content = match tokio::fs::read_to_string(&path).await {
         Ok(c) => c,
-        Err(_) => {
-            return ok_response(&serde_json::json!({ "targets": Vec::<TargetJson>::new() }));
-        }
+        Err(_) => String::new(),
     };
+    let mut targets = parse_targets_md(&content);
+    let mut seen: std::collections::HashSet<String> = targets.iter()
+        .map(|t| t.name.clone())
+        .collect();
 
-    let targets = parse_targets_md(&content);
+    let detailed_dir = workspace.join("radar").join("targets");
+    if let Ok(mut rd) = tokio::fs::read_dir(&detailed_dir).await {
+        while let Ok(Some(entry)) = rd.next_entry().await {
+            let fname = entry.file_name().to_string_lossy().to_string();
+            if !fname.ends_with(".md") {
+                continue;
+            }
+            if let Ok(file_content) = tokio::fs::read_to_string(entry.path()).await {
+                if let Some(target) = parse_detailed_target(&file_content) {
+                    if seen.insert(target.name.clone()) {
+                        targets.push(target);
+                    }
+                }
+            }
+        }
+    }
+
     ok_response(&serde_json::json!({ "targets": targets }))
 }
 
