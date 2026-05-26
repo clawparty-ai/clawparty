@@ -746,7 +746,10 @@ const createZeroClawMessageHandler = (connectionAgentName) => {
 
     if (data.type === 'session_start') {
       console.log('[zAgent] Session started:', data.session_id)
-    } else if (data.type === 'chunk' || data.type === 'thinking') {
+  } else if (data.type === 'chunk' || data.type === 'thinking') {
+    if (data.type === 'thinking') {
+      console.debug('[🤔 group thinking]', data.content)
+    }
       let idx = messages.findIndex(m => !!m.isTyping)
       if (idx < 0) {
         idx = messages.findIndex(function(m) {
@@ -758,6 +761,7 @@ const createZeroClawMessageHandler = (connectionAgentName) => {
         if (data.type === 'thinking') {
           if (!messages[idx].thinking) messages[idx].thinking = ''
           messages[idx].thinking += data.content
+          console.debug('[🤔 thinking]', data.content)
         } else {
           messages[idx].text += data.content
         }
@@ -769,6 +773,7 @@ const createZeroClawMessageHandler = (connectionAgentName) => {
           if (data.type === 'thinking') {
             if (!messages[typingIdx].thinking) messages[typingIdx].thinking = ''
             messages[typingIdx].thinking += data.content
+            console.debug('[🤔 thinking]', data.content)
             messages[typingIdx].timestamp = now.getTime()
             messages[typingIdx].time = time
           } else {
