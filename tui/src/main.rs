@@ -7,6 +7,7 @@ mod api;
 mod app;
 mod ui;
 mod zeroclaw;
+mod opencode;
 mod proxy;
 mod static_files;
 mod wiki;
@@ -37,6 +38,7 @@ use std::process::Command;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{sleep, Duration, timeout};
+use rusqlite::params;
 
 fn set_all_agents_running(data_dir: &str) {
     let expanded = data_dir.replace("~", &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
@@ -65,24 +67,25 @@ fn set_all_agents_running(data_dir: &str) {
     }
 }
 
-fn read_agents_from_db(data_dir: &str) -> Vec<AgentConfig> {
-    let _ = db::init_clawparty_db(data_dir);
-    match db::list_agents(data_dir) {
-        Ok(agents) => agents
-            .into_iter()
-            .map(|a| AgentConfig {
-                agent_name: a.agent_name,
-                directory: a.directory,
-                port: a.port,
-                status: a.status,
-            })
-            .collect(),
-        Err(e) => {
-            ts_eprint!("read_agents_from_db error: {}", e);
-            vec![]
+    fn read_agents_from_db(data_dir: &str) -> Vec<AgentConfig> {
+        let _ = db::init_clawparty_db(data_dir);
+        match db::list_agents(data_dir) {
+            Ok(agents) => agents
+                .into_iter()
+                .map(|a| AgentConfig {
+                    agent_name: a.agent_name,
+                    directory: a.directory,
+                    port: a.port,
+                    status: a.status,
+                    engine: a.engine,
+                })
+                .collect(),
+            Err(e) => {
+                ts_eprint!("read_agents_from_db error: {}", e);
+                vec![]
+            }
         }
     }
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -135,6 +138,50 @@ async fn main() -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("Cannot create data directory {}: {}", expanded_data, e))?;
         let _ = db::init_clawparty_db(&expanded_data);
         write_admin_password(&password, &expanded_data)?;
+
+        // Initialize 0#Agent for opencode engine
+        if args.engine == "opencode" {
+            let zero_agent_dir = format!("{}/agents/0#Agent", expanded_data);
+            let zero_ws_dir = format!("{}/workspace", zero_agent_dir);
+            std::fs::create_dir_all(&zero_ws_dir)
+                .map_err(|e| anyhow::anyhow!("Cannot create agent directory: {}", e))?;
+
+            let config_path = format!("{}/opencode.json", zero_agent_dir);
+
+            let config = if api_key.is_empty() {
+                serde_json::json!({
+                    "$schema": "https://opencode.ai/config.json",
+                    "model": "",
+                    "provider": {},
+                })
+            } else {
+                serde_json::json!({
+                    "$schema": "https://opencode.ai/config.json",
+                    "model": "",
+                    "provider": {
+                        "default": {
+                            "name": "default",
+                            "models": { "default": { "name": "default" } },
+                            "options": { "apiKey": api_key }
+                        }
+                    }
+                })
+            };
+            let config_str = serde_json::to_string_pretty(&config).unwrap_or_default();
+            std::fs::write(&config_path, config_str)?;
+
+            let t = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs_f64();
+
+            let conn = rusqlite::Connection::open(format!("{}/clawparty.db", expanded_data))?;
+            conn.execute(
+                "INSERT INTO agents (agent_name, display_name, directory, config_path, workspace_dir, port, status, created_at, updated_at, engine)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'running', ?7, ?7, 'opencode')",
+                rusqlite::params!["0#Agent", "Zerus(0#Agent)", &zero_agent_dir, &config_path, &zero_ws_dir, 42617i64, t],
+            )?;
+        }
+
         first_run_api_key = Some(api_key);
     } else {
         first_run_api_key = None;
@@ -181,7 +228,7 @@ async fn main() -> anyhow::Result<()> {
         "zeroclaw".to_string()
     });
 
-    // Validate 0#Agent config before starting ZeroClaw daemon
+    // Validate 0#Agent config before starting daemon
     {
         let expanded = expand_data_dir(&args.data);
         let zero_agent_dir = format!("{}/agents/0#Agent", expanded);
@@ -191,82 +238,143 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // Start ZeroClaw daemon FIRST (always start this)
-    state.add_log("INFO", "🦀 Starting ZeroClaw daemon...");
-    let zeroclaw_mgr = zeroclaw::ZeroClawDaemon::new(
-        zeroclaw_bin,
-        args.data.clone(),
-        42617, // ZeroClaw Gateway port
-        log_tx.clone(),
-    );
+    if args.engine == "opencode" {
+        state.add_log("INFO", "🦞 Starting OpenCode engine...");
+        let opencode_bin = find_opencode_bin();
+        let opencode_mgr = opencode::OpenCodeDaemon::new(
+            opencode_bin,
+            &args.data,
+            "0#Agent",
+            &format!("{}/agents/0#Agent", expand_data_dir(&args.data)),
+            42617,
+            log_tx.clone(),
+        );
 
-    // Wait for ZeroClaw to be ready (20 second timeout)
-    let mut zeroclaw_ready = false;
-    for i in 0..40 {
-        sleep(Duration::from_millis(500)).await;
-        if zeroclaw::ZeroClawDaemon::check_health("http://localhost:42617").await {
-            zeroclaw_ready = true;
-            break;
-        }
-        if i == 0 {
-            state.add_log("INFO", "Waiting for ZeroClaw Gateway...");
-        }
-    }
-
-    if !zeroclaw_ready {
-        state.add_log("ERROR", "❌ ZeroClaw daemon failed to start within timeout");
-        drop(zeroclaw_mgr);
-        disable_raw_mode()?;
-        io::stdout().execute(LeaveAlternateScreen)?;
-        return Err(anyhow::anyhow!("ZeroClaw startup failed"));
-    }
-
-    state.zeroclaw_running = true;
-    state.zeroclaw_mgr = Some(zeroclaw_mgr);
-    state.add_log("INFO", "✅ ZeroClaw daemon started successfully");
-
-    // Now that 0#Agent is running its directory exists — create the legacy
-    // ~/.clawparty/.zeroclaw -> agents/0#Agent symlink if it is absent.
-    {
-        let expanded = expand_data_dir(&args.data);
-        let agent_dir = format!("{}/agents/0#Agent", expanded);
-        let legacy_link = format!("{}/.zeroclaw", expanded);
-        #[cfg(unix)]
-        if std::fs::symlink_metadata(&legacy_link).is_err() {
-            if let Err(e) = std::os::unix::fs::symlink(&agent_dir, &legacy_link) {
-                state.add_log("WARN", &format!("[ZeroClaw] Failed to create .zeroclaw symlink: {}", e));
-            } else {
-                state.add_log("INFO", "[ZeroClaw] Created .zeroclaw -> agents/0#Agent symlink");
+        let mut opencode_ready = false;
+        for i in 0..40 {
+            sleep(Duration::from_millis(500)).await;
+            if opencode::OpenCodeDaemon::check_health("http://localhost:42617").await {
+                opencode_ready = true;
+                break;
+            }
+            if i == 0 {
+                state.add_log("INFO", "Waiting for OpenCode server...");
             }
         }
-    }
 
-    // First-run: write the api-key into 0#Agent config.toml now that it exists
-    if let Some(ref api_key) = first_run_api_key {
-        match handle_set_api_key(api_key, &args.data) {
-            Ok(()) => {
-                state.add_log("INFO", "API key written to 0#Agent config");
-                if let Err(e) = patch_zeroclaw_config_defaults(&args.data) {
-                    state.add_log("WARN", &format!("Failed to patch config defaults: {}", e));
-                }
-            }
-            Err(e) => state.add_log("WARN", &format!("Failed to write API key: {}", e)),
+        if !opencode_ready {
+            state.add_log("ERROR", "❌ OpenCode server failed to start within timeout");
+            drop(opencode_mgr);
+            disable_raw_mode()?;
+            io::stdout().execute(LeaveAlternateScreen)?;
+            return Err(anyhow::anyhow!("OpenCode startup failed"));
         }
-    }
 
-    // Fetch ZeroClaw sessions (always do this early)
-    let zeroclaw_sessions_result = zeroclaw::ZeroClawDaemon::get_sessions("http://localhost:42617").await;
-    match zeroclaw_sessions_result {
-        Ok(sessions) => {
-            state.zeroclaw_sessions = sessions.clone();
-            state.add_log("INFO", &format!("Loaded {} ZeroClaw sessions", sessions.len()));
-            // Auto-select first session if available
-            if let Some(first_session) = sessions.first() {
-                state.current_zeroclaw_session = Some(first_session.clone());
+        state.zeroclaw_running = true;
+        state.zeroclaw_mgr = None;
+        state.add_log("INFO", "✅ OpenCode server started successfully");
+
+        match opencode::OpenCodeDaemon::create_session("http://localhost:42617").await {
+            Ok(session_id) => {
+                state.add_log("INFO", &format!("OpenCode session created: {}", session_id));
+                let _ = crate::proxy::OPENCODE_SESSION.get_or_init(|| session_id.clone());
+                state.zeroclaw_sessions.push(crate::app::ZeroClawSession {
+                    session_id: session_id.clone(),
+                    name: "0#Agent".to_string(),
+                    last_activity: String::new(),
+                });
+                state.current_zeroclaw_session = state.zeroclaw_sessions.first().cloned();
                 state.active_org = ActiveOrg::ZeroClaw;
             }
+            Err(e) => state.add_log("WARN", &format!("Failed to create OpenCode session: {}", e)),
         }
-        Err(e) => state.add_log("WARN", &format!("Failed to fetch ZeroClaw sessions: {}", e)),
+
+        if let Some(ref api_key) = first_run_api_key {
+            match write_opencode_api_key(api_key, &args.data) {
+                Ok(()) => state.add_log("INFO", "API key written to 0#Agent opencode config"),
+                Err(e) => state.add_log("WARN", &format!("Failed to write opencode API key: {}", e)),
+            }
+        }
+
+        std::mem::forget(opencode_mgr);
+    } else {
+        // Start ZeroClaw daemon FIRST (always start this)
+        state.add_log("INFO", "🦀 Starting ZeroClaw daemon...");
+        let zeroclaw_mgr = zeroclaw::ZeroClawDaemon::new(
+            zeroclaw_bin,
+            args.data.clone(),
+            42617, // ZeroClaw Gateway port
+            log_tx.clone(),
+        );
+
+        // Wait for ZeroClaw to be ready (20 second timeout)
+        let mut zeroclaw_ready = false;
+        for i in 0..40 {
+            sleep(Duration::from_millis(500)).await;
+            if zeroclaw::ZeroClawDaemon::check_health("http://localhost:42617").await {
+                zeroclaw_ready = true;
+                break;
+            }
+            if i == 0 {
+                state.add_log("INFO", "Waiting for ZeroClaw Gateway...");
+            }
+        }
+
+        if !zeroclaw_ready {
+            state.add_log("ERROR", "❌ ZeroClaw daemon failed to start within timeout");
+            drop(zeroclaw_mgr);
+            disable_raw_mode()?;
+            io::stdout().execute(LeaveAlternateScreen)?;
+            return Err(anyhow::anyhow!("ZeroClaw startup failed"));
+        }
+
+        state.zeroclaw_running = true;
+        state.zeroclaw_mgr = Some(zeroclaw_mgr);
+        state.add_log("INFO", "✅ ZeroClaw daemon started successfully");
+
+        // Now that 0#Agent is running its directory exists — create the legacy
+        // ~/.clawparty/.zeroclaw -> agents/0#Agent symlink if it is absent.
+        {
+            let expanded = expand_data_dir(&args.data);
+            let agent_dir = format!("{}/agents/0#Agent", expanded);
+            let legacy_link = format!("{}/.zeroclaw", expanded);
+            #[cfg(unix)]
+            if std::fs::symlink_metadata(&legacy_link).is_err() {
+                if let Err(e) = std::os::unix::fs::symlink(&agent_dir, &legacy_link) {
+                    state.add_log("WARN", &format!("[ZeroClaw] Failed to create .zeroclaw symlink: {}", e));
+                } else {
+                    state.add_log("INFO", "[ZeroClaw] Created .zeroclaw -> agents/0#Agent symlink");
+                }
+            }
+        }
+
+        // First-run: write the api-key into 0#Agent config.toml now that it exists
+        if let Some(ref api_key) = first_run_api_key {
+            match handle_set_api_key(api_key, &args.data) {
+                Ok(()) => {
+                    state.add_log("INFO", "API key written to 0#Agent config");
+                    if let Err(e) = patch_zeroclaw_config_defaults(&args.data) {
+                        state.add_log("WARN", &format!("Failed to patch config defaults: {}", e));
+                    }
+                }
+                Err(e) => state.add_log("WARN", &format!("Failed to write API key: {}", e)),
+            }
+        }
+
+        // Fetch ZeroClaw sessions (always do this early)
+        let zeroclaw_sessions_result = zeroclaw::ZeroClawDaemon::get_sessions("http://localhost:42617").await;
+        match zeroclaw_sessions_result {
+            Ok(sessions) => {
+                state.zeroclaw_sessions = sessions.clone();
+                state.add_log("INFO", &format!("Loaded {} ZeroClaw sessions", sessions.len()));
+                // Auto-select first session if available
+                if let Some(first_session) = sessions.first() {
+                    state.current_zeroclaw_session = Some(first_session.clone());
+                    state.active_org = ActiveOrg::ZeroClaw;
+                }
+            }
+            Err(e) => state.add_log("WARN", &format!("Failed to fetch ZeroClaw sessions: {}", e)),
+        }
     }
 
     // Sync agents from filesystem to clawparty.db
@@ -285,12 +393,17 @@ async fn main() -> anyhow::Result<()> {
         "zeroclaw".to_string()
     });
     let agent_configs = read_agents_from_db(&args.data);
+    let global_engine = args.engine.clone();
     if !agent_configs.is_empty() {
-        state.add_log("INFO", &format!("Found {} agents in DB, starting zeroclaw daemons...", agent_configs.len()));
+        state.add_log("INFO", &format!("Found {} agents in DB", agent_configs.len()));
     }
     for agent_cfg in &agent_configs {
+        // Skip agents whose engine doesn't match the global engine
+        if agent_cfg.engine != global_engine {
+            continue;
+        }
         // Guard against duplicate daemons on the same port (e.g. 0#Agent
-        // already started above by ZeroClawDaemon::new(), or a stale process).
+        // already started above, or a stale process).
         if crate::agents::is_port_in_use(agent_cfg.port) {
             state.add_log(
                 "WARN",
@@ -302,35 +415,59 @@ async fn main() -> anyhow::Result<()> {
             continue;
         }
 
-        // Validate config before starting
-        let errs = validate_agent_config(&agent_cfg.agent_name, &agent_cfg.directory);
-        for e in &errs {
-            state.add_log("WARN", &format!("[ConfigCheck] {}", e));
-        }
+        if global_engine == "opencode" {
+            let opencode_bin = find_opencode_bin();
+            let db_path = format!("{}/opencode.db", agent_cfg.directory);
 
-        state.add_log("INFO", &format!("Starting agent {} on port {}", agent_cfg.agent_name, agent_cfg.port));
-        let child = match std::process::Command::new(&zeroclaw_bin_for_agents)
-            .args([
-                "daemon",
-                "--config-dir",
-                &agent_cfg.directory,
-                "-p",
-                &agent_cfg.port.to_string(),
-            ])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .stdin(std::process::Stdio::null())
-            .spawn()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                state.add_log("ERROR", &format!("Failed to spawn agent {}: {}", agent_cfg.agent_name, e));
-                continue;
+            state.add_log("INFO", &format!("Starting opencode agent {} on port {}", agent_cfg.agent_name, agent_cfg.port));
+            let child = match std::process::Command::new(&opencode_bin)
+                .args(["serve", "--port", &agent_cfg.port.to_string()])
+                .env("OPENCODE_DB", &db_path)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .stdin(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    state.add_log("ERROR", &format!("Failed to spawn opencode agent {}: {}", agent_cfg.agent_name, e));
+                    continue;
+                }
+            };
+            let pid = child.id();
+            state.add_log("INFO", &format!("OpenCode agent {} started (pid {})", agent_cfg.agent_name, pid));
+            state.agent_processes.push(AgentProcess::new(agent_cfg.agent_name.clone(), child));
+        } else {
+            // Validate config before starting
+            let errs = validate_agent_config(&agent_cfg.agent_name, &agent_cfg.directory);
+            for e in &errs {
+                state.add_log("WARN", &format!("[ConfigCheck] {}", e));
             }
-        };
-        let pid = child.id();
-        state.add_log("INFO", &format!("Agent {} started (pid {})", agent_cfg.agent_name, pid));
-        state.agent_processes.push(AgentProcess::new(agent_cfg.agent_name.clone(), child));
+
+            state.add_log("INFO", &format!("Starting agent {} on port {}", agent_cfg.agent_name, agent_cfg.port));
+            let child = match std::process::Command::new(&zeroclaw_bin_for_agents)
+                .args([
+                    "daemon",
+                    "--config-dir",
+                    &agent_cfg.directory,
+                    "-p",
+                    &agent_cfg.port.to_string(),
+                ])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .stdin(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    state.add_log("ERROR", &format!("Failed to spawn agent {}: {}", agent_cfg.agent_name, e));
+                    continue;
+                }
+            };
+            let pid = child.id();
+            state.add_log("INFO", &format!("Agent {} started (pid {})", agent_cfg.agent_name, pid));
+            state.agent_processes.push(AgentProcess::new(agent_cfg.agent_name.clone(), child));
+        }
     }
 
     // Keep resolved pipy_bin for watchdog restart
@@ -889,7 +1026,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyhow::Result<(Option<AgentManager>, ZeroClawDaemon)> {
+async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyhow::Result<(Option<AgentManager>, Option<ZeroClawDaemon>)> {
     let _ = env_logger::Builder::from_env("RUST_LOG")
         .format(|buf, record| {
             use std::io::Write;
@@ -927,99 +1064,216 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
         }
     }
 
-    ts_print!("\n🔄 Starting ZeroClaw daemon...");
-    let zeroclaw_bin_for_service = zeroclaw_bin.clone();
-    let zeroclaw_mgr = zeroclaw::ZeroClawDaemon::new(
-        zeroclaw_bin_for_service,
-        data_dir.clone(),
-        42617,
-        log_tx.clone(),
-    );
+    ts_print!("\n🔄 Starting engine: {}...", args.engine);
 
-    let client = reqwest::Client::new();
-    let mut zeroclaw_ready = false;
-    for i in 0..40 {
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        if let Ok(resp) = client.get("http://localhost:42617/health").send().await {
-            if resp.status().is_success() {
-                zeroclaw_ready = true;
-                break;
-            }
-        }
-        if i == 0 {
-            ts_eprint!("Waiting for ZeroClaw Gateway...");
-        }
-    }
+    // Kill any stale processes on our ports before starting
+    let _ = std::process::Command::new("pkill")
+        .args(["-9", "-f", "opencode serve"])
+        .spawn();
+    let _ = std::process::Command::new("pkill")
+        .args(["-9", "-f", "zeroclaw daemon"])
+        .spawn();
+    std::thread::sleep(std::time::Duration::from_millis(500));
 
-    if !zeroclaw_ready {
-        ts_eprint!("❌ ZeroClaw daemon failed to start within timeout");
-        return Err(anyhow::anyhow!("ZeroClaw startup failed"));
-    }
-    ts_print!("✅ ZeroClaw daemon started successfully on port 42617");
+    let mut opencode_pids: Vec<u32> = Vec::new();
+    let zeroclaw_mgr = if args.engine == "opencode" {
+        ts_print!("🦞 Starting OpenCode server for 0#Agent...");
+        let mut opencode_mgr = opencode::OpenCodeDaemon::new(
+            find_opencode_bin(),
+            &data_dir,
+            "0#Agent",
+            &format!("{}/agents/0#Agent", data_dir),
+            42617,
+            log_tx.clone(),
+        );
 
-    // Now that 0#Agent is running its directory exists — create the legacy
-    // ~/.clawparty/.zeroclaw -> agents/0#Agent symlink if it is absent.
-    {
-        let agent_dir = format!("{}/agents/0#Agent", data_dir);
-        let legacy_link = format!("{}/.zeroclaw", data_dir);
-        #[cfg(unix)]
-        if std::fs::symlink_metadata(&legacy_link).is_err() {
-            if let Err(e) = std::os::unix::fs::symlink(&agent_dir, &legacy_link) {
-                ts_eprint!("[ZeroClaw] Failed to create .zeroclaw symlink: {}", e);
-            } else {
-                ts_print!("[ZeroClaw] Created .zeroclaw -> agents/0#Agent symlink");
-            }
-        }
-    }
+        let main_oc_pid = opencode_mgr.pid();
+        opencode_pids.push(main_oc_pid);
 
-    // First-run: write the api-key now that 0#Agent config.toml exists
-    if let Some(ref api_key) = first_run_api_key {
-        match handle_set_api_key(api_key, &data_dir) {
-            Ok(()) => {
-                ts_print!("API key written to 0#Agent config");
-                if let Err(e) = patch_zeroclaw_config_defaults(&data_dir) {
-                    ts_eprint!("Failed to patch config defaults: {}", e);
+        let client = reqwest::Client::new();
+        let mut ready = false;
+        for i in 0..40 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            if let Ok(resp) = client.get("http://localhost:42617/global/health").send().await {
+                if resp.status().is_success() {
+                    ready = true;
+                    break;
                 }
             }
-            Err(e) => ts_eprint!("Failed to write API key: {}", e),
+            if i == 0 {
+                ts_eprint!("Waiting for OpenCode server...");
+            }
         }
-    }
+
+        if !ready {
+            ts_eprint!("❌ OpenCode server failed to start within timeout");
+            return Err(anyhow::anyhow!("OpenCode startup failed"));
+        }
+        ts_print!("✅ OpenCode server started successfully on port 42617");
+
+        match opencode::OpenCodeDaemon::create_session("http://localhost:42617").await {
+            Ok(session_id) => {
+                ts_print!("OpenCode session created: {}", session_id);
+                let _ = crate::proxy::OPENCODE_SESSION.get_or_init(|| session_id);
+            }
+            Err(e) => ts_eprint!("Failed to create OpenCode session: {}", e),
+        }
+
+        // OpenCodeDaemon's Drop kills the process; prevent that so the
+        // server keeps running for the lifetime of the service.
+        std::mem::forget(opencode_mgr);
+        None
+    } else {
+        let zeroclaw_bin_for_service = zeroclaw_bin.clone();
+        let zc_mgr = zeroclaw::ZeroClawDaemon::new(
+            zeroclaw_bin_for_service,
+            data_dir.clone(),
+            42617,
+            log_tx.clone(),
+        );
+
+        let client = reqwest::Client::new();
+        let mut zeroclaw_ready = false;
+        for i in 0..40 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            if let Ok(resp) = client.get("http://localhost:42617/health").send().await {
+                if resp.status().is_success() {
+                    zeroclaw_ready = true;
+                    break;
+                }
+            }
+            if i == 0 {
+                ts_eprint!("Waiting for ZeroClaw Gateway...");
+            }
+        }
+
+        if !zeroclaw_ready {
+            ts_eprint!("❌ ZeroClaw daemon failed to start within timeout");
+            return Err(anyhow::anyhow!("ZeroClaw startup failed"));
+        }
+        ts_print!("✅ ZeroClaw daemon started successfully on port 42617");
+
+        // Now that 0#Agent is running its directory exists — create the legacy
+        // ~/.clawparty/.zeroclaw -> agents/0#Agent symlink if it is absent.
+        {
+            let agent_dir = format!("{}/agents/0#Agent", data_dir);
+            let legacy_link = format!("{}/.zeroclaw", data_dir);
+            #[cfg(unix)]
+            if std::fs::symlink_metadata(&legacy_link).is_err() {
+                if let Err(e) = std::os::unix::fs::symlink(&agent_dir, &legacy_link) {
+                    ts_eprint!("[ZeroClaw] Failed to create .zeroclaw symlink: {}", e);
+                } else {
+                    ts_print!("[ZeroClaw] Created .zeroclaw -> agents/0#Agent symlink");
+                }
+            }
+        }
+
+        // First-run: write the api-key now that 0#Agent config.toml exists
+        if let Some(ref api_key) = first_run_api_key {
+            match handle_set_api_key(api_key, &data_dir) {
+                Ok(()) => {
+                    ts_print!("API key written to 0#Agent config");
+                    if let Err(e) = patch_zeroclaw_config_defaults(&data_dir) {
+                        ts_eprint!("Failed to patch config defaults: {}", e);
+                    }
+                }
+                Err(e) => ts_eprint!("Failed to write API key: {}", e),
+            }
+        }
+
+        Some(zc_mgr)
+    };
 
     // Sync agents from filesystem to clawparty.db
     crate::agents::sync_agents_from_fs(&data_dir);
 
-    // Start all ZeroClaw agents from DB before ZTM
+    // Start agents from DB based on global engine
     let agent_configs = read_agents_from_db(&data_dir);
+    let engine = args.engine.clone();
+
+    // Auto-sync 0#Agent engine to match CLI flag
+    if let Ok(Some(ref agent0)) = db::get_agent(&data_dir, "0#Agent") {
+        if agent0.engine != engine {
+            ts_print!("Syncing 0#Agent engine: {} -> {}", agent0.engine, engine);
+            let _ = rusqlite::Connection::open(format!("{}/clawparty.db", data_dir))
+                .and_then(|c| c.execute("UPDATE agents SET engine=?1 WHERE agent_name='0#Agent'", rusqlite::params![engine]));
+        }
+    }
+
     if !agent_configs.is_empty() {
-        ts_print!("📋 Found {} agent(s) in DB, starting zeroclaw daemons...", agent_configs.len());
+        ts_print!("📋 Found {} agent(s) in DB", agent_configs.len());
     }
     for agent_cfg in &agent_configs {
-        // Validate config before starting
-        let errs = validate_agent_config(&agent_cfg.agent_name, &agent_cfg.directory);
-        for e in &errs {
-            ts_eprint!("[ConfigCheck] {}", e);
+        // Skip 0#Agent: already started by the main engine block above
+        if agent_cfg.agent_name == "0#Agent" {
+            continue;
+        }
+
+        // When global engine is opencode, only start opencode agents
+        if engine == "opencode" && agent_cfg.engine != "opencode" {
+            ts_print!("Skipping agent {} (engine={}, global=opencode)", agent_cfg.agent_name, agent_cfg.engine);
+            continue;
+        }
+        // When global engine is zeroclaw, only start zeroclaw agents
+        if engine == "zeroclaw" && agent_cfg.engine != "zeroclaw" {
+            ts_print!("Skipping agent {} (engine={}, global=zeroclaw)", agent_cfg.agent_name, agent_cfg.engine);
+            continue;
+        }
+
+        if crate::agents::is_port_in_use(agent_cfg.port) {
+            ts_print!("Skipping agent {} — port {} already in use", agent_cfg.agent_name, agent_cfg.port);
+            continue;
         }
 
         ts_print!("🔄 Starting agent {} on port {}...", agent_cfg.agent_name, agent_cfg.port);
-        match std::process::Command::new(&zeroclaw_bin)
-            .args([
-                "daemon",
-                "--config-dir",
-                &agent_cfg.directory,
-                "-p",
-                &agent_cfg.port.to_string(),
-            ])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .stdin(std::process::Stdio::null())
-            .spawn()
-        {
+
+        if engine == "opencode" {
+            let opencode_bin = find_opencode_bin();
+            let db_path = format!("{}/opencode.db", agent_cfg.directory);
+
+            match std::process::Command::new(&opencode_bin)
+                .args(["serve", "--port", &agent_cfg.port.to_string()])
+                .env("OPENCODE_DB", &db_path)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .stdin(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(child) => {
+                    ts_print!("✅ OpenCode agent {} started (pid {})", agent_cfg.agent_name, child.id());
+                    opencode_pids.push(child.id());
+                }
+                Err(e) => {
+                    ts_eprint!("❌ Failed to start opencode agent {}: {}", agent_cfg.agent_name, e);
+                }
+            }
+        } else {
+            // Validate zeroclaw config before starting
+            let errs = validate_agent_config(&agent_cfg.agent_name, &agent_cfg.directory);
+            for e in &errs {
+                ts_eprint!("[ConfigCheck] {}", e);
+            }
+
+            match std::process::Command::new(&zeroclaw_bin)
+                .args([
+                    "daemon",
+                    "--config-dir",
+                    &agent_cfg.directory,
+                    "-p",
+                    &agent_cfg.port.to_string(),
+                ])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .stdin(std::process::Stdio::null())
+                .spawn()
+            {
             Ok(child) => {
                 ts_print!("✅ Agent {} started (pid {})", agent_cfg.agent_name, child.id());
             }
             Err(e) => {
                 ts_eprint!("❌ Failed to start agent {}: {}", agent_cfg.agent_name, e);
             }
+        }
         }
     }
 
@@ -1197,7 +1451,7 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
     let proxy_http_port = args.proxy_http_port;
     let proxy_cert_dir = args.proxy_cert_dir.clone();
     tokio::spawn(async move {
-        proxy::start(proxy_https_port, proxy_http_port, &proxy_cert_dir, &args.data).await;
+        proxy::start(proxy_https_port, proxy_http_port, &proxy_cert_dir, &args.data, &args.engine).await;
     });
 
     use tokio::signal::unix::{signal, SignalKind};
@@ -1212,11 +1466,13 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
             _ = sigint.recv() => {
                 ts_print!("\nReceived SIGINT, shutting down...");
                 let _ = Command::new("pkill").args(["-9", "-f", "zeroclaw"]).spawn();
+                let _ = Command::new("pkill").args(["-9", "-f", "opencode serve"]).spawn();
                 break;
             }
             _ = sigterm.recv() => {
                 ts_print!("\nReceived SIGTERM, shutting down...");
                 let _ = Command::new("pkill").args(["-9", "-f", "zeroclaw"]).spawn();
+                let _ = Command::new("pkill").args(["-9", "-f", "opencode serve"]).spawn();
                 break;
             }
         }
@@ -1228,6 +1484,24 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
 
 fn expand_data_dir(data_dir: &str) -> String {
     data_dir.replace("~", &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+}
+
+fn find_opencode_bin() -> String {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let oc = dir.join("opencode");
+            if oc.exists() {
+                return oc.to_string_lossy().to_string();
+            }
+        }
+    }
+    if let Ok(output) = Command::new("which").arg("opencode").output() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            return path;
+        }
+    }
+    "opencode".to_string()
 }
 
 /// Validate a zeroclaw agent config.toml before startup.
@@ -1768,5 +2042,25 @@ fn handle_user_command(cmd: args::UserCommands, data_dir: &str) -> anyhow::Resul
         }
     }
 
+    Ok(())
+}
+
+fn write_opencode_api_key(api_key: &str, data_dir: &str) -> anyhow::Result<()> {
+    let expanded = expand_data_dir(data_dir);
+    let config_path = format!("{}/agents/0#Agent/opencode.json", expanded);
+    let content = std::fs::read_to_string(&config_path)?;
+
+    let mut config: serde_json::Value = serde_json::from_str(&content)
+        .unwrap_or(serde_json::json!({}));
+
+    if let Some(provider) = config.get_mut("provider") {
+        if let Some(default) = provider.get_mut("default") {
+            if let Some(options) = default.get_mut("options") {
+                options["apiKey"] = serde_json::Value::String(api_key.to_string());
+            }
+        }
+    }
+
+    std::fs::write(&config_path, serde_json::to_string_pretty(&config)?)?;
     Ok(())
 }

@@ -121,12 +121,14 @@ fn get_agent_port_clawparty(data_dir: &str, agent_name: &str) -> Option<u16> {
 /// Resolve the backend target URI for HTTP requests.
 ///
 /// Routing rules:
-/// - /api/zeroclaw/sessions/{id}      → http://127.0.0.1:42617/api/sessions/{id}
-/// - /api/zeroclaw/sessions/{id}/chat → http://127.0.0.1:42617/api/sessions/{id}/chat
+/// - /api/zeroclaw/sessions/{id}      → http://127.0.0.1:{port}/api/sessions/{id}
+/// - /api/zeroclaw/sessions/{id}/chat → http://127.0.0.1:{port}/api/sessions/{id}/chat
 /// - /api/zeroclaw/messages?agent=...&session=...
-///                                      → http://127.0.0.1:{agent_port}/api/sessions/{session}/messages
-/// - /api/zeroclaw/health             → http://127.0.0.1:42617/api/health
-/// - /api/zeroclaw/* (catch-all)      → http://127.0.0.1:42617/api/* (strip /zeroclaw)
+///                                      → http://127.0.0.1:{port}/api/sessions/{session}/messages (zeroclaw)
+///                                      OR http://127.0.0.1:{port}/session/{session}/message (opencode)
+/// - /api/zeroclaw/health             → http://127.0.0.1:{port}/api/health (zeroclaw)
+///                                      OR http://127.0.0.1:{port}/global/health (opencode)
+/// - /api/zeroclaw/* (catch-all)      → http://127.0.0.1:{port}/api/* (zeroclaw)
 /// - everything else                  → http://127.0.0.1:6789
 fn resolve_http_backend(req: &Request<Incoming>) -> anyhow::Result<Uri> {
     let path_and_query = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/");
@@ -134,8 +136,6 @@ fn resolve_http_backend(req: &Request<Incoming>) -> anyhow::Result<Uri> {
     if path_and_query.starts_with("/api/zeroclaw/") {
         let remainder = &path_and_query["/api/zeroclaw".len()..];
         let target = if remainder.starts_with("/messages") {
-            // /api/zeroclaw/messages?agent=...&session=...
-            // → http://127.0.0.1:{agent_port}/api/sessions/{session}/messages
             let mut agent_name = String::new();
             let mut session = "me".to_string();
             if let Some(idx) = remainder.find('?') {
@@ -155,12 +155,43 @@ fn resolve_http_backend(req: &Request<Incoming>) -> anyhow::Result<Uri> {
             } else {
                 42617
             };
-            format!("http://127.0.0.1:{}/api/sessions/{}/messages", port, session)
-        } else if remainder == "/health" {
-            "http://127.0.0.1:42617/api/health".to_string()
+
+            let is_opencode = if let Some(data_dir) = DATA_DIR.get() {
+                crate::db::get_agent(data_dir, &agent_name)
+                    .ok()
+                    .flatten()
+                    .map(|a| a.engine == "opencode")
+                    .unwrap_or(false)
+            } else {
+                false
+            };
+
+            if is_opencode {
+                if session == "me" {
+                    session = OPENCODE_SESSION.get().cloned().unwrap_or_else(|| "me".to_string());
+                }
+                format!("http://127.0.0.1:{}/session/{}/message", port, session)
+            } else {
+                format!("http://127.0.0.1:{}/api/sessions/{}/messages", port, session)
+            }
+        } else if remainder.starts_with("/sessions") && remainder.contains("/chat") {
+            let port = 42617;
+            format!("http://127.0.0.1:{}/api{}", port, remainder)
+        } else if remainder == "/health" || remainder == "/health/" {
+            let is_opencode = ENGINE.get().map(|e| e == "opencode").unwrap_or(false);
+            if is_opencode {
+                "http://127.0.0.1:42617/global/health".to_string()
+            } else {
+                "http://127.0.0.1:42617/api/health".to_string()
+            }
+        } else if remainder.starts_with("/sessions") {
+            let is_opencode = ENGINE.get().map(|e| e == "opencode").unwrap_or(false);
+            if is_opencode {
+                format!("http://127.0.0.1:42617/session{}", &remainder["/sessions".len()..])
+            } else {
+                format!("http://127.0.0.1:42617/api{}", remainder)
+            }
         } else {
-            // /api/zeroclaw/sessions or /api/zeroclaw/sessions/{id}/chat
-            // → /api/sessions... or /api/sessions/{id}/chat
             format!("http://127.0.0.1:42617/api{}", remainder)
         };
         Ok(target.parse()?)
@@ -209,27 +240,48 @@ async fn proxy_http(req: Request<Incoming>) -> anyhow::Result<Response<BoxBody>>
     }
 }
 
-/// Handle a WebSocket upgrade by proxying to the correct zeroclaw instance.
-/// Routes to the agent-specific port when an `agent` query param is present,
-/// otherwise falls back to the 0#Agent daemon on port 42617.
+/// Handle a WebSocket upgrade by proxying to the correct backend.
+/// For zeroclaw agents: bridges to zeroclaw WS backend.
+/// For opencode agents: bridges to opencode SSE + HTTP.
 async fn proxy_websocket(
     mut req: Request<Incoming>,
 ) -> anyhow::Result<Response<BoxBody>> {
-    let path_and_query = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/");
+    let path_and_query = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/").to_string();
 
-    // Resolve target port from ?agent= query parameter
-    let target_port = DATA_DIR.get().and_then(|data_dir| {
+    let mut agent_name = String::new();
+    let mut session_id = String::new();
+    {
         let query = req.uri().query().unwrap_or("");
         for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
             if key == "agent" {
-                return get_agent_port_clawparty(data_dir, &value);
+                agent_name = value.to_string();
+            } else if key == "session_id" {
+                session_id = value.to_string();
             }
         }
-        None
-    }).unwrap_or(42617u16);
+    }
 
-    let ws_url = format!("ws://127.0.0.1:{target_port}{path_and_query}");
-    log::debug!("[Proxy][WS] Upgrade request: {} -> {}", path_and_query, ws_url);
+    let target_port = if agent_name.is_empty() {
+        42617u16
+    } else if let Some(data_dir) = DATA_DIR.get() {
+        get_agent_port_clawparty(data_dir, &agent_name).unwrap_or(42617)
+    } else {
+        42617u16
+    };
+
+    let is_opencode = if agent_name.is_empty() {
+        ENGINE.get().map(|e| e == "opencode").unwrap_or(false)
+    } else if let Some(data_dir) = DATA_DIR.get() {
+        crate::db::get_agent(data_dir, &agent_name)
+            .ok()
+            .flatten()
+            .map(|a| a.engine == "opencode")
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
+    log::debug!("[Proxy][WS] Upgrade request: {} -> port {} (opencode: {})", path_and_query, target_port, is_opencode);
 
     // Collect upgrade future from the request before building response
     let frontend_upgrade = hyper::upgrade::on(&mut req);
@@ -240,33 +292,55 @@ async fn proxy_websocket(
     let mut sec_version = None;
     if let Some(v) = req.headers().get("sec-websocket-key") {
         sec_key_raw = Some(v.to_str().unwrap_or("").to_string());
-        log::debug!("[Proxy][WS] sec-websocket-key: {}", v.to_str().unwrap_or("(invalid)"));
     }
     if let Some(v) = req.headers().get("sec-websocket-protocol") {
         sec_protocol = Some(v.clone());
-        log::debug!("[Proxy][WS] sec-websocket-protocol: {}", v.to_str().unwrap_or("(invalid)"));
     }
     if let Some(v) = req.headers().get("sec-websocket-version") {
         sec_version = Some(v.clone());
-        log::debug!("[Proxy][WS] sec-websocket-version: {}", v.to_str().unwrap_or("(invalid)"));
     }
 
-    let sec_protocol_for_spawn = sec_protocol.clone();
+    let target_port_clone = target_port;
 
-    tokio::spawn(async move {
-        match frontend_upgrade.await {
-            Ok(upgraded) => {
-                log::debug!("[Proxy][WS] Frontend upgrade success, spawning bridge");
-                let frontend_io = TokioIo::new(upgraded);
-                if let Err(e) = bridge_websocket(frontend_io, &ws_url, sec_protocol_for_spawn).await {
-                    ts_eprint!("[Proxy] WebSocket bridge error: {}", e);
+    // Map session_id=me to actual opencode session for opencode agents
+    if is_opencode && session_id == "me" {
+        session_id = OPENCODE_SESSION.get().cloned().unwrap_or_else(|| "me".to_string());
+    }
+
+    if is_opencode {
+        let agent = agent_name.clone();
+        let sid = session_id.clone();
+        tokio::spawn(async move {
+            match frontend_upgrade.await {
+                Ok(upgraded) => {
+                    let frontend_io = TokioIo::new(upgraded);
+                    if let Err(e) = bridge_opencode_sse(frontend_io, target_port_clone, &agent, &sid).await {
+                        ts_eprint!("[Proxy] OpenCode SSE bridge error: {}", e);
+                    }
+                }
+                Err(e) => {
+                    log::debug!("[Proxy][WS] Frontend upgrade failed: {}", e);
                 }
             }
-            Err(e) => {
-                log::debug!("[Proxy][WS] Frontend upgrade failed: {}", e);
+        });
+    } else {
+        let ws_url = format!("ws://127.0.0.1:{target_port}{path_and_query}");
+        let sec_protocol_for_spawn = sec_protocol.clone();
+
+        tokio::spawn(async move {
+            match frontend_upgrade.await {
+                Ok(upgraded) => {
+                    let frontend_io = TokioIo::new(upgraded);
+                    if let Err(e) = bridge_websocket(frontend_io, &ws_url, sec_protocol_for_spawn).await {
+                        ts_eprint!("[Proxy] WebSocket bridge error: {}", e);
+                    }
+                }
+                Err(e) => {
+                    log::debug!("[Proxy][WS] Frontend upgrade failed: {}", e);
+                }
             }
-        }
-    });
+        });
+    }
 
     // Compute Sec-WebSocket-Accept per RFC 6455
     let sec_accept = sec_key_raw.map(|key| {
@@ -417,6 +491,223 @@ async fn bridge_websocket(
     Ok(())
 }
 
+async fn bridge_opencode_sse(
+    frontend: TokioIo<hyper::upgrade::Upgraded>,
+    port: u16,
+    agent_name: &str,
+    session_id: &str,
+) -> anyhow::Result<()> {
+    use futures_util::{SinkExt, StreamExt};
+
+    let frontend_ws = tokio_tungstenite::WebSocketStream::from_raw_socket(
+        frontend,
+        tokio_tungstenite::tungstenite::protocol::Role::Server,
+        None,
+    )
+    .await;
+
+    let (mut frontend_sink, mut frontend_stream) = frontend_ws.split();
+
+    let base_url = format!("http://127.0.0.1:{}", port);
+    let client = reqwest::Client::new();
+
+    // Emit session_start to frontend
+    let start_msg = serde_json::json!({
+        "type": "session_start",
+        "session_id": session_id
+    }).to_string();
+
+    if frontend_sink
+        .send(tokio_tungstenite::tungstenite::Message::Text(start_msg.into()))
+        .await
+        .is_err()
+    {
+        return Ok(());
+    }
+
+    let sse_url = format!("{}/event", base_url);
+    let sse_response = client.get(&sse_url).send().await?;
+
+    if !sse_response.status().is_success() {
+        ts_eprint!("[Proxy][SSE] Failed to connect to OpenCode SSE: {}", sse_response.status());
+        return Ok(());
+    }
+
+    let sse_stream = sse_response.bytes_stream();
+    tokio::pin!(sse_stream);
+
+    let mut full_response = String::new();
+    let mut buffer = String::new();
+
+    let fwd_to_backend = async {
+        while let Some(msg) = frontend_stream.next().await {
+            if let Ok(msg) = msg {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
+                    log::debug!("[Proxy][SSE] Frontend message: {}", text);
+
+                    let content = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                        parsed.get("content")
+                            .and_then(|c| c.as_str())
+                            .unwrap_or(&text)
+                            .to_string()
+                    } else {
+                        text.to_string()
+                    };
+
+                    let send_url = format!("{}/session/{}/message", base_url, session_id);
+                    let _ = client
+                        .post(&send_url)
+                        .header("Content-Type", "application/json")
+                        .json(&serde_json::json!({
+                            "parts": [{"type": "text", "text": content}],
+                            "agent": "build",
+                        }))
+                        .send()
+                        .await;
+                }
+            } else {
+                break;
+            }
+        }
+    };
+
+    let sse_to_frontend = async {
+        use tokio_tungstenite::tungstenite::Message as WsMsg;
+        use futures_util::StreamExt;
+
+        let mut is_busy = false;
+
+        while let Some(chunk) = sse_stream.next().await {
+            match chunk {
+                Ok(bytes) => {
+                    let chunk_str = String::from_utf8_lossy(&bytes);
+                    buffer.push_str(&chunk_str);
+
+                    while let Some(line_end) = buffer.find('\n') {
+                        let line = buffer[..line_end].trim().to_string();
+                        buffer = buffer[line_end + 1..].to_string();
+
+                        if line.is_empty() || line == ":" {
+                            continue;
+                        }
+
+                        let data = if line.starts_with("data: ") {
+                            &line["data: ".len()..]
+                        } else {
+                            continue;
+                        };
+
+                        let event: serde_json::Value = match serde_json::from_str(data) {
+                            Ok(e) => e,
+                            Err(_) => continue,
+                        };
+
+                        let event_type = event["type"].as_str().unwrap_or("");
+
+                        match event_type {
+                            "message.part.updated" | "message.part.delta" => {
+                                let part = &event["properties"]["part"];
+                                let part_type = part["type"].as_str().unwrap_or("");
+
+                                match part_type {
+                                    "text" => {
+                                        let text = part["delta"].as_str()
+                                            .or_else(|| part["text"].as_str());
+                                        if let Some(t) = text {
+                                            if is_busy {
+                                                full_response.push_str(t);
+                                                let msg = serde_json::json!({
+                                                    "type": "chunk",
+                                                    "content": t
+                                                }).to_string();
+                                                if frontend_sink.send(WsMsg::Text(msg.into())).await.is_err() {
+                                                    return;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    "reasoning" => {
+                                        let text = part["delta"].as_str()
+                                            .or_else(|| part["text"].as_str());
+                                        if let Some(t) = text {
+                                            if is_busy {
+                                                let msg = serde_json::json!({
+                                                    "type": "thinking",
+                                                    "content": t
+                                                }).to_string();
+                                                if frontend_sink.send(WsMsg::Text(msg.into())).await.is_err() {
+                                                    return;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    "tool" => {
+                                        if let Some(state) = part.get("state") {
+                                            if state["status"].as_str() == Some("completed") {
+                                                let output = state["output"].as_str().unwrap_or("");
+                                                full_response.push_str(output);
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            "message.updated" => {},
+                            "session.status" => {
+                                let status = event["properties"]["status"]["type"].as_str().unwrap_or("");
+                                match status {
+                                    "busy" => is_busy = true,
+                                    "idle" => {
+                                        is_busy = false;
+                                        if !full_response.is_empty() {
+                                            let msg = serde_json::json!({
+                                                "type": "done",
+                                                "full_response": &full_response
+                                            }).to_string();
+                                            let _ = frontend_sink.send(WsMsg::Text(msg.into())).await;
+                                            full_response.clear();
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            "session.error" => {
+                                let error_msg = event["properties"]["error"]["message"]
+                                    .as_str()
+                                    .unwrap_or("Unknown error");
+                                let msg = serde_json::json!({
+                                    "type": "error",
+                                    "message": error_msg
+                                }).to_string();
+                                let _ = frontend_sink.send(WsMsg::Text(msg.into())).await;
+                            }
+                            "server.heartbeat" => {}
+                            "server.connected" => {}
+                            _ => {}
+                        }
+                    }
+                }
+                Err(e) => {
+                    ts_eprint!("[Proxy][SSE] Stream error: {}", e);
+                    break;
+                }
+            }
+        }
+    };
+
+    tokio::select! {
+        _ = fwd_to_backend => {
+            log::debug!("[Proxy][SSE] fwd_to_backend completed");
+        },
+        _ = sse_to_frontend => {
+            log::debug!("[Proxy][SSE] sse_to_frontend completed");
+        },
+    }
+
+    log::debug!("[Proxy][SSE] bridge_opencode_sse completed");
+    Ok(())
+}
+
 // ── Authentication helpers (login runs in proxy, not ztm) ──────────────────
 
 /// DB path for authentication (set once at startup).
@@ -424,6 +715,16 @@ static DB_PATH: OnceLock<String> = OnceLock::new();
 
 /// Data directory for wiki file operations (set once at startup).
 static DATA_DIR: OnceLock<String> = OnceLock::new();
+
+/// Execution engine ("zeroclaw" or "opencode") set once at startup.
+static ENGINE: OnceLock<String> = OnceLock::new();
+
+/// Default opencode session ID for 0#Agent (set at startup).
+pub static OPENCODE_SESSION: OnceLock<String> = OnceLock::new();
+
+pub fn get_engine() -> String {
+    ENGINE.get().cloned().unwrap_or_else(|| "zeroclaw".to_string())
+}
 
 fn generate_random_string(len: usize) -> String {
     use rand::Rng;
@@ -1135,10 +1436,11 @@ async fn run_https_proxy(port: u16, cert_dir: &str) -> anyhow::Result<()> {
 }
 
 /// Start both HTTP redirect and HTTPS proxy servers.
-pub async fn start(https_port: u16, http_port: u16, cert_dir: &str, data_dir: &str) {
+pub async fn start(https_port: u16, http_port: u16, cert_dir: &str, data_dir: &str, engine: &str) {
     let expanded = data_dir.replace("~", &std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
     let _ = DB_PATH.get_or_init(|| format!("{}/clawparty.db", expanded));
     let _ = DATA_DIR.get_or_init(|| expanded.clone());
+    let _ = ENGINE.get_or_init(|| engine.to_string());
 
     let redirect = run_http_redirect(http_port);
     let proxy = run_https_proxy(https_port, cert_dir);
