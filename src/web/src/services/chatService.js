@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { get, post, del, put, setToken, getToken, getMetaUrl } from './request'
+import { get, post, del, put, setToken, getToken, getShareToken, getMetaUrl } from './request'
 import { wikiService } from './wikiService.js'
 export function setApiToken(token) {
   return setToken(token)
@@ -486,7 +486,7 @@ export const webshareService = {
     return api.get(url)
   },
   getAgentWebshareFileUrl(agentName, filename, path) {
-    var token = getToken() ? `token=${encodeURIComponent(getToken())}` : ''
+    var token = getShareToken() ? `token=${encodeURIComponent(getShareToken())}` : ''
     var url = `/webshare/${encodeURIComponent(agentName)}/file/${encodeURIComponent(filename)}`
     var sep = '?'
     if (path) {
@@ -527,6 +527,7 @@ export const groupChatService = {
     return api.post('/groupchats', {
       group_id: groupId,
       group_name: groupName,
+      owner_agent: memberAgents[0] || '',
       members: memberAgents
     })
   },

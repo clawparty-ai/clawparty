@@ -3,8 +3,10 @@ import axios from "axios";
 // import toast from "@/utils/toast";
 
 const API_TOKEN_KEY = 'ztm_api_token'
+const SHARE_TOKEN_KEY = 'ztm_share_token'
 
 let apiToken = (typeof localStorage !== 'undefined' && localStorage.getItem(API_TOKEN_KEY)) || 'enjoy-party'
+let shareToken = (typeof localStorage !== 'undefined' && localStorage.getItem(SHARE_TOKEN_KEY)) || ''
 
 const axiosapi = axios.create({
   baseURL: '/api',
@@ -27,6 +29,19 @@ function setToken(token) {
 
 function getToken() {
   return apiToken
+}
+
+function setShareToken(token) {
+  shareToken = token || ''
+  if (shareToken) {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(SHARE_TOKEN_KEY, shareToken)
+    }
+  }
+}
+
+function getShareToken() {
+  return shareToken || getToken()
 }
 
 axiosapi.interceptors.request.use(config => {
@@ -459,5 +474,7 @@ export {
 	del,
 	put,
 	setToken,
-	getToken
+	getToken,
+	setShareToken,
+	getShareToken
 };
