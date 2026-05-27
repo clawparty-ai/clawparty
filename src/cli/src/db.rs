@@ -119,6 +119,7 @@ pub fn init_clawparty_db(data_dir: &str) -> anyhow::Result<()> {
             password_hash TEXT NOT NULL,
             salt          TEXT NOT NULL,
             api_token     TEXT NOT NULL,
+            share_token   TEXT NOT NULL DEFAULT '',
             role          TEXT NOT NULL DEFAULT 'user',
             created_at    REAL NOT NULL DEFAULT (strftime('%s', 'now')),
             expire        REAL NOT NULL DEFAULT 0
@@ -153,6 +154,17 @@ pub fn init_clawparty_db(data_dir: &str) -> anyhow::Result<()> {
     if !has_engine {
         conn.execute(
             "ALTER TABLE agents ADD COLUMN engine TEXT NOT NULL DEFAULT 'zeroclaw'",
+            [],
+        )?;
+    }
+
+    // Migration: add share_token column if it doesn't exist
+    let has_share_token: bool = conn
+        .prepare("SELECT share_token FROM users LIMIT 0")
+        .is_ok();
+    if !has_share_token {
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN share_token TEXT NOT NULL DEFAULT ''",
             [],
         )?;
     }

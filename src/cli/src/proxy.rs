@@ -908,19 +908,20 @@ async fn handle_login(req: Request<Incoming>, db_path: &str) -> anyhow::Result<R
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| anyhow::anyhow!("Failed to open DB: {}", e))?;
 
-    let row: Option<(String, String, String, f64)> = conn.query_row(
-        "SELECT password_hash, salt, api_token, expire FROM users WHERE username = ?1",
+    let row: Option<(String, String, String, String, f64)> = conn.query_row(
+        "SELECT password_hash, salt, api_token, share_token, expire FROM users WHERE username = ?1",
         [username],
         |row| {
             let hash: String = row.get(0)?;
             let salt: String = row.get(1)?;
             let token: String = row.get(2)?;
-            let expire: f64 = row.get(3)?;
-            Ok((hash, salt, token, expire))
+            let share_token: String = row.get(3)?;
+            let expire: f64 = row.get(4)?;
+            Ok((hash, salt, token, share_token, expire))
         }
     ).optional()?;
 
-    if let Some((hash, salt, _old_token, expire)) = row {
+    if let Some((hash, salt, _old_token, share_token, expire)) = row {
         let mut hasher = Sha256::new();
         hasher.update(format!("{}{}", salt, password).as_bytes());
         let computed_hash = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>();
@@ -935,6 +936,17 @@ async fn handle_login(req: Request<Incoming>, db_path: &str) -> anyhow::Result<R
             }
 
             let new_token = generate_random_string(32);
+            let final_share_token = if share_token.is_empty() {
+                let st = generate_random_string(32);
+                conn.execute(
+                    "UPDATE users SET share_token = ?1 WHERE username = ?2",
+                    [&st, username],
+                ).map_err(|e| anyhow::anyhow!("Failed to update share_token: {}", e))?;
+                st
+            } else {
+                share_token
+            };
+
             conn.execute(
                 "UPDATE users SET api_token = ?1 WHERE username = ?2",
                 [&new_token, username],
@@ -950,6 +962,7 @@ async fn handle_login(req: Request<Incoming>, db_path: &str) -> anyhow::Result<R
                 "username": username,
                 "role": role,
                 "token": new_token,
+                "share_token": final_share_token,
             }).to_string();
 
             return Ok(Response::builder()
@@ -964,6 +977,30 @@ async fn handle_login(req: Request<Incoming>, db_path: &str) -> anyhow::Result<R
         .status(StatusCode::UNAUTHORIZED)
         .header(header::CONTENT_TYPE, "application/json")
         .body(box_body(Bytes::from(err_body)))?)
+}
+
+fn verify_token_or_share(token: &str, db_path: &str) -> bool {
+    if token.is_empty() {
+        return false;
+    }
+    let conn = match rusqlite::Connection::open(db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            ts_eprint!("[Proxy] DB open error: {}", e);
+            return false;
+        }
+    };
+    let result: Option<f64> = conn.query_row(
+        "SELECT expire FROM users WHERE api_token = ?1 OR share_token = ?1",
+        [token],
+        |row| row.get(0),
+    ).optional().unwrap_or(None);
+
+    if let Some(expire) = result {
+        !is_user_expired(expire)
+    } else {
+        false
+    }
 }
 
 fn extract_token(req: &Request<Incoming>) -> String {
@@ -1020,7 +1057,13 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
     if path.starts_with("/api/") {
         let token = extract_token(&req);
         if let Some(db_path) = DB_PATH.get() {
-            if !verify_token(&token, db_path) {
+            let is_webshare_get = path.starts_with("/api/webshare/") && method == hyper::Method::GET;
+            let valid = if is_webshare_get {
+                verify_token_or_share(&token, db_path)
+            } else {
+                verify_token(&token, db_path)
+            };
+            if !valid {
                 let mut resp = Response::new(box_body(Bytes::from(r#"{"status":401,"message":"unauthorized"}"#)));
                 *resp.status_mut() = StatusCode::UNAUTHORIZED;
                 return Ok(resp);
