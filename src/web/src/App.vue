@@ -236,6 +236,7 @@ import ChatSidebar from './components/ChatSidebar.vue'
 import ChatMain from './components/ChatMain.vue'
 import TemplatePicker from './components/TemplatePicker.vue'
 import { meshService, chatService, openclawService, zeroclawService, zagentService, groupChatService, taskService, ZeroClawWS, setApiToken, getApiToken } from './services/chatService'
+import { setShareToken } from './services/request'
 import { post } from './services/request'
 import ShellService from './services/ShellService'
 import { platform } from '@tauri-apps/plugin-os';
@@ -311,6 +312,9 @@ const submitLogin = async () => {
     if (res?.data?.token) {
       setLoginToken(res.data.token)
       setApiToken(res.data.token)
+      if (res.data.share_token) {
+        setShareToken(res.data.share_token)
+      }
       showLoginDialog.value = false
       loginUsername.value = ''
       loginPassword.value = ''
@@ -1781,7 +1785,7 @@ const enterGroupChat = async (groupId) => {
   currentActiveChatId.value = null
 
   activeGroupId.value = groupId
-  const allMembers = [group.ownerAgent, ...group.members]
+  const allMembers = [...new Set([group.ownerAgent, ...group.members])]
 
   // ── Auto-start non-running member agents (disabled; TUI starts all agents) ──
   const startPromises = allMembers.map(async (agentName) => {
@@ -1814,9 +1818,9 @@ const enterGroupChat = async (groupId) => {
             sender = m[1].trim()
             text = m[2]
           } else {
-            sender = currentMeshAgentUsername.value || 'You'
+            sender = currentMeshAgentUsername.value || '群主'
           }
-          isSent = sender === (currentMeshAgentUsername.value || 'You')
+          isSent = sender === (currentMeshAgentUsername.value || '群主')
         } else {
           sender = msg._agentName || group.ownerAgent
           if (text.includes('NO_REPLY') || text.includes('不回复')) continue
@@ -1964,6 +1968,15 @@ const createGroupChatMessageHandler = (groupId, agentName) => {
           lastTyping.isTyping = false
           lastTyping.text = replyText
         }
+      } else if (!isNoReply && replyText) {
+        group.messages.push({
+          text: replyText,
+          sender: agentName,
+          agentName: agentName,
+          time: formatTime(new Date().toISOString()),
+          timestamp: Date.now(),
+          isSent: false
+        })
       }
 
       // Persist agent response to chat_log
@@ -1996,6 +2009,9 @@ const createGroupChatMessageHandler = (groupId, agentName) => {
       }
       break
     }
+    case 'session_start':
+    case 'session_end':
+      break
     case 'tool_call': {
       group.messages.push({
         text: `[Tool call: ${data.name}]`,
@@ -2060,11 +2076,12 @@ const sendMessage = async () => {
 
       const now = new Date()
       const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+      const senderName = currentMeshAgentUsername.value || '群主'
 
       // Record user message locally
       group.messages.push({
         text: text,
-        sender: currentMeshAgentUsername.value || 'You',
+        sender: senderName,
         agentName: 'user',
         time: time,
         timestamp: now.getTime(),
@@ -2081,7 +2098,6 @@ const sendMessage = async () => {
       const connections = activeGroupWsMap.get(group.groupId)
       if (connections) {
         const groupName = group.groupName || '群聊'
-        const senderName = currentMeshAgentUsername.value || 'You'
 
         // Parse @mentions from the message
         const mentionPunctChars = ' ,.!?;:\'"、。！？；："'
@@ -2788,7 +2804,7 @@ const createGroupChat = async (selectedAgentNames, groupName) => {
     localGroupChats.value.push({
       groupId: result.group_id,
       groupName: groupName,
-      ownerAgent: result.agent_name,
+      ownerAgent: result.owner_agent,
       members: selectedAgentNames,
       sessionId: result.group_id,
       messages: []
