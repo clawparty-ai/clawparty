@@ -112,17 +112,17 @@
                   <span class="file-icon">📁</span>
                   {{ file.name }}
                 </span>
-                <span class="file-type-col">文件夹</span>
-                <span class="file-size-col">-</span>
-                <span class="file-time-col">-</span>
-                <span class="file-actions-col"></span>
-              </div>
-               <div v-else class="webshare-file-row" @click="previewFile(file.name)">
-                 <span class="file-name-col" :title="file.name">
-                   <span class="file-icon">{{ fileIcon(file.name) }}</span>
-                   {{ file.name }}
-                 </span>
-                 <span class="file-type-col">文件</span>
+                  <span class="file-type-col">文件夹</span>
+                  <span class="file-size-col">-</span>
+                  <span class="file-time-col">-</span>
+                  <span class="file-actions-col"></span>
+                </div>
+                 <div v-else class="webshare-file-row" @click="previewFile(file.name)">
+                   <span class="file-name-col" :title="file.name">
+                     <span class="file-icon">{{ fileIcon(file.name) }}</span>
+                     {{ file.name }}
+                   </span>
+                   <span class="file-type-col">{{ extLabel(file.name) }}</span>
                  <span class="file-size-col">{{ formatSize(file.size) }}</span>
                 <span class="file-time-col">{{ formatTime(file.mtime) }}</span>
                  <span class="file-actions-col">
@@ -148,7 +148,9 @@
               <button class="preview-close" @click="closePreview">✕</button>
             </div>
             <div class="preview-body">
-              <img v-if="isImagePreview" :src="previewUrl" class="preview-image" :alt="previewName" />
+              <video v-if="isVideoPreview" :src="previewUrl" class="preview-video" controls />
+              <img v-else-if="isImagePreview" :src="previewUrl" class="preview-image" :alt="previewName" />
+              <iframe v-else-if="isHtmlPreview" :src="previewUrl" class="preview-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
               <iframe v-else-if="isHtmlPreview" :src="previewUrl" class="preview-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
               <div v-else-if="isMarkdownPreview" class="preview-markdown" v-html="markdownContent"></div>
               <pre v-else-if="isTextPreview" class="preview-text">{{ textContent }}</pre>
@@ -175,7 +177,8 @@
           <button class="fullscreen-close-btn" @click="fullPreview = false">✕ 退出全屏</button>
         </div>
         <div class="fullscreen-preview-body">
-          <img v-if="isImagePreview" :src="previewUrl" class="fullscreen-preview-image" :alt="previewName" />
+          <video v-if="isVideoPreview" :src="previewUrl" class="fullscreen-preview-video" controls />
+          <img v-else-if="isImagePreview" :src="previewUrl" class="fullscreen-preview-image" :alt="previewName" />
           <iframe v-else-if="isHtmlPreview" :src="previewUrl" class="fullscreen-preview-iframe"></iframe>
           <div v-else-if="isMarkdownPreview" class="preview-markdown fullscreen" v-html="markdownContent"></div>
           <pre v-else-if="isTextPreview" class="preview-text fullscreen">{{ textContent }}</pre>
@@ -335,8 +338,12 @@ const sortedFiles = computed(() => {
       va = a.name || ''
       vb = b.name || ''
     } else if (key === 'type') {
-      va = a.type || ''
-      vb = b.type || ''
+      const ext = (name) => {
+        const idx = (name || '').lastIndexOf('.')
+        return idx > 0 ? name.slice(idx).toLowerCase() : ''
+      }
+      va = a.type === 'dir' ? '\x00' : ext(a.name)
+      vb = b.type === 'dir' ? '\x00' : ext(b.name)
     } else if (key === 'size') {
       va = a.size || 0
       vb = b.size || 0
@@ -366,6 +373,11 @@ const pathSegments = computed(() => {
 const isImagePreview = computed(() => {
   const name = previewName.value.toLowerCase()
   return name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.gif') || name.endsWith('.webp') || name.endsWith('.svg') || name.endsWith('.ico')
+})
+
+const isVideoPreview = computed(() => {
+  const name = previewName.value.toLowerCase()
+  return name.endsWith('.mp4') || name.endsWith('.webm') || name.endsWith('.ogg') || name.endsWith('.mov')
 })
 
 const isHtmlPreview = computed(() => {
@@ -535,6 +547,12 @@ const fileIcon = (name) => {
   if (lower.endsWith('.mp4') || lower.endsWith('.webm')) return '🎬'
   if (lower.endsWith('.mp3') || lower.endsWith('.wav') || lower.endsWith('.ogg')) return '🎵'
   return '📄'
+}
+
+const extLabel = (name) => {
+  const idx = (name || '').lastIndexOf('.')
+  if (idx > 0) return name.slice(idx).toLowerCase()
+  return '文件'
 }
 
 const formatSize = (bytes) => {
@@ -915,6 +933,13 @@ const stopResize = () => {
   max-height: 100%;
   object-fit: contain;
   border-radius: 4px;
+}
+
+.preview-video {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 4px;
+  outline: none;
 }
 
 .preview-placeholder {
@@ -1454,6 +1479,13 @@ const stopResize = () => {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+
+.fullscreen-preview-video {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 4px;
+  outline: none;
 }
 
 .fullscreen-preview-iframe {

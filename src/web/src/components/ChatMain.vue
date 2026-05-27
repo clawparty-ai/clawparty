@@ -48,7 +48,7 @@
     />
     <TaskPanel
       v-if="(chat.isZeroClaw || chat.isGroupChat) && showTaskPanel"
-      :agentName="agentName || chat.display_name || chat.agent_name"
+      :agentName="agentName || chat.display_name || chat.agent_name || chat.ownerAgent"
       :tasks="tasks"
       :expanded="taskPanelBodyExpanded"
       :initialHeight="taskPanelInitialHeight"
