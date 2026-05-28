@@ -1897,6 +1897,32 @@ const createGroupChatMessageHandler = (groupId, agentName) => {
     if (!group) { console.warn('[GroupChat] group not found:', groupId); return }
 
     switch (data.type) {
+    case 'thinking': {
+      if (!data.content) break
+      // Find or create typing indicator for this agent
+      var thinkMsg = null
+      for (var i = group.messages.length - 1; i >= 0; i--) {
+        if (group.messages[i].isTyping && group.messages[i].agentName === agentName) {
+          thinkMsg = group.messages[i]
+          break
+        }
+      }
+      if (thinkMsg) {
+        thinkMsg.thinking = (thinkMsg.thinking || '') + (data.content || '')
+      } else {
+        group.messages.push({
+          text: '',
+          sender: agentName,
+          agentName: agentName,
+          time: formatTime(new Date().toISOString()),
+          timestamp: Date.now(),
+          isSent: false,
+          isTyping: true,
+          thinking: data.content || ''
+        })
+      }
+      break
+    }
     case 'chunk': {
       if (data.content) {
         parseTaskTags(data.content, agentName)
