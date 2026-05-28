@@ -880,6 +880,8 @@ const handleTaskRefresh = async () => {
           fullResponse += data.content
         } else if (data.type === 'done') {
           hasResponded = true
+          // Also accept full_response from done event (OpenCode sends it directly)
+          if (!fullResponse && data.full_response) fullResponse = data.full_response
           addRefreshLog('info', 'AI response received, length: ' + fullResponse.length)
           ws.close()
           try {
@@ -1102,6 +1104,7 @@ ${msgText || '无'}
           fullResponse += data.content
         } else if (data.type === 'done') {
           hasResponded = true
+          if (!fullResponse && data.full_response) fullResponse = data.full_response
           ws.close()
           const generatedPrompt = fullResponse.trim()
           addRefreshLog('info', 'Generated prompt, length: ' + generatedPrompt.length)
