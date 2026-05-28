@@ -174,7 +174,7 @@ async fn resolve_http_backend(req: &Request<Incoming>) -> anyhow::Result<Uri> {
                         session = OPENCODE_SESSION.get().cloned().unwrap_or_else(|| "me".to_string());
                     } else {
                         // Get or create a session on this agent's own OpenCode server
-                        if let Some(sid) = get_or_create_opencode_session(port).await {
+                        if let Some(sid) = get_or_create_opencode_session(port, "ClawParty Agent").await {
                             session = sid;
                         }
                     }
@@ -333,9 +333,14 @@ async fn proxy_websocket(
     if is_opencode {
         if agent_name == "0#Agent" || agent_name.is_empty() {
             session_id = OPENCODE_SESSION.get().cloned().unwrap_or_else(|| "me".to_string());
+        } else if session_id == "me" {
+            // Individual (zAgent) chat — use main agent session
+            let session = get_or_create_opencode_session(target_port, "ClawParty Agent").await;
+            session_id = session.unwrap_or_else(|| "me".to_string());
         } else {
-            // Get or create a session on this agent's own OpenCode server
-            let session = get_or_create_opencode_session(target_port).await;
+            // Group chat — create a dedicated session per group
+            let title = format!("ClawParty Group - {}", session_id);
+            let session = get_or_create_opencode_session(target_port, &title).await;
             session_id = session.unwrap_or_else(|| "me".to_string());
         }
     }
@@ -815,14 +820,14 @@ pub fn set_zeroclaw_only(val: bool) {
     let _ = ZEROCLAW_ONLY.set(val);
 }
 
-async fn get_or_create_opencode_session(port: u16) -> Option<String> {
+async fn get_or_create_opencode_session(port: u16, title: &str) -> Option<String> {
     let base_url = format!("http://127.0.0.1:{}", port);
     let client = reqwest::Client::new();
     let resp = client.get(&format!("{}/session", base_url)).send().await.ok()?;
     if resp.status().is_success() {
         let sessions: Vec<serde_json::Value> = resp.json().await.ok()?;
         let existing = sessions.iter().find(|s| {
-            s.get("title").and_then(|t| t.as_str()) == Some("ClawParty Agent")
+            s.get("title").and_then(|t| t.as_str()) == Some(title)
         });
         if let Some(session) = existing {
             if let Some(id) = session["id"].as_str() {
@@ -834,7 +839,7 @@ async fn get_or_create_opencode_session(port: u16) -> Option<String> {
     let resp = client
         .post(&format!("{}/session", base_url))
         .header("Content-Type", "application/json")
-        .json(&serde_json::json!({"title": "ClawParty Agent"}))
+        .json(&serde_json::json!({"title": title}))
         .send()
         .await
         .ok()?;
