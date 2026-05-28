@@ -603,7 +603,7 @@ async fn bridge_opencode_sse(
                         .to_string();
 
                     let send_url = format!("{}/session/{}/message", base_url, session_id);
-                    let _ = client
+                    if let Err(e) = client
                         .post(&send_url)
                         .header("Content-Type", "application/json")
                         .json(&serde_json::json!({
@@ -611,7 +611,10 @@ async fn bridge_opencode_sse(
                             "agent": "build",
                         }))
                         .send()
-                        .await;
+                        .await
+                    {
+                        ts_eprint!("[Proxy][SSE] Failed to send message to OpenCode: {}", e);
+                    }
                 }
             } else {
                 break;
@@ -652,8 +655,16 @@ async fn bridge_opencode_sse(
 
                         let event_type = event["type"].as_str().unwrap_or("");
 
+                        // Filter events by session_id: the SSE stream broadcasts ALL
+                        // sessions' events, but this bridge is for ONE session only.
+                        // Skip events belonging to other sessions to avoid cross-talk.
+                        let event_session = event["properties"].get("sessionID")
+                            .and_then(|v| v.as_str());
+                        let is_our_event = event_session.map_or(true, |sid| sid == session_id);
+
                         match event_type {
                             "message.part.updated" | "message.part.delta" => {
+                                if !is_our_event { continue; }
                                 let part = &event["properties"]["part"];
                                 let part_type = part["type"].as_str().unwrap_or("");
 
@@ -702,6 +713,7 @@ async fn bridge_opencode_sse(
                             }
                             "message.updated" => {},
                             "session.status" => {
+                                if !is_our_event { continue; }
                                 let status = event["properties"]["status"]["type"].as_str().unwrap_or("");
                                 match status {
                                     "busy" => is_busy = true,
@@ -720,6 +732,7 @@ async fn bridge_opencode_sse(
                                 }
                             }
                             "session.error" => {
+                                if !is_our_event { continue; }
                                 let error_msg = event["properties"]["error"]["message"]
                                     .as_str()
                                     .unwrap_or("Unknown error");

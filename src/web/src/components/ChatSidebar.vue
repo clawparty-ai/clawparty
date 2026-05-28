@@ -95,9 +95,9 @@
             </svg>
           </button>
         </div>
-        <div v-if="activeOrg === 'zagents'" class="panel-header-actions">
+        <!-- <div v-if="activeOrg === 'zagents'" class="panel-header-actions">
           <button class="add-agent-btn" @click="showZAgentTemplates = true" title="从模板添加 zAgent">+A</button>
-        </div>
+        </div> -->
         <div v-if="activeOrg === 'groups'" class="panel-header-actions">
           <button class="add-agent-btn" @click="togglePicker" title="创建群聊">+G</button>
         </div>
@@ -578,7 +578,7 @@
               </div>
             </div>
           </template>
-          <div v-else class="panel-empty">No zAgents. Click +A to create one.</div>
+          <div v-else class="panel-empty">No zAgents.</div>
         </template>
 
         <!-- My Agents -->
