@@ -329,8 +329,8 @@ async fn proxy_websocket(
 
     let target_port_clone = target_port;
 
-    // Map session_id=me to actual opencode session for opencode agents
-    if is_opencode && session_id == "me" {
+    // Map session_id to actual opencode session for opencode agents
+    if is_opencode {
         if agent_name == "0#Agent" || agent_name.is_empty() {
             session_id = OPENCODE_SESSION.get().cloned().unwrap_or_else(|| "me".to_string());
         } else {
