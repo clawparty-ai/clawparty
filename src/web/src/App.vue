@@ -1863,7 +1863,7 @@ const enterGroupChat = async (groupId) => {
 
     const ws = new ZeroClawWS(
       agentName,
-      groupId,
+      groupId + '-' + agentName,
       msgHandler,
       () => { console.log('[GroupChat] WS open:', agentName, groupId) },
       () => { console.log('[GroupChat] WS close:', agentName, groupId) },
