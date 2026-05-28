@@ -1160,15 +1160,21 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
     }
 
     // Wiki API routes — handled locally by Rust (not forwarded to ztm agent)
-    ts_eprint!("[Proxy] Checking path: '{}' for wiki routes", path);
+    if cfg!(debug_assertions) {
+        ts_eprint!("[Proxy] Checking path: '{}' for wiki routes", path);
+    }
     if path.starts_with("/api/wiki/") {
         if let Some(data_dir) = DATA_DIR.get() {
             let wiki_path = &path["/api/wiki/".len()..];
-            ts_eprint!("[Proxy] wiki_path: '{}'", wiki_path);
+            if cfg!(debug_assertions) {
+                ts_eprint!("[Proxy] wiki_path: '{}'", wiki_path);
+            }
             if let Some(slash_idx) = wiki_path.find('/') {
                 let agent_name = &wiki_path[..slash_idx];
                 let action = &wiki_path[slash_idx + 1..];
-                ts_eprint!("[Proxy] agent_name: '{}', action: '{}'", agent_name, action);
+                if cfg!(debug_assertions) {
+                    ts_eprint!("[Proxy] agent_name: '{}', action: '{}'", agent_name, action);
+                }
 
                 // Decode URL-encoded agent name
                 let agent_decoded = urlencoding::decode(agent_name).unwrap_or_else(|_| agent_name.into()).to_string();

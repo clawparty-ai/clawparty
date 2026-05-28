@@ -309,7 +309,7 @@ const uploadFiles = async (files) => {
 }
 
 // Sorting state: 'name' | 'type' | 'size' | 'mtime'
-const sortKey = ref('')
+const sortKey = ref('type')
 const sortDir = ref('asc')
 
 const handleSort = (key) => {
@@ -342,8 +342,8 @@ const sortedFiles = computed(() => {
         const idx = (name || '').lastIndexOf('.')
         return idx > 0 ? name.slice(idx).toLowerCase() : ''
       }
-      va = a.type === 'dir' ? '\x00' : ext(a.name)
-      vb = b.type === 'dir' ? '\x00' : ext(b.name)
+      va = a.type === 'dir' ? '\x00' + (a.name || '').toLowerCase() : ext(a.name) + '\x00' + (a.name || '').toLowerCase()
+      vb = b.type === 'dir' ? '\x00' + (b.name || '').toLowerCase() : ext(b.name) + '\x00' + (b.name || '').toLowerCase()
     } else if (key === 'size') {
       va = a.size || 0
       vb = b.size || 0

@@ -1892,8 +1892,9 @@ const leaveGroupChat = (groupId) => {
 
 const createGroupChatMessageHandler = (groupId, agentName) => {
   return (data) => {
+    console.log('[GroupChat] Message from', agentName, ':', data.type)
     const group = localGroupChats.value.find(g => g.groupId === groupId)
-    if (!group) return
+    if (!group) { console.warn('[GroupChat] group not found:', groupId); return }
 
     switch (data.type) {
     case 'chunk': {
@@ -2118,7 +2119,11 @@ const sendMessage = async () => {
           : text
 
         for (const conn of connections) {
-          if (!conn.ws || !conn.ws.isConnected()) continue
+          if (!conn.ws || !conn.ws.isConnected()) {
+            console.warn('[GroupChat] Skip agent (not connected):', conn.agentName)
+            continue
+          }
+          console.log('[GroupChat] Sending to:', conn.agentName)
           const isMentioned = hasMentions && mentionedNames.includes(conn.agentName.toLowerCase())
           let injectedText
           if (isMentioned) {
