@@ -926,13 +926,29 @@ const handleTaskRefresh = async () => {
             }
             if (result.summaries && result.summaries.length > 0) {
               addRefreshLog('info', 'AI generated ' + result.summaries.length + ' summary/summaries')
+              const existingTaskIds = new Set(tasks.value.map(t => t.task_id))
               for (const s of result.summaries) {
                 if (s.taskId && s.summary) {
-                  changes.push({
-                    type: 'summary',
-                    task_id: s.taskId,
-                    result_summary: s.summary
-                  })
+                  if (existingTaskIds.has(s.taskId)) {
+                    changes.push({
+                      type: 'summary',
+                      task_id: s.taskId,
+                      result_summary: s.summary
+                    })
+                  } else {
+                    // Task doesn't exist yet — create it instead
+                    addRefreshLog('info', 'Summary for unknown task ' + s.taskId + ', creating as new task')
+                    changes.push({
+                      type: 'create',
+                      data: {
+                        task_id: s.taskId,
+                        title: s.summary.length > 80 ? s.summary.substring(0, 80) + '...' : s.summary,
+                        description: s.summary,
+                        status: 'pending',
+                        progress: 0
+                      }
+                    })
+                  }
                 }
               }
             }
@@ -949,9 +965,9 @@ const handleTaskRefresh = async () => {
               addRefreshLog('info', 'Batch refresh done: created=' + (batchRes.data?.created || 0) +
                 ' updated=' + (batchRes.data?.updated || 0) +
                 ' saved=' + (batchRes.data?.tasks_saved || false))
-              // Remove "create" changes from pending since batchRefresh already persisted them.
+              // Remove "create" and "summary" changes from pending since batchRefresh already persisted them.
               // Keeping them would show duplicate entries AND trigger extra creates on Confirm.
-              pendingTaskChanges.value = changes.filter(function (c) { return c.type !== 'create' })
+              pendingTaskChanges.value = changes.filter(function (c) { return c.type !== 'create' && c.type !== 'summary' })
               if (pendingTaskChanges.value.length === 0) {
                 addRefreshLog('info', 'All changes committed, no pending confirmations.')
               } else {
