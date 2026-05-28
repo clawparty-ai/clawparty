@@ -10,7 +10,7 @@
       :taskPanelVisible="showTaskPanel"
       :showWebShareButton="chat.isZeroClaw || chat.isGroupChat"
       :webSharePanelVisible="showWebSharePanel"
-      :showAIPanelButton="chat.isZeroClaw"
+      :showAIPanelButton="chat.isZeroClaw || chat.isGroupChat"
       :aiPanelVisible="showAIPanel"
       :showWikiButton="chat.isZeroClaw"
       :wikiPanelVisible="showWikiPanel"
