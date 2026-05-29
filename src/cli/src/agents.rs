@@ -518,8 +518,8 @@ fn sync_agents_from_fs_inner(data_dir: &str) -> usize {
         let workspace_dir = path.join("workspace");
         ensure_bootstrap_files(&workspace_dir, &agent_name);
 
-        // Skip if already in clawparty.db
-        if let Ok(Some(_)) = db::get_agent(data_dir, &agent_name) {
+        // Skip if already in clawparty.db (active or soft-deleted)
+        if db::get_agent_any(data_dir, &agent_name).is_ok_and(|a| a.is_some()) {
             continue;
         }
 

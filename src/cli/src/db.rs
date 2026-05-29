@@ -655,6 +655,18 @@ pub fn get_agent(data_dir: &str, agent_name: &str) -> anyhow::Result<Option<Agen
     Ok(agent)
 }
 
+pub fn get_agent_any(data_dir: &str, agent_name: &str) -> anyhow::Result<Option<AgentRecord>> {
+    let conn = open_db(data_dir)?;
+    let agent = conn
+        .query_row(
+            "SELECT * FROM agents WHERE agent_name = ?1",
+            rusqlite::params![agent_name],
+            row_to_agent,
+        )
+        .optional()?;
+    Ok(agent)
+}
+
 pub fn get_agent_port(data_dir: &str, agent_name: &str) -> Option<u16> {
     get_agent(data_dir, agent_name).ok()?.map(|a| a.port)
 }

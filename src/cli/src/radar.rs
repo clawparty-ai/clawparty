@@ -587,6 +587,128 @@ fn parse_targets_md(content: &str) -> Vec<TargetJson> {
 }
 
 fn parse_targets_table(content: &str) -> Vec<TargetJson> {
+    // Try horizontal multi-column table first (one target per row).
+    let horizontal = parse_horizontal_targets(content);
+    if !horizontal.is_empty() {
+        return horizontal;
+    }
+
+    // Fall back to vertical key-value table (one target per heading section).
+    parse_vertical_targets(content)
+}
+
+/// Parse horizontal multi-column tables where each row is a separate target.
+///
+/// Example:
+///   ## 球员跟踪目标
+///   | ID | 姓名 | 年龄 | 位置 | 状态 |
+///   |----|------|------|------|------|
+///   | T-001 | 李浩岩 | 6岁 | 前锋 | active |
+fn parse_horizontal_targets(content: &str) -> Vec<TargetJson> {
+    let mut targets = Vec::new();
+    // Split on h2/h3 headings — keep the heading text as part of each section
+    // but group by heading so we know which category the rows belong to.
+    let mut current_heading = String::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("## ") {
+            current_heading = trimmed[3..].trim().to_string();
+            continue;
+        }
+        if trimmed.starts_with("### ") {
+            current_heading = trimmed[4..].trim().to_string();
+            continue;
+        }
+        // Skip non-table lines and separators
+        if !trimmed.starts_with('|') { continue; }
+        if trimmed.contains("---|---") || trimmed.contains("------") { continue; }
+
+        let cells: Vec<&str> = trimmed.split('|')
+            .map(|c| c.trim())
+            .filter(|c| !c.is_empty())
+            .collect();
+        if cells.len() < 2 { continue; }
+
+        // Check if this is a header row (first cell looks like a column name, not data).
+        // A header row has cells that are short and common. A data row has an ID-like first cell.
+        let first_cell = cells.first().map(|s| s.to_string()).unwrap_or_default();
+        let is_header_row = first_cell == "ID"
+            || first_cell == "字段"
+            || first_cell == "名称"
+            || first_cell == "姓名"
+            || first_cell == "赛事名称";
+
+        if is_header_row {
+            // Store header names for potential future use; skip this row.
+            continue;
+        }
+
+        // Build field map from column positions (approximate).
+        // We derive field names from common patterns in the first row
+        // since we skipped the header. Use position-based heuristics.
+        let id = cells.first().map(|s| s.to_string());
+        let name = cells.get(1).map(|s| s.to_string());
+
+        // Collect spec entries from remaining cells
+        let known_positions = ["ID", "姓名", "赛事名称", "名称", "描述", "状态"];
+        let mut spec_entries = Vec::new();
+        let col_names = ["ID", "名称", "年龄", "位置", "地区", "档案等级", "发现平台", "最近更新", "状态",
+                         "赛事名称", "周期", "下次时间"];
+        for (i, cell) in cells.iter().enumerate() {
+            let label = col_names.get(i).copied().unwrap_or("其他");
+            if known_positions.contains(&label) && i < 2 { continue; }
+            if label == "状态" {
+                // status is handled separately
+                continue;
+            }
+            spec_entries.push(SpecEntry {
+                key: label.to_string(),
+                value: cell.to_string(),
+            });
+        }
+
+        let spec_label = spec_entries.iter()
+            .map(|e| e.value.as_str())
+            .filter(|v| !v.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let status = cells.last()
+            .map(|s| s.to_string())
+            .map(|s| match s.as_str() {
+                "active" | "running" => "active".to_string(),
+                "paused" => "paused".to_string(),
+                _ => s,
+            })
+            .unwrap_or_else(|| "active".to_string());
+
+        let description = if !current_heading.is_empty() {
+            Some(current_heading.clone())
+        } else {
+            None
+        };
+
+        targets.push(TargetJson {
+            id,
+            name: name.unwrap_or_default(),
+            description,
+            spec_entries,
+            spec_label,
+            channels: Vec::new(),
+            channel_label: String::new(),
+            source_probe: None,
+            status,
+            created_at: None,
+            last_scan: None,
+        });
+    }
+
+    targets
+}
+
+/// Parse vertical key-value tables (original format).
+fn parse_vertical_targets(content: &str) -> Vec<TargetJson> {
     let mut targets = Vec::new();
     let sections: Vec<&str> = content.split("\n### ").collect();
     let known_spec_keys = ["ID", "名称", "描述", "状态"];
