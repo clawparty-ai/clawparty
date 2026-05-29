@@ -1,4 +1,4 @@
-# ClawParty v2
+# ClawParty
 
 Multi-agent orchestration platform with CLI, Web, and Desktop interfaces.
 
