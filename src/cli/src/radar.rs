@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use hyper::body::{Bytes, Incoming};
 use hyper::{Response, StatusCode, header};
@@ -884,6 +885,82 @@ pub async fn get_log(data_dir: &str, agent_name: &str, filename: &str) -> Respon
     }
 }
 
+/// POST /api/radar/{agent}/format-targets
+/// Reads targets.md and sends it to LLM for formatting into HTML.
+pub async fn format_targets(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
+    let workspace = match get_agent_workspace(data_dir, agent_name) {
+        Ok(w) => w,
+        Err(_) => return error_response(StatusCode::NOT_FOUND, "Agent not found"),
+    };
+
+    let path = workspace.join("radar").join("targets.md");
+    let content = match tokio::fs::read_to_string(&path).await {
+        Ok(c) => c,
+        Err(_) => return error_response(StatusCode::NOT_FOUND, "targets.md not found"),
+    };
+
+    if content.trim().is_empty() {
+        return ok_response(&serde_json::json!({
+            "html": "<p class=\"radar-empty-text\">targets.md 为空，无需格式化。</p>",
+            "source": "noop"
+        }));
+    }
+
+    // Check file size (max 500KB for LLM context)
+    if content.len() > 500 * 1024 {
+        return error_response(StatusCode::PAYLOAD_TOO_LARGE, "targets.md too large for LLM formatting (max 500KB)");
+    }
+
+    let prompt = format!(
+        "你是一个数据格式化助手。请将以下 targets.md 文件内容格式化为结构化的 HTML 表格。\n\
+        要求：\n\
+        1. 保持所有原始数据完整，不要遗漏任何一行\n\
+        2. 使用 HTML <table> 标签，带有合适的 thead/tbody\n\
+        3. 为表格添加现代、简洁的样式（内联 style 或 <style> 标签）\n\
+        4. 保留所有 ID、姓名、年龄、位置、状态等列\n\
+        5. 对于不同 section（如 ## 球员跟踪目标、## 赛事跟踪目标），用 <h2> 标题分隔\n\
+        6. 只输出 HTML 代码片段（不需要 <!DOCTYPE html> 或 <html> 包裹），不需要任何解释文字\n\
+        7. 对于线索/待确认类数据，用浅灰背景的表格表示\n\
+        \n\
+        文件内容：\n\n```markdown\n{}\n```",
+        content
+    );
+
+    let client = reqwest::Client::new();
+    let body = serde_json::json!({ "message": prompt });
+
+    match client
+        .post("http://127.0.0.1:42617/api/sessions/me/chat")
+        .json(&body)
+        .timeout(Duration::from_secs(120))
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let err_body = resp.text().await.unwrap_or_default();
+                return error_response(status, &format!("LLM service returned {}: {}", status, err_body));
+            }
+            match resp.json::<serde_json::Value>().await {
+                Ok(json) => {
+                    let html = json["response"].as_str().unwrap_or("").to_string();
+                    if html.is_empty() {
+                        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "LLM returned empty response");
+                    }
+                    ok_response(&serde_json::json!({
+                        "html": html,
+                        "source": "llm",
+                        "agent": "0#Agent"
+                    }))
+                }
+                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to parse LLM response: {}", e)),
+            }
+        }
+        Err(e) => error_response(StatusCode::SERVICE_UNAVAILABLE, &format!("Failed to connect to LLM service: {}", e)),
+    }
+}
+
 /// Route dispatcher for /api/radar/* requests.
 pub async fn route(
     data_dir: &str,
@@ -910,6 +987,9 @@ pub async fn route(
         }
         "targets-json" if method == hyper::Method::GET => {
             Some(get_targets_json(data_dir, &agent).await)
+        }
+        "format-targets" if method == hyper::Method::POST => {
+            Some(format_targets(data_dir, &agent).await)
         }
         "probes" if method == hyper::Method::GET && segments.len() == 2 => {
             Some(get_probes(data_dir, &agent).await)

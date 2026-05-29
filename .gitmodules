@@ -4,3 +4,6 @@
 [submodule "zeroclaw"]
 	path = zeroclaw
 	url = https://github.com/zeroclaw-labs/zeroclaw.git
+[submodule "opencode"]
+	path = opencode
+	url = https://github.com/anomalyco/opencode.git

@@ -1,7 +1,7 @@
 <template>
   <div class="ai-panel" :style="{ height: panelHeight + 'px' }">
     <div class="ai-panel-header">
-      <span class="ai-panel-icon">🤖</span>
+      <span class="ai-panel-icon">🤔</span>
       <span class="ai-panel-title">AI Panel</span>
       <span class="ai-panel-count" v-if="entries.length">{{ entries.length }}</span>
     </div>

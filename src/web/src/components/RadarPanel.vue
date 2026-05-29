@@ -22,6 +22,14 @@
       </div>
       <span class="radar-panel-stats" v-if="activeSubPanel === 'targets' && targets.length > 0">{{ targets.length }} 目标</span>
       <span class="radar-panel-stats" v-else-if="activeSubPanel === 'probes' && probes.length > 0">{{ probes.length }} 探测</span>
+      <button
+        v-if="activeSubPanel === 'targets'"
+        class="radar-format-btn"
+        :class="{ active: showFormatted, loading: formatting }"
+        @click.stop="toggleFormattedView"
+        :disabled="formatting"
+        title="AI 智能格式化视图"
+      >{{ formatting ? '⏳' : '✨' }}</button>
       <div class="radar-panel-actions">
         <button
           class="radar-fullscreen-btn"
@@ -72,6 +80,19 @@
         </div>
 
         <div class="radar-center-col">
+          <!-- Formatted HTML view (LLM) -->
+          <div v-if="showFormatted" class="radar-formatted-view">
+            <div v-if="formatting" class="radar-loading">
+              <span class="loading-spinner"></span> AI 正在格式化 target.md ...
+            </div>
+            <div v-else-if="formattedHtml" class="radar-formatted-html" v-html="formattedHtml"></div>
+            <div v-else class="radar-empty">
+              <span class="radar-empty-icon">✨</span>
+              <span class="radar-empty-text">格式化失败，请重试</span>
+            </div>
+          </div>
+          <!-- Normal detail view -->
+          <template v-else>
           <div v-if="!selectedItem" class="radar-empty">
             <span class="radar-empty-icon">📡</span>
             <span class="radar-empty-text">选择一个{{ activeSubPanel === 'targets' ? '目标' : '探测' }}查看详情</span>
@@ -121,9 +142,10 @@
               <div v-for="(log, i) in recentLogs" :key="i" class="radar-log-line">
                 <span class="log-time">{{ log.time?.slice(11, 16) || '' }}</span>
                 <span class="log-msg">{{ log.summary || log.name }}</span>
-              </div>
             </div>
           </div>
+          </div>
+          </template>
         </div>
 
         <div class="radar-right-col" ref="radarColRef">
@@ -221,6 +243,10 @@ const radarCanvasRef = ref(null)
 const radarColRef = ref(null)
 let radarAnimCleanup = null
 let radarResizeObserver = null
+
+const showFormatted = ref(false)
+const formattedHtml = ref('')
+const formatting = ref(false)
 
 // ── Data loading ──────────────────────────────────────
 
@@ -330,6 +356,23 @@ function handleCreate() {
     emit('createTarget', '帮我创建一个雷达目标:\n\n名称: [目标名称]\n描述: [目标描述]\n规格: [详细规格]\n渠道: [监测渠道]\n\n请根据以上信息补充完整目标详情，并更新 targets.md。')
   } else {
     emit('createProbe', '帮我创建一个雷达探测:\n\n名称: [探测名称]\n描述: [探测描述]\n渠道类型: [website/rss/api/...]\n渠道位置: [URL或路径]\n探测方法: [keyword_match/...]\n执行周期: [daily/weekly/...]\n\n请根据以上信息补充完整探测详情，并更新 probes.md。')
+  }
+}
+
+async function toggleFormattedView() {
+  showFormatted.value = !showFormatted.value
+  if (showFormatted.value && !formattedHtml.value) {
+    formatting.value = true
+    try {
+      const res = await radarService.formatTargets(props.agentName)
+      if (res.data && res.data.html) {
+        formattedHtml.value = res.data.html
+      }
+    } catch (e) {
+      console.error('[Radar] Format targets failed:', e)
+    } finally {
+      formatting.value = false
+    }
   }
 }
 
@@ -602,6 +645,7 @@ var startResize = (function () {
 
 watch(activeSubPanel, function () {
   selectedItem.value = null
+  showFormatted.value = false
   if (activeSubPanel.value !== 'logs') {
     nextTick(function () { startRadar() })
   }
@@ -723,6 +767,24 @@ onBeforeUnmount(function () {
 }
 .radar-fullscreen-btn:hover { background: var(--bg-hover, rgba(0,0,0,0.04)); }
 .radar-fullscreen-btn.active { background: rgba(64,149,254,0.15); color: #4095fe; }
+
+.radar-format-btn {
+  width: 28px; height: 28px;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-radius: 4px;
+  background: rgba(102, 126, 234, 0.06);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.radar-format-btn:hover { background: rgba(102, 126, 234, 0.15); border-color: rgba(102, 126, 234, 0.5); }
+.radar-format-btn.active { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; border-color: transparent; }
+.radar-format-btn.loading { opacity: 0.7; cursor: wait; }
+.radar-format-btn:disabled { cursor: wait; }
 
 .refresh-btn {
   width: 28px; height: 28px;
@@ -855,6 +917,74 @@ onBeforeUnmount(function () {
   flex: 1;
   overflow-y: auto;
   padding: 12px 16px;
+}
+
+/* ── Formatted HTML view ─────────────────────────── */
+.radar-formatted-view {
+  height: 100%;
+  overflow-y: auto;
+}
+.radar-formatted-html {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-primary, #4d4d4d);
+}
+.radar-formatted-html :deep(h2) {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary, #4d4d4d);
+  margin: 16px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #667eea;
+}
+.radar-formatted-html :deep(h3) {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, #797979);
+  margin: 12px 0 6px;
+}
+.radar-formatted-html :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0 16px;
+  font-size: 12px;
+}
+.radar-formatted-html :deep(th) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 500;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.radar-formatted-html :deep(td) {
+  padding: 5px 8px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  vertical-align: top;
+}
+.radar-formatted-html :deep(tr:hover td) {
+  background: rgba(102, 126, 234, 0.04);
+}
+.radar-formatted-html :deep(a) {
+  color: #4095fe;
+  text-decoration: none;
+}
+.radar-formatted-html :deep(a:hover) {
+  text-decoration: underline;
+}
+.radar-formatted-html :deep(code) {
+  background: rgba(0,0,0,0.05);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-size: 11px;
+}
+.radar-formatted-html :deep(blockquote) {
+  border-left: 3px solid #667eea;
+  padding: 4px 12px;
+  margin: 8px 0;
+  color: var(--text-secondary, #797979);
+  background: rgba(102,126,234,0.04);
 }
 
 .radar-empty {

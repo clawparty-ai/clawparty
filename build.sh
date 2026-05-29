@@ -291,6 +291,33 @@ if $BUILD_DESKTOP; then
     fi
 fi
 
+# ── 7. Scripts ────────────────────────────────────────────────────
+header "Copying Scripts"
+mkdir -p "$BIN_DIR"
+
+copy_script() {
+    local name="$1" src="$2" dst="$BIN_DIR/$name"
+    if [ -f "$src" ]; then
+        cp -f "$src" "$dst"
+        chmod +x "$dst"
+        if command -v xattr &> /dev/null; then
+            xattr -cr "$dst" 2>/dev/null || true
+        fi
+        check_step "$name → $dst"
+    else
+        echo -e "  ${YELLOW}⚠${NC}  $src not found — skipping"
+    fi
+}
+
+copy_script "clawparty-macos.sh" "$SCRIPT_DIR/scripts/clawparty-macos.sh"
+
+# Apply xattr to all previously copied binaries as well
+if command -v xattr &> /dev/null; then
+    for f in "$BIN_DIR/clawparty" "$BIN_DIR/zeroclaw" "$BIN_DIR/ztm" "$BIN_DIR/opencode"; do
+        [ -f "$f" ] && xattr -cr "$f" 2>/dev/null || true
+    done
+fi
+
 # ── Summary ──────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}=========================================${NC}"
@@ -311,4 +338,5 @@ fi
 if $BUILD_DESKTOP; then
     echo "  Desktop:  $BIN_DIR/ClawPartyDesktop.app"
 fi
+echo "  Scripts:  $BIN_DIR/clawparty-macos.sh"
 echo ""

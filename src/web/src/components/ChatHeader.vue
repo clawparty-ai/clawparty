@@ -71,7 +71,7 @@
           title="AI Panel"
           @click="emit('toggleAIPanel')"
         >
-          <span style="font-size: 13px;">🤖</span>
+          <span style="font-size: 13px;">🤔</span>
         </button>
         <button
           v-if="showWebShareButton"

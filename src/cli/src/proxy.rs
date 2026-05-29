@@ -780,13 +780,25 @@ fn transform_opencode_messages(bytes: &[u8]) -> anyhow::Result<Bytes> {
         let mut content = String::new();
         if let Some(parts) = msg["parts"].as_array() {
             for part in parts {
-                if part["type"].as_str() == Some("text") {
-                    if let Some(text) = part["text"].as_str() {
-                        if !content.is_empty() {
-                            content.push('\n');
+                let part_type = part["type"].as_str().unwrap_or("");
+                match part_type {
+                    "text" | "reasoning" => {
+                        if let Some(text) = part["text"].as_str() {
+                            if !content.is_empty() {
+                                content.push('\n');
+                            }
+                            content.push_str(text);
                         }
-                        content.push_str(text);
                     }
+                    "tool" => {
+                        if let Some(tool_name) = part["tool"].as_str() {
+                            if !content.is_empty() {
+                                content.push('\n');
+                            }
+                            content.push_str(&format!("[Tool: {}]", tool_name));
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
