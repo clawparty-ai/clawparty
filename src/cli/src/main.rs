@@ -212,8 +212,8 @@ async fn main() -> anyhow::Result<()> {
     let api = ApiClient::new(args.api_host.clone(), args.token.clone());
 
     // Create app state - ZeroClaw first!
-    let mut state = AppState::new(api, args.zeroclaw_only);
-    state.add_log("INFO", &format!("Engine: {} | ZTM: {}", args.engine, if args.zeroclaw_only { "disabled" } else { "enabled" }));
+    let mut state = AppState::new(api, args.no_ztm);
+    state.add_log("INFO", &format!("Engine: {} | ZTM: {}", args.engine, if args.no_ztm { "disabled" } else { "enabled" }));
 
     // Find zeroclaw binary path
     let zeroclaw_bin = args.zeroclaw_bin.clone().unwrap_or_else(|| {
@@ -476,7 +476,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Keep resolved pipy_bin for watchdog restart
     // ZTM Agent is optional (for mesh networking)
-    if !args.zeroclaw_only {
+    if !args.no_ztm {
         let pipy_bin = args.pipy_bin.clone().unwrap_or_else(|| {
             if let Ok(exe) = std::env::current_exe() {
                 if let Some(dir) = exe.parent() {
@@ -1039,7 +1039,7 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
         .try_init();
     ts_print!("🀄 ClawParty Service Mode");
     ts_print!("========================");
-    ts_print!("Engine: {} | ZTM: {}", args.engine, if args.zeroclaw_only { "disabled" } else { "enabled" });
+    ts_print!("Engine: {} | ZTM: {}", args.engine, if args.no_ztm { "disabled" } else { "enabled" });
 
     let zeroclaw_bin = args.zeroclaw_bin.clone().unwrap_or_else(|| {
         if let Ok(exe) = std::env::current_exe() {
@@ -1293,7 +1293,7 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
     let api = ApiClient::new(args.api_host.clone(), args.token.clone());
     let agent_mgr_arc = Arc::new(tokio::sync::Mutex::new(None::<AgentManager>));
 
-    if !args.zeroclaw_only {
+    if !args.no_ztm {
         let pipy_bin = args.pipy_bin.clone().unwrap_or_else(|| {
             if let Ok(exe) = std::env::current_exe() {
                 if let Some(dir) = exe.parent() {
@@ -1368,13 +1368,13 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
     } else {
         ts_print!("ZeroClaw Gateway: http://localhost:42617");
     }
-    if !args.zeroclaw_only {
+    if !args.no_ztm {
         ts_print!("ZTM Agent API: {}", args.api_host);
     }
     ts_print!("\nPress Ctrl+C to stop...");
 
     // Service-mode watchdog
-    if !args.zeroclaw_only && args.watchdog_interval > 0 && !args.no_health_check {
+    if !args.no_ztm && args.watchdog_interval > 0 && !args.no_health_check {
         let api_watch = api.clone();
         let agent_mgr_watch = agent_mgr_arc.clone();
         let watchdog_interval = args.watchdog_interval;
@@ -1448,18 +1448,18 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
 
     // Open browser if requested
     if args.open {
-        ts_print!("🌐 Opening browser to http://{}", if args.zeroclaw_only { "localhost:42617" } else { &args.api_host });
+        ts_print!("🌐 Opening browser to http://{}", if args.no_ztm { "localhost:42617" } else { &args.api_host });
         #[cfg(target_os = "macos")]
         {
-            let _ = Command::new("open").arg(if args.zeroclaw_only { "http://localhost:42617" } else { &args.api_host }).spawn();
+            let _ = Command::new("open").arg(if args.no_ztm { "http://localhost:42617" } else { &args.api_host }).spawn();
         }
         #[cfg(target_os = "linux")]
         {
-            let _ = Command::new("xdg-open").arg(if args.zeroclaw_only { "http://localhost:42617" } else { &args.api_host }).spawn();
+            let _ = Command::new("xdg-open").arg(if args.no_ztm { "http://localhost:42617" } else { &args.api_host }).spawn();
         }
         #[cfg(target_os = "windows")]
         {
-            let _ = Command::new("start").arg(if args.zeroclaw_only { "http://localhost:42617" } else { &args.api_host }).spawn();
+            let _ = Command::new("start").arg(if args.no_ztm { "http://localhost:42617" } else { &args.api_host }).spawn();
         }
     }
 
@@ -1467,7 +1467,7 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
     let proxy_https_port = args.proxy_https_port;
     let proxy_http_port = args.proxy_http_port;
     let proxy_cert_dir = args.proxy_cert_dir.clone();
-    crate::proxy::set_zeroclaw_only(args.zeroclaw_only);
+    crate::proxy::set_no_ztm(args.no_ztm);
     tokio::spawn(async move {
         proxy::start(proxy_https_port, proxy_http_port, &proxy_cert_dir, &args.data, &args.engine).await;
     });

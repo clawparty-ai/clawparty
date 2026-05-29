@@ -101,7 +101,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(api: ApiClient, zeroclaw_only: bool) -> Self {
+    pub fn new(api: ApiClient, no_ztm: bool) -> Self {
         let now = chrono::Local::now();
         let timestamp = now.format("%Y%m%d-%H%M%S");
         // Log to ~/.clawparty/ directory instead of current directory
@@ -127,7 +127,7 @@ impl AppState {
             selected_index: 0,
             active_panel: ActivePanel::Sidebar,
             // Default to ZeroClaw if available, otherwise Mesh
-            active_org: if zeroclaw_only { ActiveOrg::ZeroClaw } else { ActiveOrg::Mesh(String::new()) },
+            active_org: if no_ztm { ActiveOrg::ZeroClaw } else { ActiveOrg::Mesh(String::new()) },
             current_chat: None,
             current_openclaw_agent: None,
             current_peer: None,

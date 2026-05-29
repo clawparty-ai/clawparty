@@ -38,9 +38,9 @@ pub struct Args {
     #[arg(short, long, default_value = "false")]
     pub open: bool,
 
-    // ZeroClaw-only mode (no ZTM agent)
-    #[arg(long, visible_alias = "no-ztm", default_value = "false")]
-    pub zeroclaw_only: bool,
+    // Disable ZTM agent (mesh networking)
+    #[arg(long, default_value = "false")]
+    pub no_ztm: bool,
 
     // Execution engine: "opencode" (default) or "zeroclaw"
     #[arg(long, default_value = "opencode")]

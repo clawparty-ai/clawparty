@@ -98,6 +98,11 @@
 #===============================================================================
 set -euo pipefail
 
+# Clear quarantine on this script itself (macOS blocks downloaded .command files)
+if command -v xattr &> /dev/null && [ -f "$0" ]; then
+    xattr -cr "$0" 2>/dev/null || true
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_DIR="$SCRIPT_DIR"
 BIN_DIR="/usr/local/bin"
@@ -542,6 +547,17 @@ cmd_start() {
     info "Using binary: $binary"
     info "Service port: $PORT"
 
+    # Clear quarantine on all sibling binaries (macOS blocks unsigned downloads)
+    if command -v xattr &> /dev/null; then
+        local bin_dir
+        bin_dir="$(dirname "$binary")"
+        for f in "$bin_dir"/clawparty "$bin_dir"/zeroclaw "$bin_dir"/ztm "$bin_dir"/opencode; do
+            if [ -f "$f" ]; then
+                xattr -cr "$f" 2>/dev/null && info "Cleared quarantine on $(basename "$f")" || true
+            fi
+        done
+    fi
+
     # Ensure config directories exist
     mkdir -p "$CLAWPARTY_HOME" "$CLAWPARTY_HOME/.zeroclaw"
 
@@ -551,10 +567,10 @@ cmd_start() {
 
     if $FOREGROUND; then
         info "Running in foreground (press Ctrl+C to stop)"
-        exec "$binary" -s
+        exec "$binary" -s --engine=opencode --no-ztm
     else
         # Detached background
-        nohup "$binary" -s > "$CLAWPARTY_HOME/clawparty.log" 2>&1 &
+        nohup "$binary" -s --engine=opencode --no-ztm > "$CLAWPARTY_HOME/clawparty.log" 2>&1 &
         local pid=$!
         echo "$pid" > "$PID_FILE"
 

@@ -841,7 +841,7 @@ pub fn set_engine(engine: &str) {
     let _ = ENGINE.set(engine.to_string());
 }
 
-pub fn set_zeroclaw_only(val: bool) {
+pub fn set_no_ztm(val: bool) {
     let _ = ZEROCLAW_ONLY.set(val);
 }
 

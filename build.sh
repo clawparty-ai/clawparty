@@ -309,7 +309,7 @@ copy_script() {
     fi
 }
 
-copy_script "clawparty-macos.sh" "$SCRIPT_DIR/scripts/clawparty-macos.sh"
+copy_script "clawparty-macos.command" "$SCRIPT_DIR/scripts/clawparty-macos.command"
 
 # Apply xattr to all previously copied binaries as well
 if command -v xattr &> /dev/null; then
@@ -338,5 +338,5 @@ fi
 if $BUILD_DESKTOP; then
     echo "  Desktop:  $BIN_DIR/ClawPartyDesktop.app"
 fi
-echo "  Scripts:  $BIN_DIR/clawparty-macos.sh"
+echo "  Scripts:  $BIN_DIR/clawparty-macos.command"
 echo ""
