@@ -638,11 +638,10 @@
               :class="{ active: getChatIndex(user.username || user.name) === activeChat }"
               @click="selectUser(user)"
             >
-              <div class="item-avatar" :style="{ background: getAvatarColor(user.username || user.name) }">
-                {{ (user.username || user.name)[0].toUpperCase() }}
+              <div class="item-avatar" :style="{ background: getAvatarColor(user.name || user.username) }">
+                {{ (user.name || user.username)[0].toUpperCase() }}
               </div>
               <span class="item-name">{{ user.name }}</span>
-              <span class="item-subname" v-if="user.username">{{ user.name }}/{{ user.username }}</span>
               <span v-if="getChatUpdated(user.username || user.name) > 0" class="unread-badge">{{ getChatUpdated(user.username || user.name) > 99 ? '99+' : getChatUpdated(user.username || user.name) }}</span>
               <span class="item-status" :class="{ online: user.online }"></span>
             </div>
@@ -650,7 +649,7 @@
           <!-- Non-group chats: only show peers not already in the users list -->
           <div
             v-for="chat in dmChats"
-            v-show="!users.find(u => u.name === chat.name)"
+            v-show="!users.find(u => (u.username || u.name) === chat.name)"
             :key="chat.id"
             class="panel-item"
             :class="{ active: getChatIndex(chat.id) === activeChat }"
