@@ -229,6 +229,10 @@ async fn proxy_http(req: Request<Incoming>) -> anyhow::Result<Response<BoxBody>>
                 .body(body_bytes.to_vec())
                 .send().await
         }
+        hyper::Method::DELETE => {
+            reqwest_client.delete(&backend_url)
+                .send().await
+        }
         _ => {
             reqwest_client.get(&backend_url).send().await
         }
@@ -918,6 +922,202 @@ fn verify_token(token: &str, db_path: &str) -> bool {
     }
 }
 
+async fn handle_join_party(req: Request<Incoming>) -> anyhow::Result<Response<BoxBody>> {
+    use rand::Rng;
+
+    let body_bytes = req.collect().await?.to_bytes();
+    let body_str = String::from_utf8_lossy(&body_bytes);
+    let body: serde_json::Value = match serde_json::from_str(&body_str) {
+        Ok(v) => v,
+        Err(_) => {
+            let err_body = serde_json::json!({"status":400,"message":"invalid request body"}).to_string();
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(box_body(Bytes::from(err_body)))?);
+        }
+    };
+
+    let reg_url = body.get("regUrl").and_then(|v| v.as_str()).unwrap_or("https://clawparty.flomesh.io:7779");
+    let user_name = body.get("userName").and_then(|v| v.as_str()).unwrap_or("");
+    let invite_code = body.get("inviteCode").and_then(|v| v.as_str()).unwrap_or("");
+
+    // Guard: ZTM must be enabled
+    if ZEROCLAW_ONLY.get().copied().unwrap_or(false) {
+        let err_body = serde_json::json!({"status":503,"message":"ZTM agent not available"}).to_string();
+        return Ok(Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(box_body(Bytes::from(err_body)))?);
+    }
+
+    let ztm_base = "http://127.0.0.1:6789";
+    let client = reqwest::Client::new();
+    let mesh_name = "clawparty";
+
+    // Step 1: Check if already joined
+    let meshes_resp = client.get(format!("{}/api/meshes", ztm_base)).send().await;
+    if let Ok(resp) = meshes_resp {
+        if resp.status().is_success() {
+            let meshes: Vec<serde_json::Value> = resp.json().await.unwrap_or_default();
+            let already_joined = meshes.iter().any(|m| {
+                m.get("name").and_then(|n| n.as_str()) == Some(mesh_name)
+            });
+            if already_joined {
+                let err_body = serde_json::json!({"status":409,"message":"Already joined clawparty, have fun!"}).to_string();
+                return Ok(Response::builder()
+                    .status(StatusCode::CONFLICT)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(box_body(Bytes::from(err_body)))?);
+            }
+        }
+    }
+
+    // Step 2: Generate names
+    const NAMES: &[&str] = &[
+        "aureliano", "remedios", "melqulades", "william-wallace", "robert-the-bruce",
+        "sitting-bull", "geronimo", "sacagawea", "crazy-horse", "pocahontas",
+        "red-cloud", "chief-joseph", "cochise", "thunder-cloud", "morning-star",
+        "running-deer", "lone-wolf", "white-buffalo", "red-hawk", "little-wolf",
+    ];
+    let (final_user_name, ep_name, pass_key) = {
+        let mut rng = rand::rng();
+        let name = if user_name.is_empty() {
+            NAMES[rng.random_range(0..NAMES.len())].to_string()
+        } else {
+            user_name.to_string()
+        };
+        let ep = format!("{}-lobster", name);
+        let pk: String = (0..16)
+            .map(|_| (b'a' + rng.random_range(0..26)) as char)
+            .collect();
+        (name, ep, pk)
+    };
+
+    // Step 3: Get ZTM identity (public key)
+    let identity_resp = client
+        .get(format!("{}/api/identity", ztm_base))
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("ZTM agent not reachable: {}", e))?;
+    let public_key = identity_resp.text().await
+        .map_err(|e| anyhow::anyhow!("failed to read identity: {}", e))?;
+
+    // Step 4: Request permit from registration server
+    let invite_url = if reg_url.ends_with('/') {
+        format!("{}invite", reg_url)
+    } else {
+        format!("{}/invite", reg_url)
+    };
+    let invite_body = serde_json::json!({
+        "PublicKey": public_key,
+        "UserName": final_user_name,
+        "EpName": ep_name,
+        "PassKey": pass_key,
+        "InviteCode": invite_code,
+    });
+    let permit_resp = client
+        .post(&invite_url)
+        .header("Content-Type", "application/json")
+        .json(&invite_body)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("permit server request failed: {}", e))?;
+
+    let permit_status = permit_resp.status();
+    if !permit_status.is_success() {
+        let err_text = permit_resp.text().await.unwrap_or_default();
+        let msg = serde_json::from_str::<serde_json::Value>(&err_text)
+            .ok()
+            .and_then(|v| v.get("message").and_then(|m| m.as_str().map(String::from)))
+            .unwrap_or(err_text);
+        return Ok(Response::builder()
+            .status(StatusCode::from_u16(permit_status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(box_body(Bytes::from(serde_json::json!({"status":permit_status.as_u16(),"message":msg}).to_string())))?);
+    }
+
+    let permit_body: serde_json::Value = permit_resp.json().await
+        .map_err(|e| anyhow::anyhow!("invalid permit response: {}", e))?;
+
+    // Step 5: Parse double-encoded permit
+    let permit_str = permit_body.get("Permit")
+        .and_then(|v| v.as_str())
+        .or_else(|| permit_body.get("permit").and_then(|v| v.as_str()))
+        .ok_or_else(|| anyhow::anyhow!("no permit in registration server response"))?;
+    let permit: serde_json::Value = serde_json::from_str(permit_str)
+        .map_err(|e| anyhow::anyhow!("invalid permit format: {}", e))?;
+
+    let ca = permit.get("ca")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing ca in permit"))?;
+    let agent_cert = permit.get("agent")
+        .and_then(|v| v.get("certificate"))
+        .and_then(|v| v.as_str())
+        .or_else(|| permit.get("cert").and_then(|v| v.as_str()))
+        .ok_or_else(|| anyhow::anyhow!("missing agent certificate in permit"))?;
+    let agent_key = permit.get("agent")
+        .and_then(|v| v.get("privateKey"))
+        .and_then(|v| v.as_str())
+        .or_else(|| permit.get("key").and_then(|v| v.as_str()))
+        .or_else(|| permit.get("privateKey").and_then(|v| v.as_str()));
+
+    let bootstraps: Vec<String> = permit.get("bootstraps")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    let bootstraps = if bootstraps.is_empty() {
+        permit.get("hubs")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter().filter_map(|h| {
+                    h.as_str().or_else(|| h.get("address").and_then(|a| a.as_str()))
+                        .map(String::from)
+                }).collect::<Vec<String>>()
+            }).unwrap_or_default()
+    } else {
+        bootstraps
+    };
+
+    // Step 6: Join mesh via ZTM API
+    let mut agent_obj = serde_json::json!({
+        "name": ep_name,
+        "certificate": agent_cert,
+    });
+    if let Some(key) = agent_key {
+        agent_obj["privateKey"] = serde_json::Value::String(key.to_string());
+    }
+    let join_body = serde_json::json!({
+        "ca": ca,
+        "agent": agent_obj,
+        "bootstraps": bootstraps,
+    });
+    let join_resp = client
+        .post(format!("{}/api/meshes/{}", ztm_base, mesh_name))
+        .header("Content-Type", "application/json")
+        .json(&join_body)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to join mesh: {}", e))?;
+
+    if !join_resp.status().is_success() {
+        let status_code = join_resp.status();
+        let err_text = join_resp.text().await.unwrap_or_default();
+        return Err(anyhow::anyhow!("failed to join mesh ({}): {}", status_code, err_text));
+    }
+
+    let resp_body = serde_json::json!({
+        "meshName": mesh_name,
+        "userName": final_user_name,
+        "epName": ep_name,
+    }).to_string();
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(box_body(Bytes::from(resp_body)))?)
+}
+
 async fn handle_login(req: Request<Incoming>, db_path: &str) -> anyhow::Result<Response<BoxBody>> {
     let body_bytes = req.collect().await?.to_bytes();
     let body_str = String::from_utf8_lossy(&body_bytes);
@@ -1473,6 +1673,21 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
         let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Service Unavailable"}"#)));
         *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
         return Ok(resp);
+    }
+
+    // Join Party API — register this endpoint to a ZTM Hub and join the mesh
+    if path == "/api/join-party" && method == hyper::Method::POST {
+        match handle_join_party(req).await {
+            Ok(resp) => return Ok(resp),
+            Err(e) => {
+                ts_eprint!("[Proxy] Join-party error: {}", e);
+                let mut resp = Response::new(box_body(
+                    Bytes::from(serde_json::json!({"status":500,"message":e.to_string()}).to_string())
+                ));
+                *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                return Ok(resp);
+            }
+        }
     }
 
     // Meshes API — skip backend when ZTM is disabled, otherwise try upstream
