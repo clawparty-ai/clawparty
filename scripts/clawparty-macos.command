@@ -863,6 +863,44 @@ run_checks() {
         echo -e "  ${CYAN}ℹ${NC}  No agent directories found"
     fi
 
+    # ── 7. OpenCode permissions ─────────────────────────────────────
+    echo ""
+    echo -e "${BOLD}── OpenCode Permissions ──${NC}"
+
+    # Global config: ~/.config/opencode/opencode.jsonc
+    local oc_global_config="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.jsonc"
+    printf "  %-40s " "Global opencode.jsonc"
+    if [ -f "$oc_global_config" ]; then
+        if grep -q 'clawparty/agents' "$oc_global_config" 2>/dev/null; then
+            echo -e "${GREEN}✓${NC} ~/.clawparty/agents/** allowed"
+            passed_count=$((passed_count + 1))
+        else
+            echo -e "${YELLOW}⚠${NC}  Missing ~/.clawparty/agents/** permission"
+            problem_count=$((problem_count + 1))
+            fixable_count=$((fixable_count + 1))
+        fi
+    else
+        echo -e "${YELLOW}⚠${NC}  Not found"
+        problem_count=$((problem_count + 1))
+        fixable_count=$((fixable_count + 1))
+    fi
+
+    # Repo-level config: <repo>/opencode/.opencode/opencode.jsonc
+    local oc_repo_config="$REPO_DIR/opencode/.opencode/opencode.jsonc"
+    printf "  %-40s " "Repo opencode.jsonc"
+    if [ -f "$oc_repo_config" ]; then
+        if grep -q 'clawparty/agents' "$oc_repo_config" 2>/dev/null; then
+            echo -e "${GREEN}✓${NC} ~/.clawparty/agents/** allowed"
+            passed_count=$((passed_count + 1))
+        else
+            echo -e "${YELLOW}⚠${NC}  Missing ~/.clawparty/agents/** permission"
+            problem_count=$((problem_count + 1))
+            fixable_count=$((fixable_count + 1))
+        fi
+    else
+        echo -e "${CYAN}ℹ${NC}  Not found (optional)"
+    fi
+
     # ── Summary ────────────────────────────────────────────────────
     echo ""
     echo -e "${BOLD}─────────────────────────────────────${NC}"
@@ -990,6 +1028,70 @@ TOML
         done
     else
         info "No agent dirs found at $agents_dir"
+    fi
+
+    # ── Fix 4: OpenCode external_directory permission ───────────────
+    echo ""
+    echo -e "${BOLD}  Configuring OpenCode permissions...${NC}"
+
+    local oc_global_config="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.jsonc"
+    local oc_global_dir
+    oc_global_dir=$(dirname "$oc_global_config")
+
+    _fix_opencode_config() {
+        local config_file="$1" label="$2"
+        if [ ! -f "$config_file" ]; then
+            mkdir -p "$(dirname "$config_file")"
+            cat > "$config_file" << 'JSONC'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "external_directory": {
+      "~/.clawparty/agents/**": "allow"
+    }
+  }
+}
+JSONC
+            pass "Created $label with ~/.clawparty/agents/** permission"
+            return 0
+        elif grep -q 'clawparty/agents' "$config_file" 2>/dev/null; then
+            pass "$label already has ~/.clawparty/agents/** permission"
+            return 1
+        elif command -v python3 &> /dev/null; then
+            python3 -c "
+import re, json, os, sys
+path = os.path.expanduser('$config_file')
+with open(path) as f:
+    raw = f.read()
+# Strip JSONC comments
+cleaned = re.sub(r'//.*', '', raw)
+try:
+    config = json.loads(cleaned)
+except json.JSONDecodeError:
+    config = {}
+config.setdefault('permission', {}).setdefault('external_directory', {})['~/.clawparty/agents/**'] = 'allow'
+with open(path, 'w') as f:
+    json.dump(config, f, indent=2)
+    f.write('\n')
+" 2>/dev/null && {
+                pass "Added ~/.clawparty/agents/** to $label"
+                return 0
+            } || {
+                warn "Failed to update $label with python3"
+                return 2
+            }
+        else
+            warn "$label exists but python3 not available to modify it"
+            warn "  Manually add to permission.external_directory: ~/.clawparty/agents/** = allow"
+            return 2
+        fi
+    }
+
+    _fix_opencode_config "$oc_global_config" "Global opencode.jsonc" && fixed=$((fixed + 1)) || true
+
+    local oc_repo_config="$REPO_DIR/opencode/.opencode/opencode.jsonc"
+    if [ -f "$oc_repo_config" ] && ! grep -q 'clawparty/agents' "$oc_repo_config" 2>/dev/null; then
+        _fix_opencode_config "$oc_repo_config" "Repo opencode.jsonc" && fixed=$((fixed + 1)) || true
     fi
 
     # ── Summary ────────────────────────────────────────────────────
