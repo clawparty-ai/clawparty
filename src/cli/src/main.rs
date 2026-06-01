@@ -253,7 +253,7 @@ async fn main() -> anyhow::Result<()> {
         let mut opencode_ready = false;
         for i in 0..40 {
             sleep(Duration::from_millis(500)).await;
-            if opencode::OpenCodeDaemon::check_health("http://localhost:42617").await {
+            if opencode::OpenCodeDaemon::check_health("http://127.0.0.1:42617").await {
                 opencode_ready = true;
                 break;
             }
@@ -274,7 +274,7 @@ async fn main() -> anyhow::Result<()> {
         state.zeroclaw_mgr = None;
         state.add_log("INFO", "✅ OpenCode server started successfully");
 
-        match opencode::OpenCodeDaemon::get_or_create_session("http://localhost:42617").await {
+        match opencode::OpenCodeDaemon::get_or_create_session("http://127.0.0.1:42617").await {
             Ok(session_id) => {
                 state.add_log("INFO", &format!("OpenCode session: {}", session_id));
                 let _ = crate::proxy::OPENCODE_SESSION.get_or_init(|| session_id.clone());
@@ -311,7 +311,7 @@ async fn main() -> anyhow::Result<()> {
         let mut zeroclaw_ready = false;
         for i in 0..40 {
             sleep(Duration::from_millis(500)).await;
-            if zeroclaw::ZeroClawDaemon::check_health("http://localhost:42617").await {
+            if zeroclaw::ZeroClawDaemon::check_health("http://127.0.0.1:42617").await {
                 zeroclaw_ready = true;
                 break;
             }
@@ -362,7 +362,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         // Fetch ZeroClaw sessions (always do this early)
-        let zeroclaw_sessions_result = zeroclaw::ZeroClawDaemon::get_sessions("http://localhost:42617").await;
+        let zeroclaw_sessions_result = zeroclaw::ZeroClawDaemon::get_sessions("http://127.0.0.1:42617").await;
         match zeroclaw_sessions_result {
             Ok(sessions) => {
                 state.zeroclaw_sessions = sessions.clone();
@@ -1100,12 +1100,25 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
 
         let client = reqwest::Client::new();
         let mut ready = false;
-        for i in 0..40 {
+        for i in 0..60 {
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            if let Ok(resp) = client.get("http://localhost:42617/global/health").send().await {
-                if resp.status().is_success() {
+            let check = tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                client.get("http://127.0.0.1:42617/global/health").send(),
+            );
+            match check.await {
+                Ok(Ok(resp)) if resp.status().is_success() => {
                     ready = true;
                     break;
+                }
+                Ok(Ok(resp)) => {
+                    ts_eprint!("OpenCode health check: unexpected status {}", resp.status());
+                }
+                Ok(Err(e)) => {
+                    ts_eprint!("OpenCode health check: {}", e);
+                }
+                Err(_) => {
+                    ts_eprint!("OpenCode health check: timeout (3s)");
                 }
             }
             if i == 0 {
@@ -1119,7 +1132,7 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
         }
         ts_print!("✅ OpenCode server started successfully on port 42617");
 
-        match opencode::OpenCodeDaemon::get_or_create_session("http://localhost:42617").await {
+        match opencode::OpenCodeDaemon::get_or_create_session("http://127.0.0.1:42617").await {
             Ok(session_id) => {
                 ts_print!("OpenCode session: {}", session_id);
                 let _ = crate::proxy::OPENCODE_SESSION.get_or_init(|| session_id);
@@ -1142,12 +1155,25 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
 
         let client = reqwest::Client::new();
         let mut zeroclaw_ready = false;
-        for i in 0..40 {
+        for i in 0..60 {
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            if let Ok(resp) = client.get("http://localhost:42617/health").send().await {
-                if resp.status().is_success() {
+            let check = tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                client.get("http://127.0.0.1:42617/health").send(),
+            );
+            match check.await {
+                Ok(Ok(resp)) if resp.status().is_success() => {
                     zeroclaw_ready = true;
                     break;
+                }
+                Ok(Ok(resp)) => {
+                    ts_eprint!("ZeroClaw health check: unexpected status {}", resp.status());
+                }
+                Ok(Err(e)) => {
+                    ts_eprint!("ZeroClaw health check: {}", e);
+                }
+                Err(_) => {
+                    ts_eprint!("ZeroClaw health check: timeout (3s)");
                 }
             }
             if i == 0 {
@@ -1364,9 +1390,9 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
     ts_print!("\n📋 Service Mode Ready");
     ts_print!("========================");
     if args.engine == "opencode" {
-        ts_print!("OpenCode Gateway: http://localhost:42617");
+        ts_print!("OpenCode Gateway: http://127.0.0.1:42617");
     } else {
-        ts_print!("ZeroClaw Gateway: http://localhost:42617");
+        ts_print!("ZeroClaw Gateway: http://127.0.0.1:42617");
     }
     if !args.no_ztm {
         ts_print!("ZTM Agent API: {}", args.api_host);
@@ -1451,15 +1477,15 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
         ts_print!("🌐 Opening browser to http://{}", if args.no_ztm { "localhost:42617" } else { &args.api_host });
         #[cfg(target_os = "macos")]
         {
-            let _ = Command::new("open").arg(if args.no_ztm { "http://localhost:42617" } else { &args.api_host }).spawn();
+            let _ = Command::new("open").arg(if args.no_ztm { "http://127.0.0.1:42617" } else { &args.api_host }).spawn();
         }
         #[cfg(target_os = "linux")]
         {
-            let _ = Command::new("xdg-open").arg(if args.no_ztm { "http://localhost:42617" } else { &args.api_host }).spawn();
+            let _ = Command::new("xdg-open").arg(if args.no_ztm { "http://127.0.0.1:42617" } else { &args.api_host }).spawn();
         }
         #[cfg(target_os = "windows")]
         {
-            let _ = Command::new("start").arg(if args.no_ztm { "http://localhost:42617" } else { &args.api_host }).spawn();
+            let _ = Command::new("start").arg(if args.no_ztm { "http://127.0.0.1:42617" } else { &args.api_host }).spawn();
         }
     }
 

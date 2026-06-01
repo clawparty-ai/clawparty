@@ -606,6 +606,10 @@ async fn bridge_opencode_sse(
                         .unwrap_or(&text)
                         .to_string();
 
+                    // Abort any in-progress request to prevent stuck sessions
+                    let abort_url = format!("{}/session/{}/abort", base_url, session_id);
+                    let _ = client.post(&abort_url).send().await;
+
                     let send_url = format!("{}/session/{}/message", base_url, session_id);
                     if let Err(e) = client
                         .post(&send_url)
@@ -667,7 +671,7 @@ async fn bridge_opencode_sse(
                         let is_our_event = event_session.map_or(true, |sid| sid == session_id);
 
                         match event_type {
-                            "message.part.updated" | "message.part.delta" => {
+                            "message.part.updated" => {
                                 if !is_our_event { continue; }
                                 let part = &event["properties"]["part"];
                                 let part_type = part["type"].as_str().unwrap_or("");
@@ -710,6 +714,36 @@ async fn bridge_opencode_sse(
                                                 let output = state["output"].as_str().unwrap_or("");
                                                 full_response.push_str(output);
                                             }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            "message.part.delta" => {
+                                if !is_our_event { continue; }
+                                let field = event["properties"]["field"].as_str().unwrap_or("");
+                                let delta = event["properties"]["delta"].as_str().unwrap_or("");
+
+                                if delta.is_empty() { continue; }
+                                if !is_busy { continue; }
+
+                                match field {
+                                    "text" => {
+                                        let msg = serde_json::json!({
+                                            "type": "chunk",
+                                            "content": delta
+                                        }).to_string();
+                                        if frontend_sink.send(WsMsg::Text(msg.into())).await.is_err() {
+                                            return;
+                                        }
+                                    }
+                                    "reasoning" => {
+                                        let msg = serde_json::json!({
+                                            "type": "thinking",
+                                            "content": delta
+                                        }).to_string();
+                                        if frontend_sink.send(WsMsg::Text(msg.into())).await.is_err() {
+                                            return;
                                         }
                                     }
                                     _ => {}

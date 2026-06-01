@@ -201,7 +201,7 @@ impl ApiClient {
 
     pub async fn check_zeroclaw_health(&self) -> bool {
         self.client
-            .get("http://localhost:42617/health")
+            .get("http://127.0.0.1:42617/health")
             .send()
             .await
             .map(|r| r.status().is_success())
@@ -210,7 +210,7 @@ impl ApiClient {
 
     pub async fn get_zeroclaw_sessions(&self) -> Result<Vec<crate::app::ZeroClawSession>> {
         let resp = self.client
-            .get("http://localhost:42617/api/sessions")
+            .get("http://127.0.0.1:42617/api/sessions")
             .send()
             .await?;
         
@@ -241,7 +241,7 @@ impl ApiClient {
             "name": name.unwrap_or("default")
         });
         let resp = self.client
-            .post("http://localhost:42617/api/sessions")
+            .post("http://127.0.0.1:42617/api/sessions")
             .json(&body)
             .send()
             .await?;
@@ -263,7 +263,7 @@ impl ApiClient {
     pub async fn send_zeroclaw_message(&self, session_id: &str, text: &str) -> Result<String> {
         let body = serde_json::json!({ "message": text });
         let resp = self.client
-            .post(&format!("http://localhost:42617/api/sessions/{}/chat", session_id))
+            .post(&format!("http://127.0.0.1:42617/api/sessions/{}/chat", session_id))
             .json(&body)
             .send()
             .await?;
@@ -278,7 +278,7 @@ impl ApiClient {
 
     pub async fn get_zeroclaw_messages(&self, session_id: &str) -> Result<Vec<Message>> {
         let resp = self.client
-            .get(&format!("http://localhost:42617/api/sessions/{}/messages", session_id))
+            .get(&format!("http://127.0.0.1:42617/api/sessions/{}/messages", session_id))
             .send()
             .await?;
         
