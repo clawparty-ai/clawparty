@@ -824,17 +824,22 @@ except: pass
         echo -e "${CYAN}ℹ${NC}  Available"
     fi
 
-    # ── 4. Database integrity ──────────────────────────────────────
+    # ── 4. Database ─────────────────────────────────────────────────
     echo ""
     echo -e "${BOLD}── Database ──${NC}"
     local db_path="$CLAWPARTY_HOME/clawparty.db"
-    printf "  %-40s " "Database integrity"
+
+    printf "  %-40s " "clawparty.db"
     if [ -f "$db_path" ]; then
+        echo -e "${GREEN}✓${NC} exists"
+        passed_count=$((passed_count + 1))
+
         if ! command -v sqlite3 &> /dev/null; then
-            echo -e "${YELLOW}⚠${NC}  sqlite3 not installed, skipping check"
+            echo -e "  ${YELLOW}⚠${NC}  sqlite3 not installed, skipping table checks"
         else
             local integrity
             integrity=$(sqlite3 "$db_path" "PRAGMA integrity_check;" 2>&1)
+            printf "  %-40s " "Integrity"
             if [ "$integrity" = "ok" ]; then
                 echo -e "${GREEN}✓${NC} $integrity"
                 passed_count=$((passed_count + 1))
@@ -842,9 +847,35 @@ except: pass
                 echo -e "${RED}✗${NC} $integrity"
                 problem_count=$((problem_count + 1))
             fi
+
+            local admin_exists
+            admin_exists=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM users WHERE username='admin';" 2>/dev/null)
+            printf "  %-40s " "Admin user"
+            if [ "${admin_exists:-0}" -gt 0 ]; then
+                echo -e "${GREEN}✓${NC} admin exists"
+                passed_count=$((passed_count + 1))
+            else
+                echo -e "${YELLOW}⚠${NC}  no admin user"
+                problem_count=$((problem_count + 1))
+                fixable_count=$((fixable_count + 1))
+            fi
+
+            local agent_exists
+            agent_exists=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM agents WHERE agent_name='0#Agent' AND deleted=0;" 2>/dev/null)
+            printf "  %-40s " "0#Agent record"
+            if [ "${agent_exists:-0}" -gt 0 ]; then
+                echo -e "${GREEN}✓${NC} registered"
+                passed_count=$((passed_count + 1))
+            else
+                echo -e "${YELLOW}⚠${NC}  not registered"
+                problem_count=$((problem_count + 1))
+                fixable_count=$((fixable_count + 1))
+            fi
         fi
     else
-        echo -e "${CYAN}ℹ${NC}  Not yet created (first run)"
+        echo -e "${YELLOW}⚠${NC}  Not yet created"
+        problem_count=$((problem_count + 1))
+        fixable_count=$((fixable_count + 1))
     fi
 
     # ── 5. Process status ─────────────────────────────────────────
@@ -1059,7 +1090,218 @@ TOML
         info "No agent dirs found at $agents_dir"
     fi
 
-    # ── Fix 4: OpenCode external_directory permission ───────────────
+    # ── Fix 4: Database initialization ──────────────────────────────
+    echo ""
+    echo -e "${BOLD}  Initializing database...${NC}"
+    local db_path="$CLAWPARTY_HOME/clawparty.db"
+
+    _init_clawparty_db() {
+        sqlite3 "$db_path" << 'SQL'
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+PRAGMA busy_timeout = 5000;
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id       TEXT    UNIQUE NOT NULL,
+    agent_name    TEXT    NOT NULL,
+    group_id      TEXT,
+    parent_id     TEXT,
+    title         TEXT    NOT NULL,
+    short_title   TEXT,
+    description   TEXT,
+    ai_description TEXT,
+    status        TEXT    NOT NULL DEFAULT 'pending',
+    progress      INTEGER NOT NULL DEFAULT 0,
+    priority      TEXT    NOT NULL DEFAULT 'normal',
+    dependencies  TEXT,
+    task_number   INTEGER,
+    result_summary TEXT,
+    prompt        TEXT,
+    is_pipeline   INTEGER NOT NULL DEFAULT 0,
+    pipeline_definition TEXT,
+    created_at    REAL    NOT NULL,
+    updated_at    REAL    NOT NULL,
+    started_at    REAL,
+    completed_at  REAL
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_agent ON tasks(agent_name);
+CREATE INDEX IF NOT EXISTS idx_tasks_group ON tasks(group_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_task_id ON tasks(task_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_number ON tasks(task_number);
+
+CREATE TABLE IF NOT EXISTS task_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id     TEXT    NOT NULL,
+    event_type  TEXT    NOT NULL,
+    from_status TEXT,
+    to_status   TEXT,
+    progress    INTEGER,
+    message     TEXT,
+    timestamp   REAL    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_events_timestamp ON task_events(timestamp);
+
+CREATE TABLE IF NOT EXISTS task_analysis_log (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_name        TEXT    NOT NULL,
+    group_id          TEXT,
+    last_analyzed_at  REAL    NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_tal_agent ON task_analysis_log(agent_name);
+CREATE INDEX IF NOT EXISTS idx_tal_group ON task_analysis_log(group_id);
+
+CREATE TABLE IF NOT EXISTS kanban_configs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_name  TEXT    NOT NULL,
+    group_id    TEXT,
+    name        TEXT,
+    prompt      TEXT,
+    config      TEXT,
+    updated_at  REAL    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kanban_agent ON kanban_configs(agent_name);
+CREATE INDEX IF NOT EXISTS idx_kanban_group ON kanban_configs(group_id);
+
+CREATE TABLE IF NOT EXISTS agents (
+    agent_name      TEXT PRIMARY KEY,
+    display_name    TEXT,
+    description     TEXT,
+    directory       TEXT NOT NULL,
+    config_path     TEXT NOT NULL,
+    workspace_dir   TEXT NOT NULL,
+    port            INTEGER NOT NULL,
+    pid             INTEGER,
+    status          TEXT NOT NULL DEFAULT 'stopped',
+    created_at      REAL    NOT NULL,
+    updated_at      REAL    NOT NULL,
+    config_json     TEXT,
+    error_msg       TEXT,
+    deleted         INTEGER NOT NULL DEFAULT 0,
+    engine          TEXT NOT NULL DEFAULT 'zeroclaw'
+);
+CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
+CREATE INDEX IF NOT EXISTS idx_agents_deleted ON agents(deleted);
+
+CREATE TABLE IF NOT EXISTS group_chats (
+    group_id      TEXT PRIMARY KEY,
+    group_name    TEXT    NOT NULL,
+    owner_agent   TEXT    NOT NULL,
+    members       TEXT    NOT NULL,
+    created_at    REAL    NOT NULL,
+    updated_at    REAL    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_groupchats_owner ON group_chats(owner_agent);
+
+CREATE TABLE IF NOT EXISTS users (
+    username      TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    salt          TEXT NOT NULL,
+    api_token     TEXT NOT NULL,
+    share_token   TEXT NOT NULL DEFAULT '',
+    role          TEXT NOT NULL DEFAULT 'user',
+    created_at    REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+    expire        REAL NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS chat_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    time        REAL    NOT NULL,
+    mesh        TEXT    NOT NULL,
+    chat_type   TEXT    NOT NULL,
+    chat_id     TEXT    NOT NULL,
+    chat_name   TEXT,
+    creator     TEXT,
+    sender      TEXT    NOT NULL,
+    event       TEXT    NOT NULL,
+    content     TEXT,
+    members     TEXT,
+    session_id  TEXT,
+    muted       INTEGER NOT NULL DEFAULT 0,
+    msg_type    TEXT    NOT NULL DEFAULT 'response'
+);
+CREATE INDEX IF NOT EXISTS idx_chatlog_chat ON chat_log(chat_id);
+
+-- Migrations
+ALTER TABLE agents ADD COLUMN engine TEXT NOT NULL DEFAULT 'zeroclaw';
+ALTER TABLE users ADD COLUMN share_token TEXT NOT NULL DEFAULT '';
+SQL
+    }
+
+    # Create DB schema if file missing
+    if [ ! -f "$db_path" ]; then
+        if ! command -v sqlite3 &> /dev/null; then
+            warn "sqlite3 not available — cannot create database"
+        else
+            mkdir -p "$CLAWPARTY_HOME"
+            _init_clawparty_db 2>/dev/null && {
+                pass "Created clawparty.db with full schema"
+                fixed=$((fixed + 1))
+            } || {
+                fail "Failed to create clawparty.db"
+                failed=$((failed + 1))
+            }
+        fi
+    fi
+
+    # Check/insert admin user
+    if [ -f "$db_path" ] && command -v sqlite3 &> /dev/null; then
+        local admin_exists
+        admin_exists=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM users WHERE username='admin';" 2>/dev/null)
+        if [ "${admin_exists:-0}" -eq 0 ]; then
+            local admin_pass salt hash api_token created_at
+            admin_pass=$(LC_ALL=C tr -dc 'a-zA-Z0-9' < /dev/urandom 2>/dev/null | head -c 16 || python3 -c "import secrets; print(secrets.token_urlsafe(12)[:16])" 2>/dev/null)
+            salt=$(LC_ALL=C tr -dc 'a-zA-Z0-9' < /dev/urandom 2>/dev/null | head -c 16 || python3 -c "import secrets; print(secrets.token_urlsafe(12)[:16])" 2>/dev/null)
+            created_at=$(date +%s)
+            hash=$(printf '%s%s' "$salt" "$admin_pass" | shasum -a 256 2>/dev/null | awk '{print $1}')
+            if [ -z "$hash" ] && command -v python3 &> /dev/null; then
+                hash=$(python3 -c "import hashlib; print(hashlib.sha256(('${salt}${admin_pass}').encode()).hexdigest())")
+            fi
+            api_token=$(LC_ALL=C tr -dc 'a-zA-Z0-9' < /dev/urandom 2>/dev/null | head -c 32 || python3 -c "import secrets; print(secrets.token_urlsafe(24)[:32])" 2>/dev/null)
+
+            sqlite3 "$db_path" \
+                "INSERT INTO users (username, password_hash, salt, api_token, role, created_at, expire)
+                 VALUES ('admin', '$hash', '$salt', '$api_token', 'admin', $created_at, 0);" 2>/dev/null && {
+                pass "Created admin user"
+                echo ""
+                echo -e "  ${BOLD}========================================${NC}"
+                echo -e "  ${BOLD}  Admin credentials (save these!)${NC}"
+                echo -e "  ${BOLD}========================================${NC}"
+                echo -e "  ${BOLD}Username:${NC} admin"
+                echo -e "  ${BOLD}Password:${NC} $admin_pass"
+                echo -e "  ${BOLD}API Token:${NC} $api_token"
+                echo -e "  ${BOLD}========================================${NC}"
+                echo ""
+                fixed=$((fixed + 1))
+            } || {
+                fail "Failed to create admin user"
+                failed=$((failed + 1))
+            }
+        fi
+
+        # Check/insert 0#Agent record
+        local agent_exists now
+        agent_exists=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM agents WHERE agent_name='0#Agent';" 2>/dev/null)
+        if [ "${agent_exists:-0}" -eq 0 ]; then
+            now=$(date +%s)
+            local agent_dir="$CLAWPARTY_HOME/agents/0#Agent"
+            sqlite3 "$db_path" \
+                "INSERT INTO agents (agent_name, display_name, description, directory, config_path, workspace_dir, port, status, created_at, updated_at, engine)
+                 VALUES ('0#Agent', 'Zerus(0#Agent)', 'Primary orchestrator agent',
+                         '$agent_dir', '$agent_dir/opencode.json', '$agent_dir/workspace',
+                         42617, 'stopped', $now, $now, 'opencode');" 2>/dev/null && {
+                pass "Registered 0#Agent in database"
+                fixed=$((fixed + 1))
+            } || {
+                warn "Failed to register 0#Agent in database"
+            }
+        fi
+    fi
+
+    # ── Fix 5: OpenCode external_directory permission ───────────────
     echo ""
     echo -e "${BOLD}  Configuring OpenCode permissions...${NC}"
 
@@ -1074,6 +1316,8 @@ TOML
             cat > "$config_file" << 'JSONC'
 {
   "$schema": "https://opencode.ai/config.json",
+  "model": "",
+  "provider": {},
   "permission": {
     "external_directory": {
       "~/.clawparty/agents/**": "allow"
