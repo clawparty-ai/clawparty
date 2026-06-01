@@ -46,9 +46,6 @@ impl AgentManager {
                 &self.listen_addr,
                 "--data",
                 &expanded_data,
-                "--api-token",
-                &self.token,
-                "--no-auth",
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

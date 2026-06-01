@@ -40,7 +40,7 @@ impl ApiClient {
 
     pub async fn check_health(&self) -> bool {
         self.client
-            .get(format!("{}/ok", self.base_url))
+                .get(format!("{}/api/version", self.base_url))
             .timeout(Duration::from_secs(5))
             .send()
             .await
