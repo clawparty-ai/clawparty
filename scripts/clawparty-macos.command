@@ -212,28 +212,38 @@ is_binary_in_path() {
 find_binary_source() {
     local name="$1"
     local candidates=()
+
+    # Search from current directory (pwd) and its subdirectories
     local dir
-    for dir in "$REPO_DIR/bin" "$REPO_DIR" "$REPO_DIR/src/cli/target/release" \
-                "$REPO_DIR/src/tui/target/release" "$(pwd)/bin" "$(pwd)"; do
+    for dir in "$(pwd)" "$(pwd)/bin" "$(pwd)/src/cli/target/release" \
+                "$(pwd)/src/tui/target/release" "$(pwd)/zeroclaw/target/release" \
+                "$(pwd)/ztm/bin"; do
         candidates+=("$dir/$name")
     done
-    # Also check build output directories
-    for dir in "$REPO_DIR/zeroclaw/target/release" \
-                "$REPO_DIR/ztm/bin"; do
-        candidates+=("$dir/$name")
-    done
+
     for path in "${candidates[@]}"; do
         [ -f "$path" ] && echo "$path" && return 0
     done
+
+    # Fallback: opencode not found in current dir → check ~/.opencode/bin/
+    if [ "$name" = "opencode" ]; then
+        local oc_path="$HOME/.opencode/bin/opencode"
+        if [ -f "$oc_path" ]; then
+            echo "$oc_path"
+            return 0
+        fi
+    fi
+
     return 1
 }
 
 find_clawparty_binary() {
     local paths=(
         "$BIN_DIR/clawparty"
-        "$REPO_DIR/bin/clawparty"
-        "$REPO_DIR/src/cli/target/release/clawparty"
-        "$REPO_DIR/src/tui/target/release/clawparty"
+        "$(pwd)/clawparty"
+        "$(pwd)/bin/clawparty"
+        "$(pwd)/src/cli/target/release/clawparty"
+        "$(pwd)/src/tui/target/release/clawparty"
     )
     for p in "${paths[@]}"; do
         [ -x "$p" ] && echo "$p" && return 0
