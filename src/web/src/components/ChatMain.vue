@@ -157,7 +157,7 @@
     </span>
   </div>
 </div>
-                <div v-if="msg.text" class="message-content" v-html="msg.isHtml ? msg.text : renderMarkdown(msg.text)"></div>
+                <div v-if="msg.text" class="message-content" v-html="msg.isHtml ? msg.text : renderMarkdownWithCollapsible(msg, msg.text)"></div>
                 <!-- Thinking section (collapsible) -->
                 <div v-if="msg.thinking && !msg.isSystemHint" class="thinking-section">
                   <div class="thinking-header" @click="msg._thinkingExpanded = !msg._thinkingExpanded">
@@ -1996,6 +1996,61 @@ const renderMarkdown = (text) => {
   return marked.parse(processedText)
 }
 
+// Min line threshold for collapsible code blocks
+const CODE_COLLAPSE_MIN_LINES = 15
+
+const renderMarkdownWithCollapsible = (msg, text) => {
+  if (!text) return ''
+
+  // Phase 1: find file paths in the original text, per code block
+  const blockInfos = []
+  const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g
+  let m
+  while ((m = codeBlockRegex.exec(text)) !== null) {
+    const beforeText = text.slice(Math.max(0, m.index - 200), m.index)
+    // Greedy .* at start ensures we get the LAST (closest) file path
+    const fpMatch = beforeText.match(
+      /^[\s\S]*(?:Read(?:ing)?[:\s]+|📖\s*|📄\s*)\s*((?:\/[^\s\n]{1,200}|[^\s\n]{1,120}\.\w{1,6}))\s*$/im
+    )
+    blockInfos.push({
+      lang: m[1],
+      filePath: fpMatch ? fpMatch[1] : '',
+      content: m[2],
+      lineCount: m[2].split('\n').length,
+    })
+  }
+
+  // Phase 2: render markdown (with quote bubble support)
+  const processedText = text.replace(/「([^:]+): ([^」]+)」/g, (_match, sender, preview) => {
+    return `<div class="quote-content" style="background:#0A2E6F;color:#fff;padding:8px 12px;border-radius:4px;margin-top:8px;"><div style="font-weight:500;font-size:12px;margin-bottom:4px;">${sender}</div><div style="font-size:13px;">${preview}</div></div>`
+  })
+  let html = marked.parse(processedText)
+
+  // Phase 3: post-process HTML - wrap large code blocks in <details>
+  // Expand during streaming (msg.isTyping), collapse when done
+  let blockIdx = 0
+  html = html.replace(/<pre><code\b[^>]*>([\s\S]*?)<\/code><\/pre>/g, (_match, inner) => {
+    const info = blockInfos[blockIdx]
+    blockIdx++
+
+    if (!info || info.lineCount < CODE_COLLAPSE_MIN_LINES) return _match
+
+    const lang = info.lang || 'code'
+    const lineCount = info.lineCount
+
+    const headerParts = ['<span class="code-collapse-icon">📄</span>']
+    if (info.filePath) headerParts.push(`<span class="code-collapse-path">${info.filePath}</span>`)
+    headerParts.push(`<span class="code-collapse-lang">${lang}</span>`)
+    headerParts.push(`<span class="code-collapse-lines">(${lineCount} lines)</span>`)
+
+    const openAttr = msg.isTyping ? ' open' : ''
+
+    return `<details class="code-collapse"${openAttr}><summary class="code-collapse-summary">${headerParts.join(' ')}</summary>${_match}</details>`
+  })
+
+  return html
+}
+
 const isMessageSent = (msg) => {
   // Rely on isSent flag set by parseMessages or API
   return msg.isSent === true
@@ -2901,6 +2956,100 @@ onUnmounted(() => {
 .message.sent .thinking-content {
   color: rgba(255,255,255,0.8);
   background: rgba(255,255,255,0.1);
+}
+
+/* ── Collapsible code blocks ──────────────────────────────── */
+.message-content :deep(details.code-collapse) {
+  margin: 8px 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.message-content :deep(details.code-collapse > summary.code-collapse-summary) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f5f5f5;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: #666;
+  list-style: none;
+}
+
+.message-content :deep(details.code-collapse > summary.code-collapse-summary::-webkit-details-marker) {
+  display: none;
+}
+
+.message-content :deep(details.code-collapse > summary.code-collapse-summary:hover) {
+  background: #ececec;
+}
+
+.message-content :deep(details.code-collapse > summary.code-collapse-summary .code-collapse-icon) {
+  font-size: 14px;
+}
+
+.message-content :deep(details.code-collapse > summary.code-collapse-summary .code-collapse-path) {
+  font-weight: 600;
+  color: #444;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+
+.message-content :deep(details.code-collapse > summary.code-collapse-summary .code-collapse-lang) {
+  background: #e8e8e8;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: #555;
+}
+
+.message-content :deep(details.code-collapse > summary.code-collapse-summary .code-collapse-lines) {
+  margin-left: auto;
+  color: #999;
+  flex-shrink: 0;
+}
+
+.message-content :deep(details.code-collapse > pre) {
+  margin: 0;
+  border-radius: 0;
+  border-top: 1px solid #e0e0e0;
+}
+
+/* Sent messages (white-on-blue) */
+.message.sent .message-content :deep(details.code-collapse) {
+  border-color: rgba(255,255,255,0.25);
+}
+
+.message.sent .message-content :deep(details.code-collapse > summary.code-collapse-summary) {
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.8);
+}
+
+.message.sent .message-content :deep(details.code-collapse > summary.code-collapse-summary:hover) {
+  background: rgba(255,255,255,0.18);
+}
+
+.message.sent .message-content :deep(details.code-collapse > summary.code-collapse-summary .code-collapse-path) {
+  color: rgba(255,255,255,0.9);
+}
+
+.message.sent .message-content :deep(details.code-collapse > summary.code-collapse-summary .code-collapse-lang) {
+  background: rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.85);
+}
+
+.message.sent .message-content :deep(details.code-collapse > summary.code-collapse-summary .code-collapse-lines) {
+  color: rgba(255,255,255,0.6);
+}
+
+.message.sent .message-content :deep(details.code-collapse > pre) {
+  border-top-color: rgba(255,255,255,0.25);
 }
 
 /* ── Group chat styles ─────────────────────────────────────── */

@@ -99,7 +99,7 @@
           class="mobile-agent-item"
           @click="selectUser(user)"
         >
-          <div class="item-avatar" :style="{ background: getAvatarColor(user.username || user.name) }">{{ user.username[0].toUpperCase() }}</div>
+          <div class="item-avatar" :style="{ background: getAvatarColor(user.name || user.username) }">{{ (user.name || user.username)[0].toUpperCase() }}</div>
           <span class="item-name">{{ user.name }}</span>
         </div>
         <div
@@ -2651,8 +2651,9 @@ const fetchUsers = async () => {
   try {
     const response = await chatService.getUsers(currentMesh.value)
     // Response is now a list of EP objects: { id, name, username, online, ... }
-    // Exclude own endpoint(s)
-    users.value = (response.data || []).filter(ep => ep.username !== currentMeshAgentUsername.value)
+    // Exclude own endpoint(s) and user-level identity entries (where name === username)
+    // In ZTM, one user can have multiple EPs; show only named EPs, not user identities
+    users.value = (response.data || []).filter(ep => ep.username !== currentMeshAgentUsername.value && ep.name !== ep.username)
   } catch (error) {
     console.error('[App] error:', error)
   }
@@ -3157,7 +3158,7 @@ const resolveEpDisplayName = (username) => {
   if (agent) return username + "/" + (agent.identityName || agent.name)
   // 如果不是本地 agent，使用 mesh 用户的 name
   const ep = users.value.find(u => u.username === username)
-  if (ep) return ep.username + "/" + ep.name
+  if (ep) return ep.name  // Show EP name only (e.g., "chairman"), not "user/ep"
   return username
 }
 provide('activeOpenclawAgent', activeOpenclawAgent)
