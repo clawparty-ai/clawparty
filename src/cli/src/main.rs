@@ -187,7 +187,7 @@ async fn main() -> anyhow::Result<()> {
                     "edit": "allow",
                     "external_directory": {
                         "~/.config/opencode/**": "allow",
-                        "~/.clawparty/agents/**": "allow"
+                        "~/.clawparty/**": "allow"
                     }
                 }
             });
@@ -2158,7 +2158,7 @@ fn ensure_opencode_external_permission() {
         "provider": {},
         "permission": {
             "external_directory": {
-                "~/.clawparty/agents/**": "allow"
+                "~/.clawparty/**": "allow"
             }
         }
     });
@@ -2202,21 +2202,21 @@ fn ensure_opencode_external_permission() {
         }
     };
 
-    // Ensure permission.external_directory."~/.clawparty/agents/**" = "allow"
+    // Ensure permission.external_directory."~/.clawparty/**" = "allow"
     let perm = config
-        .pointer_mut("/permission/external_directory/~/.clawparty/agents/**");
+        .pointer_mut("/permission/external_directory/~/.clawparty/**");
     if perm.is_none() || perm.map_or(true, |v| v.as_str() != Some("allow")) {
         config["permission"] = config.get("permission").cloned().unwrap_or(serde_json::json!({}));
         config["permission"]["external_directory"] = config["permission"]
             .get("external_directory")
             .cloned()
             .unwrap_or(serde_json::json!({}));
-        config["permission"]["external_directory"]["~/.clawparty/agents/**"] =
+        config["permission"]["external_directory"]["~/.clawparty/**"] =
             serde_json::Value::String("allow".to_string());
 
         let config_str = serde_json::to_string_pretty(&config).unwrap_or_default();
         match std::fs::write(&config_path, &config_str) {
-            Ok(()) => ts_print!("[OpenCode] Added ~/.clawparty/agents/** external_directory permission to opencode config"),
+            Ok(()) => ts_print!("[OpenCode] Added ~/.clawparty/** external_directory permission to opencode config"),
             Err(e) => ts_eprint!("[OpenCode] Cannot write {}: {}", config_path, e),
         }
     }
