@@ -2527,7 +2527,22 @@ const handleMessagesClick = (e) => {
   fullscreenPanel.value = null
 }
 
+const onKeyDown = (e) => {
+  if (e.key === 'Escape' && !e.repeat) {
+    const hasTyping = agentFilteredMessages.value.some(m => m.isTyping)
+    if (hasTyping) {
+      e.preventDefault()
+      emit('stop-agent')
+    }
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onKeyDown)
+})
+
 onUnmounted(() => {
+  document.removeEventListener('keydown', onKeyDown)
   stopPolling()
 })
 </script>

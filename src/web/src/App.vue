@@ -137,7 +137,7 @@
       @leaveGroup="handleLeaveGroup"
       @back="currentActiveChatId = null"
       @start-agent="handleStartZAgent"
-      @stop-agent="handleStopZAgent(item.id)"
+      @stop-agent="handleStopGeneration"
     />
     <ChatMain
       v-for="item in activeChatConnectionItems"
@@ -159,6 +159,7 @@
       @deleteGroup="handleDeleteGroup"
       @leaveGroup="handleLeaveGroup"
       @back="handleChatBack(item.id)"
+      @stop-agent="handleStopGeneration"
     />
     <ChatMain
       v-if="activeGroupId"
@@ -176,6 +177,7 @@
       @deleteGroup="handleDeleteLocalGroup(localGroupChats.find(g => g.groupId === activeGroupId))"
       @leaveGroup="leaveGroupChat(activeGroupId)"
       @back="activeGroupId = null"
+      @stop-agent="handleStopGeneration"
     />
     <ChatMain
       v-if="activeOpenclawAgent || activeZeroClawSession"
@@ -194,6 +196,7 @@
       @deleteGroup="handleDeleteGroup"
       @leaveGroup="handleLeaveGroup"
       @back="activeOpenclawAgent ? (activeOpenclawAgent = null) : (activeZeroClawSession = null)"
+      @stop-agent="handleStopGeneration"
     />
     <!-- Toggle moved to MessageInput toolbar -->
     <div
@@ -745,11 +748,85 @@ const handleStartZAgent = async () => {
   }
 }
 
-const handleStopZAgent = (agentName) => {
-  const conn = wsConnections[agentName]
-  if (conn?.zeroclawWS?.ws?.readyState === WebSocket.OPEN) {
-    conn.zeroclawWS.ws.send(JSON.stringify({ type: 'cancel' }))
+function sendCancel(ws) {
+  if (ws?.ws?.readyState === WebSocket.OPEN) {
+    try { ws.ws.send(JSON.stringify({ type: 'cancel' })) } catch (e) {}
+  } else if (ws?.readyState === WebSocket.OPEN) {
+    try { ws.send(JSON.stringify({ type: 'cancel' })) } catch (e) {}
   }
+}
+
+function clearTypingIndicators(messages) {
+  if (!messages) return
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].isTyping) {
+      messages[i].isTyping = false
+      messages[i].isStreaming = false
+      if (!messages[i].text && !messages[i].thinking) {
+        messages.splice(i, 1)
+      }
+    }
+  }
+}
+
+const handleStopGeneration = () => {
+  // Group chat: stop all member agents
+  if (activeGroupId.value) {
+    const connections = activeGroupWsMap.get(activeGroupId.value)
+    if (connections) {
+      for (const conn of connections) {
+        if (conn.ws) {
+          sendCancel(conn.ws)
+          try { conn.ws.close() } catch (e) {}
+        }
+      }
+      activeGroupWsMap.delete(activeGroupId.value)
+    }
+    const group = localGroupChats.value.find(g => g.groupId === activeGroupId.value)
+    if (group) clearTypingIndicators(group.messages)
+    sending.value = false
+    return
+  }
+
+  // ZeroClaw session
+  if (activeZeroClawSession.value) {
+    if (zeroclawWS) {
+      sendCancel(zeroclawWS)
+      try { zeroclawWS.close() } catch (e) {}
+      zeroclawWS = null
+    }
+    clearTypingIndicators(activeZeroClawSession.value.messages)
+    sending.value = false
+    return
+  }
+
+  // zAgent connection
+  if (activeZAgent.value && currentActiveChatId.value) {
+    const conn = wsConnections[currentActiveChatId.value]
+    if (conn?.zeroclawWS) {
+      sendCancel(conn.zeroclawWS)
+      try { conn.zeroclawWS.close() } catch (e) {}
+      delete wsConnections[currentActiveChatId.value]
+    }
+    const item = activeZAgentConnectionItems.value.find(i => i.id === currentActiveChatId.value)
+    if (item) clearTypingIndicators(item.chat?.messages)
+    sending.value = false
+    return
+  }
+
+  // Fallback: close global zeroclawWS if active
+  if (zeroclawWS) {
+    sendCancel(zeroclawWS)
+    try { zeroclawWS.close() } catch (e) {}
+    zeroclawWS = null
+  }
+
+  // Clear any typing indicators on active chat
+  if (activeChat.value !== null) {
+    const chat = chats.value[activeChat.value]
+    if (chat) clearTypingIndicators(chat.messages)
+  }
+  sending.value = false
 }
 
 const createZeroClawMessageHandler = (connectionAgentName) => {

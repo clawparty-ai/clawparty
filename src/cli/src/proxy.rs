@@ -467,6 +467,16 @@ async fn bridge_websocket(
             match msg {
                 Ok(msg) => {
                     count += 1;
+                    // Check for cancel message from frontend
+                    if let tokio_tungstenite::tungstenite::Message::Text(ref text) = msg {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) {
+                            if parsed.get("type").and_then(|v| v.as_str()) == Some("cancel") {
+                                log::debug!("[Proxy][WS] F->B #{}: Cancel received, closing backend", count);
+                                let _ = backend_sink.close().await;
+                                break;
+                            }
+                        }
+                    }
                     let desc = match &msg {
                         tokio_tungstenite::tungstenite::Message::Text(t) => format!("Text({} bytes)", t.len()),
                         tokio_tungstenite::tungstenite::Message::Binary(b) => format!("Binary({} bytes)", b.len()),
