@@ -1589,14 +1589,14 @@ interactive_menu() {
                 ;;
             3)
                 clear 2>/dev/null || true
-                cmd_check
+                cmd_check || true
                 echo ""
                 printf "Press Enter to continue..."
                 read -r _
                 ;;
             4)
                 clear 2>/dev/null || true
-                cmd_check_fix
+                cmd_check_fix || true
                 echo ""
                 printf "Press Enter to continue..."
                 read -r _
@@ -1632,8 +1632,8 @@ case "$COMMAND" in
     stop)      cmd_stop "$@" ;;
     restart)   cmd_restart "$@" ;;
     status)    cmd_status "$@" ;;
-    check)     cmd_check "$@"; echo ""; printf "Press Enter to continue..."; read -r _; interactive_menu ;;
-    check-fix) cmd_check_fix "$@"; echo ""; printf "Press Enter to continue..."; read -r _; interactive_menu ;;
+    check)     cmd_check "$@" || true; echo ""; printf "Press Enter to continue..."; read -r _; interactive_menu ;;
+    check-fix) cmd_check_fix "$@" || true; echo ""; printf "Press Enter to continue..."; read -r _; interactive_menu ;;
     uninstall) cmd_uninstall "$@" ;;
     menu)      interactive_menu ;;
     help|-h|--help) cmd_help ;;
