@@ -891,9 +891,34 @@ except: pass
         echo -e "${CYAN}ℹ${NC}  Not running"
     fi
 
-    # ── 6. Workspace directories ───────────────────────────────────
+    # ── 6. Agent directories ───────────────────────────────────────
     echo ""
-    echo -e "${BOLD}── Workspaces ──${NC}"
+    echo -e "${BOLD}── Agent Directories ──${NC}"
+
+    # 0#Agent directory (must exist for opencode engine)
+    local zero_agent_dir="$CLAWPARTY_HOME/agents/0#Agent"
+    printf "  %-40s " "0#Agent directory"
+    if [ -d "$zero_agent_dir" ]; then
+        echo -e "${GREEN}✓${NC} $zero_agent_dir"
+        passed_count=$((passed_count + 1))
+        # Check opencode.json inside
+        local zero_config="$zero_agent_dir/opencode.json"
+        printf "  %-40s " "  opencode.json"
+        if [ -f "$zero_config" ]; then
+            echo -e "${GREEN}✓${NC} exists"
+            passed_count=$((passed_count + 1))
+        else
+            echo -e "${YELLOW}⚠${NC}  not found"
+            problem_count=$((problem_count + 1))
+            fixable_count=$((fixable_count + 1))
+        fi
+    else
+        echo -e "${YELLOW}⚠${NC}  Not found"
+        problem_count=$((problem_count + 1))
+        fixable_count=$((fixable_count + 1))
+    fi
+
+    # Other agent workspaces
     local agents_dir="$CLAWPARTY_HOME/agents"
     if [ -d "$agents_dir" ]; then
         for agent_dir in "$agents_dir"/*/; do
@@ -1088,6 +1113,33 @@ TOML
         done
     else
         info "No agent dirs found at $agents_dir"
+    fi
+
+    # Ensure 0#Agent directory + config exists (DB record may exist without dir)
+    local zero_agent_dir="$CLAWPARTY_HOME/agents/0#Agent"
+    if [ ! -d "$zero_agent_dir" ]; then
+        mkdir -p "$zero_agent_dir/workspace" && {
+            pass "Created $zero_agent_dir"
+            fixed=$((fixed + 1))
+        } || {
+            fail "Cannot create $zero_agent_dir"
+            failed=$((failed + 1))
+        }
+        if [ ! -f "$zero_agent_dir/opencode.json" ]; then
+            cat > "$zero_agent_dir/opencode.json" << 'JSONC'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "",
+  "provider": {},
+  "permission": {
+    "external_directory": {
+      "~/.clawparty/agents/**": "allow"
+    }
+  }
+}
+JSONC
+            pass "Created $zero_agent_dir/opencode.json"
+        fi
     fi
 
     # ── Fix 4: Database initialization ──────────────────────────────
@@ -1288,6 +1340,26 @@ SQL
         if [ "${agent_exists:-0}" -eq 0 ]; then
             now=$(date +%s)
             local agent_dir="$CLAWPARTY_HOME/agents/0#Agent"
+
+            # Ensure directory and config exist before DB record
+            mkdir -p "$agent_dir/workspace"
+
+            if [ ! -f "$agent_dir/opencode.json" ]; then
+                cat > "$agent_dir/opencode.json" << 'JSONC'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "",
+  "provider": {},
+  "permission": {
+    "external_directory": {
+      "~/.clawparty/agents/**": "allow"
+    }
+  }
+}
+JSONC
+                pass "Created $agent_dir/opencode.json"
+            fi
+
             sqlite3 "$db_path" \
                 "INSERT INTO agents (agent_name, display_name, description, directory, config_path, workspace_dir, port, status, created_at, updated_at, engine)
                  VALUES ('0#Agent', 'Zerus(0#Agent)', 'Primary orchestrator agent',
