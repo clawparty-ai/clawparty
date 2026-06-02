@@ -1632,8 +1632,8 @@ case "$COMMAND" in
     stop)      cmd_stop "$@" ;;
     restart)   cmd_restart "$@" ;;
     status)    cmd_status "$@" ;;
-    check)     cmd_check "$@" ;;
-    check-fix) cmd_check_fix "$@" ;;
+    check)     cmd_check "$@"; echo ""; printf "Press Enter to continue..."; read -r _; interactive_menu ;;
+    check-fix) cmd_check_fix "$@"; echo ""; printf "Press Enter to continue..."; read -r _; interactive_menu ;;
     uninstall) cmd_uninstall "$@" ;;
     menu)      interactive_menu ;;
     help|-h|--help) cmd_help ;;
