@@ -757,6 +757,53 @@ const handleGenerateChart = async (chartInfo) => {
   console.log('[ChatMain] Generate chart:', chartInfo)
 }
 
+function extractFirstJson(text) {
+  let start = -1
+  let depth = 0
+  let inString = false
+  let escapeNext = false
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+
+    if (escapeNext) {
+      escapeNext = false
+      continue
+    }
+
+    if (ch === '\\' && inString) {
+      escapeNext = true
+      continue
+    }
+
+    if (ch === '"') {
+      inString = !inString
+      continue
+    }
+
+    if (inString) continue
+
+    if (start === -1) {
+      if (ch === '{' || ch === '[') {
+        start = i
+        depth = 1
+      }
+      continue
+    }
+
+    if (ch === '{' || ch === '[') {
+      depth++
+    } else if (ch === '}' || ch === ']') {
+      depth--
+      if (depth === 0) {
+        return text.slice(start, i + 1)
+      }
+    }
+  }
+
+  return null
+}
+
 function repairJson(jsonStr) {
   let result = ''
   let inString = false
@@ -938,6 +985,10 @@ const handleTaskRefresh = async () => {
               const start = jsonText.indexOf('```') + 3
               const end = jsonText.lastIndexOf('```')
               jsonText = jsonText.slice(start, end > start ? end : undefined).trim()
+            }
+            const firstJson = extractFirstJson(jsonText)
+            if (firstJson) {
+              jsonText = firstJson
             }
             let result
             try {
