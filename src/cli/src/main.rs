@@ -157,7 +157,7 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 serde_json::json!({
                     "$schema": "https://opencode.ai/config.json",
-                    "model": "",
+                    "model": "default/default",
                     "provider": {
                         "default": {
                             "name": "default",
@@ -240,6 +240,8 @@ async fn main() -> anyhow::Result<()> {
 
     if args.engine == "opencode" {
         state.add_log("INFO", "🦞 Starting OpenCode engine...");
+        // Ensure opencode global config has external_directory permission for agent dirs
+        ensure_opencode_external_permission();
         let opencode_bin = find_opencode_bin();
         let opencode_mgr = opencode::OpenCodeDaemon::new(
             opencode_bin,
@@ -1054,6 +1056,8 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyh
     });
     if args.engine == "opencode" {
         ts_print!("🦞 OpenCode binary: opencode");
+        // Ensure opencode global config has external_directory permission for agent dirs
+        ensure_opencode_external_permission();
     } else {
         ts_print!("🦀 ZeroClaw binary: {}", zeroclaw_bin);
     }
@@ -2089,6 +2093,90 @@ fn handle_user_command(cmd: args::UserCommands, data_dir: &str) -> anyhow::Resul
     Ok(())
 }
 
+fn ensure_opencode_external_permission() {
+    use regex::Regex;
+    use std::path::Path;
+
+    let home = match std::env::var("HOME") {
+        Ok(h) => h,
+        Err(_) => {
+            ts_eprint!("[OpenCode] Cannot resolve HOME — skip permission check");
+            return;
+        }
+    };
+    let config_path = format!("{}/.config/opencode/opencode.jsonc", home);
+
+    // Default config with the required permission
+    let default_config = serde_json::json!({
+        "$schema": "https://opencode.ai/config.json",
+        "model": "",
+        "provider": {},
+        "permission": {
+            "external_directory": {
+                "~/.clawparty/agents/**": "allow"
+            }
+        }
+    });
+
+    if !Path::new(&config_path).exists() {
+        if let Some(parent) = Path::new(&config_path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let config_str = serde_json::to_string_pretty(&default_config).unwrap_or_default();
+        match std::fs::write(&config_path, &config_str) {
+            Ok(()) => ts_print!("[OpenCode] Created ~/.config/opencode/opencode.jsonc with agent dir permission"),
+            Err(e) => ts_eprint!("[OpenCode] Cannot create {}: {}", config_path, e),
+        }
+        return;
+    }
+
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(e) => {
+            ts_eprint!("[OpenCode] Cannot read {}: {}", config_path, e);
+            return;
+        }
+    };
+
+    // Strip JSONC comments (// line comments and /* */ block comments)
+    let re_block = Regex::new(r"/\*[\s\S]*?\*/").unwrap();
+    let re_line = Regex::new(r"//[^\n]*").unwrap();
+    let cleaned = re_block.replace_all(&content, "");
+    let cleaned = re_line.replace_all(&cleaned, "");
+
+    let mut config: serde_json::Value = match serde_json::from_str(&cleaned) {
+        Ok(c) => c,
+        Err(_) => {
+            // Can't parse — rewrite with default
+            let config_str = serde_json::to_string_pretty(&default_config).unwrap_or_default();
+            match std::fs::write(&config_path, &config_str) {
+                Ok(()) => ts_print!("[OpenCode] Rewrote {} with defaults (invalid JSONC)", config_path),
+                Err(e) => ts_eprint!("[OpenCode] Cannot write {}: {}", config_path, e),
+            }
+            return;
+        }
+    };
+
+    // Ensure permission.external_directory."~/.clawparty/agents/**" = "allow"
+    let perm = config
+        .pointer_mut("/permission/external_directory/~/.clawparty/agents/**");
+    if perm.is_none() || perm.map_or(true, |v| v.as_str() != Some("allow")) {
+        config["permission"] = config.get("permission").cloned().unwrap_or(serde_json::json!({}));
+        config["permission"]["external_directory"] = config["permission"]
+            .get("external_directory")
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
+        config["permission"]["external_directory"]["~/.clawparty/agents/**"] =
+            serde_json::Value::String("allow".to_string());
+
+        let config_str = serde_json::to_string_pretty(&config).unwrap_or_default();
+        match std::fs::write(&config_path, &config_str) {
+            Ok(()) => ts_print!("[OpenCode] Added ~/.clawparty/agents/** external_directory permission to opencode config"),
+            Err(e) => ts_eprint!("[OpenCode] Cannot write {}: {}", config_path, e),
+        }
+    }
+}
+
 fn write_opencode_api_key(api_key: &str, data_dir: &str) -> anyhow::Result<()> {
     let expanded = expand_data_dir(data_dir);
     let config_path = format!("{}/agents/0#Agent/opencode.json", expanded);
@@ -2096,6 +2184,11 @@ fn write_opencode_api_key(api_key: &str, data_dir: &str) -> anyhow::Result<()> {
 
     let mut config: serde_json::Value = serde_json::from_str(&content)
         .unwrap_or(serde_json::json!({}));
+
+    // Ensure model field is populated (matches provider/model structure)
+    if config.get("model").and_then(|v| v.as_str()).map_or(true, |m| m.is_empty()) {
+        config["model"] = serde_json::Value::String("default/default".to_string());
+}
 
     if let Some(provider) = config.get_mut("provider") {
         if let Some(default) = provider.get_mut("default") {
