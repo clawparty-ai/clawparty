@@ -148,25 +148,30 @@ async fn main() -> anyhow::Result<()> {
 
             let config_path = format!("{}/opencode.json", zero_agent_dir);
 
-            let config = if api_key.is_empty() {
-                serde_json::json!({
-                    "$schema": "https://opencode.ai/config.json",
-                    "model": "",
-                    "provider": {},
-                })
-            } else {
-                serde_json::json!({
-                    "$schema": "https://opencode.ai/config.json",
-                    "model": "default/default",
-                    "provider": {
+            let config = serde_json::json!({
+                "$schema": "https://opencode.ai/config.json",
+                "model": if api_key.is_empty() { "" } else { "default/default" },
+                "provider": if api_key.is_empty() {
+                    serde_json::json!({})
+                } else {
+                    serde_json::json!({
                         "default": {
                             "name": "default",
                             "models": { "default": { "name": "default" } },
                             "options": { "apiKey": api_key }
                         }
+                    })
+                },
+                "permission": {
+                    "bash": "allow",
+                    "read": "allow",
+                    "edit": "allow",
+                    "external_directory": {
+                        "~/.config/opencode/**": "allow",
+                        "~/.clawparty/agents/**": "allow"
                     }
-                })
-            };
+                }
+            });
             let config_str = serde_json::to_string_pretty(&config).unwrap_or_default();
             std::fs::write(&config_path, config_str)?;
 
@@ -2188,13 +2193,23 @@ fn write_opencode_api_key(api_key: &str, data_dir: &str) -> anyhow::Result<()> {
     // Ensure model field is populated (matches provider/model structure)
     if config.get("model").and_then(|v| v.as_str()).map_or(true, |m| m.is_empty()) {
         config["model"] = serde_json::Value::String("default/default".to_string());
-}
+    }
 
-    if let Some(provider) = config.get_mut("provider") {
-        if let Some(default) = provider.get_mut("default") {
-            if let Some(options) = default.get_mut("options") {
-                options["apiKey"] = serde_json::Value::String(api_key.to_string());
+    if config.get("provider").and_then(|p| p.get("default")).is_none() {
+        config["provider"] = serde_json::json!({
+            "default": {
+                "name": "default",
+                "models": { "default": { "name": "default" } },
+                "options": { "apiKey": api_key }
             }
+        });
+    } else {
+        if let Some(options) = config.pointer_mut("/provider/default/options") {
+            options["apiKey"] = serde_json::Value::String(api_key.to_string());
+        } else {
+            config["provider"]["default"]["options"] = serde_json::json!({
+                "apiKey": api_key
+            });
         }
     }
 
