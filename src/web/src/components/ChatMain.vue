@@ -757,6 +757,50 @@ const handleGenerateChart = async (chartInfo) => {
   console.log('[ChatMain] Generate chart:', chartInfo)
 }
 
+function repairJson(jsonStr) {
+  let result = ''
+  let inString = false
+  let escapeNext = false
+
+  for (let i = 0; i < jsonStr.length; i++) {
+    const ch = jsonStr[i]
+
+    if (escapeNext) {
+      result += ch
+      escapeNext = false
+      continue
+    }
+
+    if (ch === '\\' && inString) {
+      result += ch
+      escapeNext = true
+      continue
+    }
+
+    if (ch === '"') {
+      if (!inString) {
+        inString = true
+        result += ch
+      } else {
+        const rest = jsonStr.slice(i + 1).trimStart()
+        if (rest[0] === ':' || rest[0] === ',' || rest[0] === '}' || rest[0] === ']' || rest.length === 0) {
+          inString = false
+          result += ch
+        } else {
+          result += '\\"'
+        }
+      }
+    } else {
+      result += ch
+    }
+  }
+
+  // Remove trailing commas before } or ]
+  result = result.replace(/,\s*([}\]])/g, '$1')
+
+  return result
+}
+
 const handleTaskRefresh = async () => {
   if (isTaskRefreshing.value) {
     addRefreshLog('warn', 'Already in progress, skipping')
@@ -853,7 +897,7 @@ const handleTaskRefresh = async () => {
 
     const existingTasks = tasks.value.slice(0, MAX_TASKS_IN_PROMPT)
 
-    const prompt = `[系统指令] 你是 Task Analyst，请分析以下聊天记录，识别新任务和已有任务的状态变更，并为每个任务生成结果概要。\n\n## 当前已有任务${tasks.value.length > MAX_TASKS_IN_PROMPT ? '（仅显示部分）' : ''}\n${existingTasks.map(t => '- ID: ' + t.task_id + ' | 编号: #' + (t.task_number || '?') + ' | 标题: ' + t.title + ' | 状态: ' + t.status + (t.description ? ' | 目标: ' + t.description.substring(0, 80) : '')).join('\n') || '无'}\n\n## 新聊天记录（最近 ${recentMsgs.length} 条，user=用户，assistant=AI）\n${msgText}\n\n## 分析要求\n1. **新任务**：用户或 AI 提到的新待办事项、计划、工作目标\n2. **状态变更**：现有任务在聊天中被提到已完成、失败、取消或进度变化\n3. **结果概要**：为每个已有任务生成一段简短的结果概要——如果任务已完成，写完成总结；如果任务进行中，写当前进展；如果任务待办，写"待开始"\n4. **重用提示词**：为每个新任务生成一个精简的提示词（prompt），该提示词应保留任务的核心意图和关键信息，去除冗余描述，长度控制在 50-150 字，可直接作为新任务的指令使用\n\n## 输出格式（纯 JSON，不要 markdown 代码块，不要解释）\n{\n  "newTasks": [{"title": "...", "description": "...", "status": "pending|running|completed|failed", "progress": 0, "summary": "新任务的目标概要", "prompt": "精简的重用提示词，保留核心意图，50-150字"}],\n  "statusChanges": [{"taskId": "现有任务ID", "newStatus": "...", "newProgress": 100, "reason": "变化原因", "summary": "该任务的结果概要或完成总结"}],\n  "summaries": [{"taskId": "现有任务ID", "summary": "即使状态未变也为每个任务生成结果概要"}]\n}`
+    const prompt = `[系统指令] 你是 Task Analyst，请分析以下聊天记录，识别新任务和已有任务的状态变更，并为每个任务生成结果概要。\n\n## 当前已有任务${tasks.value.length > MAX_TASKS_IN_PROMPT ? '（仅显示部分）' : ''}\n${existingTasks.map(t => '- ID: ' + t.task_id + ' | 编号: #' + (t.task_number || '?') + ' | 标题: ' + t.title + ' | 状态: ' + t.status + (t.description ? ' | 目标: ' + t.description.substring(0, 80) : '')).join('\n') || '无'}\n\n## 新聊天记录（最近 ${recentMsgs.length} 条，user=用户，assistant=AI）\n${msgText}\n\n## 分析要求\n1. **新任务**：用户或 AI 提到的新待办事项、计划、工作目标\n2. **状态变更**：现有任务在聊天中被提到已完成、失败、取消或进度变化\n3. **结果概要**：为每个已有任务生成一段简短的结果概要——如果任务已完成，写完成总结；如果任务进行中，写当前进展；如果任务待办，写"待开始"\n4. **重用提示词**：为每个新任务生成一个精简的提示词（prompt），该提示词应保留任务的核心意图和关键信息，去除冗余描述，长度控制在 50-150 字，可直接作为新任务的指令使用\n\n## 输出格式（纯 JSON，不要 markdown 代码块，不要解释。重要：字段值中的英文双引号 " 必须转义为 \"，否则 JSON 解析将失败）\n{\n  "newTasks": [{"title": "...", "description": "...", "status": "pending|running|completed|failed", "progress": 0, "summary": "新任务的目标概要", "prompt": "精简的重用提示词，保留核心意图，50-150字"}],\n  "statusChanges": [{"taskId": "现有任务ID", "newStatus": "...", "newProgress": 100, "reason": "变化原因", "summary": "该任务的结果概要或完成总结"}],\n  "summaries": [{"taskId": "现有任务ID", "summary": "即使状态未变也为每个任务生成结果概要"}]\n}`
 
     addRefreshLog('info', 'Building prompt... recentMsgs: ' + recentMsgs.length + ' | existingTasks: ' + existingTasks.length + ' | promptLen: ' + prompt.length)
 
@@ -895,7 +939,15 @@ const handleTaskRefresh = async () => {
               const end = jsonText.lastIndexOf('```')
               jsonText = jsonText.slice(start, end > start ? end : undefined).trim()
             }
-            const result = JSON.parse(jsonText)
+            let result
+            try {
+              result = JSON.parse(jsonText)
+            } catch (parseErr) {
+              addRefreshLog('warn', 'Initial JSON parse failed, attempting repair...')
+              const repaired = repairJson(jsonText)
+              result = JSON.parse(repaired)
+              addRefreshLog('info', 'JSON repaired successfully')
+            }
             const changes = []
             if (result.newTasks && result.newTasks.length > 0) {
               addRefreshLog('info', 'AI detected ' + result.newTasks.length + ' new task(s)')
@@ -976,6 +1028,7 @@ const handleTaskRefresh = async () => {
             }
           } catch (e) {
             addRefreshLog('error', 'Failed to parse AI response: ' + (e.message || e))
+            addRefreshLog('error', 'Raw response (first 500 chars): ' + fullResponse.substring(0, 500))
           }
           persistLastAnalyzed(newMessages[newMessages.length - 1].timestamp)
           finishRefresh('ws-done')
