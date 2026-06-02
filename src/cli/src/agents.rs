@@ -161,16 +161,15 @@ When asked to create a new agent, do the following:
 mkdir -p ~/.clawparty/agents/{agent_name}/workspace
 ```
 
-**2. Write `config.toml`**
+**2. Write `opencode.json`**
 
-Copy an existing agent's `config.toml` as a starting point (e.g. from
-`~/.clawparty/agents/0#Agent/config.toml`), write it to
-`~/.clawparty/agents/{agent_name}/config.toml`, and update these key fields:
+Copy an existing agent's `opencode.json` as a starting point (e.g. from
+`~/.clawparty/agents/0#Agent/opencode.json`), write it to
+`~/.clawparty/agents/{agent_name}/opencode.json`, and update these key fields:
 
-- `api_key` — the user's LLM API key
-- `default_model` — model name (e.g. `deepseek-v4-pro`)
-- `default_provider` — provider name (e.g. `clawparty-llm`)
-- `workspace_dir` — must point to `~/.clawparty/agents/{agent_name}/workspace`
+- `model` — model ID in `provider/model` format (e.g. `deepseek-v4-pro/deepseek-v4-pro`)
+- `provider.<provider_name>.options.apiKey` — the user's LLM API key
+- `provider.<provider_name>.options.baseURL` — API endpoint URL (if using a custom proxy)
 
 **3. Write bootstrap markdown files**
 
@@ -582,19 +581,31 @@ fn sync_agents_from_fs_inner(data_dir: &str) -> usize {
                     .map(|v| v.trim().trim_matches('"').to_string())
                     .unwrap_or_default();
 
-                let provider_key = if provider.is_empty() { "default".to_string() } else { provider };
-                let model_key = if model.is_empty() { "default".to_string() } else { model };
+                let provider_key = if provider.is_empty() { "clawparty".to_string() } else { provider };
+                let model_key = if model.is_empty() { "deepseek-v4-pro".to_string() } else { model };
+                let full_model = format!("{}/{}", provider_key, model_key);
+
+                let provider_obj = if provider_key == "clawparty" {
+                    serde_json::json!({
+                        "name": "ClawParty LLM",
+                        "api": "https://llm.clawparty.ai/v1",
+                        "options": {
+                            "apiKey": api_key,
+                            "baseURL": "https://llm.clawparty.ai/v1"
+                        }
+                    })
+                } else {
+                    serde_json::json!({
+                        "options": { "apiKey": api_key }
+                    })
+                };
 
                 let mut provider_map = serde_json::Map::new();
-                provider_map.insert(provider_key.clone(), serde_json::json!({
-                    "name": format!("{} ({})", model_key, provider_key),
-                    "models": { model_key.clone(): { "name": provider_key.clone() } },
-                    "options": { "apiKey": api_key }
-                }));
+                provider_map.insert(provider_key.clone(), provider_obj);
 
                 let oc_json = serde_json::json!({
                     "$schema": "https://opencode.ai/config.json",
-                    "model": model_key,
+                    "model": full_model,
                     "provider": provider_map
                 });
                 if let Ok(json_str) = serde_json::to_string_pretty(&oc_json) {
@@ -796,35 +807,33 @@ pub async fn create_agent(data_dir: &str, body_bytes: Bytes) -> Response<BoxBody
     let config_path = agent_dir.join(config_filename);
 
     if engine == "opencode" {
-        let provider = req.provider.clone().unwrap_or_else(|| "openai".to_string());
-        let model = req.model.clone().unwrap_or_default();
+        let provider = req.provider.clone().unwrap_or_else(|| "clawparty".to_string());
+        let model = req.model.clone().unwrap_or_else(|| "deepseek-v4-pro".to_string());
         let api_key = req.api_key.clone().unwrap_or_default();
         let api_endpoint = req.api_endpoint.clone().unwrap_or_default();
+        let full_model = format!("{}/{}", provider, model);
 
-        let provider_config = serde_json::json!({
-            &provider: {
-                "name": format!("{} ({})", model, provider),
-                "models": {
-                    &model: {
-                        "name": &provider,
-                    }
-                },
-                "options": {
-                    "apiKey": api_key,
-                }
+        let mut provider_obj = serde_json::json!({
+            "options": {
+                "apiKey": api_key,
             }
         });
-
-        let mut config_json = serde_json::json!({
-            "$schema": "https://opencode.ai/config.json",
-            "model": model,
-            "provider": provider_config,
-        });
-
-        if !api_endpoint.is_empty() {
-            config_json["provider"][&provider]["options"]["baseURL"] =
-                serde_json::Value::String(api_endpoint);
+        if provider == "clawparty" {
+            provider_obj["name"] = serde_json::Value::String("ClawParty LLM".to_string());
+            provider_obj["api"] = serde_json::Value::String("https://llm.clawparty.ai/v1".to_string());
+            provider_obj["options"]["baseURL"] = serde_json::Value::String("https://llm.clawparty.ai/v1".to_string());
+        } else if !api_endpoint.is_empty() {
+            provider_obj["options"]["baseURL"] = serde_json::Value::String(api_endpoint);
         }
+
+        let mut provider_map = serde_json::Map::new();
+        provider_map.insert(provider.clone(), provider_obj);
+
+        let config_json = serde_json::json!({
+            "$schema": "https://opencode.ai/config.json",
+            "model": full_model,
+            "provider": serde_json::Value::Object(provider_map),
+        });
 
         let config_str = serde_json::to_string_pretty(&config_json).unwrap_or_default();
         if let Err(e) = std::fs::write(&config_path, config_str) {

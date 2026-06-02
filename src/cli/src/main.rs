@@ -113,9 +113,11 @@ async fn main() -> anyhow::Result<()> {
     let expanded_data = expand_data_dir(&args.data);
     let first_run = !std::path::Path::new(&expanded_data).exists();
     let first_run_api_key: Option<String>;
+    let first_run_provider: String;
+    let first_run_model: String;
 
     if first_run {
-        let (password, api_key) = if args.service {
+        let (password, api_key, provider, model) = if args.service {
             // Service mode: try environment variables first (desktop app path);
             // fall back to interactive prompt if stdin is a terminal.
             env_first_run_setup().or_else(|| {
@@ -148,19 +150,36 @@ async fn main() -> anyhow::Result<()> {
 
             let config_path = format!("{}/opencode.json", zero_agent_dir);
 
+            let full_model = format!("{}/{}", provider, model);
+            let mut provider_obj = serde_json::json!({
+                "options": { "apiKey": api_key }
+            });
+            if provider == "clawparty" {
+                provider_obj["name"] = serde_json::Value::String("ClawParty LLM".to_string());
+                provider_obj["api"] = serde_json::Value::String("https://llm.clawparty.ai/v1".to_string());
+                provider_obj["options"]["baseURL"] = serde_json::Value::String("https://llm.clawparty.ai/v1".to_string());
+                if model == "deepseek-v4-pro" {
+                    provider_obj["models"] = serde_json::json!({
+                        "deepseek-v4-pro": {
+                            "name": "DeepSeek V4 Pro",
+                            "temperature": true,
+                            "tool_call": true,
+                            "cost": { "input": 2.5, "output": 10 },
+                            "limit": { "context": 128000, "output": 16384 }
+                        }
+                    });
+                }
+            }
+            let mut provider_map = serde_json::Map::new();
+            provider_map.insert(provider.clone(), provider_obj);
+
             let config = serde_json::json!({
                 "$schema": "https://opencode.ai/config.json",
-                "model": if api_key.is_empty() { "" } else { "default/default" },
+                "model": if api_key.is_empty() { "" } else { full_model.as_str() },
                 "provider": if api_key.is_empty() {
                     serde_json::json!({})
                 } else {
-                    serde_json::json!({
-                        "default": {
-                            "name": "default",
-                            "models": { "default": { "name": "default" } },
-                            "options": { "apiKey": api_key }
-                        }
-                    })
+                    serde_json::Value::Object(provider_map)
                 },
                 "permission": {
                     "bash": "allow",
@@ -188,12 +207,16 @@ async fn main() -> anyhow::Result<()> {
         }
 
         first_run_api_key = Some(api_key);
+        first_run_provider = provider;
+        first_run_model = model;
     } else {
         first_run_api_key = None;
+        first_run_provider = "clawparty".to_string();
+        first_run_model = "deepseek-v4-pro".to_string();
     }
 
     if args.service {
-        let (_agent_mgr, _zeroclaw_mgr) = run_service_mode(args, first_run_api_key).await?;
+        let (_agent_mgr, _zeroclaw_mgr) = run_service_mode(args, first_run_api_key, first_run_provider, first_run_model).await?;
         return Ok(());
     }
 
@@ -297,7 +320,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         if let Some(ref api_key) = first_run_api_key {
-            match write_opencode_api_key(api_key, &args.data) {
+            match write_opencode_api_key(api_key, &first_run_provider, &first_run_model, &args.data) {
                 Ok(()) => state.add_log("INFO", "API key written to 0#Agent opencode config"),
                 Err(e) => state.add_log("WARN", &format!("Failed to write opencode API key: {}", e)),
             }
@@ -1037,7 +1060,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_service_mode(args: Args, first_run_api_key: Option<String>) -> anyhow::Result<(Option<AgentManager>, Option<ZeroClawDaemon>)> {
+async fn run_service_mode(args: Args, first_run_api_key: Option<String>, _first_run_provider: String, _first_run_model: String) -> anyhow::Result<(Option<AgentManager>, Option<ZeroClawDaemon>)> {
     let _ = env_logger::Builder::from_env("RUST_LOG")
         .format(|buf, record| {
             use std::io::Write;
@@ -1834,8 +1857,8 @@ fn patch_zeroclaw_config_defaults(data_dir: &str) -> anyhow::Result<()> {
 }
 
 /// Interactive first-run setup: prompt for admin password and API key.
-/// Returns (password, api_key). Loops until non-empty values are provided.
-fn prompt_first_run_setup() -> anyhow::Result<(String, String)> {
+/// Returns (password, api_key, provider, model). Provider and model may be empty.
+fn prompt_first_run_setup() -> anyhow::Result<(String, String, String, String)> {
     use std::io::{self, Write};
 
     println!();
@@ -1877,19 +1900,36 @@ fn prompt_first_run_setup() -> anyhow::Result<(String, String)> {
         break k;
     };
 
+    print!("Provider [clawparty]: ");
+    io::stdout().flush()?;
+    let mut line = String::new();
+    io::stdin().read_line(&mut line)?;
+    let provider = line.trim().to_string();
+
+    print!("Model [deepseek-v4-pro]: ");
+    io::stdout().flush()?;
+    line.clear();
+    io::stdin().read_line(&mut line)?;
+    let model = line.trim().to_string();
+
+    let provider = if provider.is_empty() { "clawparty".to_string() } else { provider };
+    let model = if model.is_empty() { "deepseek-v4-pro".to_string() } else { model };
+
     println!();
-    Ok((password, api_key))
+    Ok((password, api_key, provider, model))
 }
 
 /// Non-interactive first-run setup: read password + api key from environment variables.
 /// Used by the desktop app to avoid interactive prompts in service mode.
-fn env_first_run_setup() -> Option<(String, String)> {
+fn env_first_run_setup() -> Option<(String, String, String, String)> {
     let password = std::env::var("CLAWPARTY_ADMIN_PASSWORD").ok()?;
     let api_key = std::env::var("CLAWPARTY_API_KEY").ok()?;
     if password.is_empty() || api_key.is_empty() {
         return None;
     }
-    Some((password, api_key))
+    let provider = std::env::var("CLAWPARTY_PROVIDER").ok().unwrap_or_else(|| "clawparty".to_string());
+    let model = std::env::var("CLAWPARTY_MODEL").ok().unwrap_or_else(|| "deepseek-v4-pro".to_string());
+    Some((password, api_key, provider, model))
 }
 
 /// Read a line from stdin without echoing (password input).
@@ -2182,7 +2222,7 @@ fn ensure_opencode_external_permission() {
     }
 }
 
-fn write_opencode_api_key(api_key: &str, data_dir: &str) -> anyhow::Result<()> {
+fn write_opencode_api_key(api_key: &str, provider: &str, model: &str, data_dir: &str) -> anyhow::Result<()> {
     let expanded = expand_data_dir(data_dir);
     let config_path = format!("{}/agents/0#Agent/opencode.json", expanded);
     let content = std::fs::read_to_string(&config_path)?;
@@ -2190,24 +2230,42 @@ fn write_opencode_api_key(api_key: &str, data_dir: &str) -> anyhow::Result<()> {
     let mut config: serde_json::Value = serde_json::from_str(&content)
         .unwrap_or(serde_json::json!({}));
 
-    // Ensure model field is populated (matches provider/model structure)
-    if config.get("model").and_then(|v| v.as_str()).map_or(true, |m| m.is_empty()) {
-        config["model"] = serde_json::Value::String("default/default".to_string());
-    }
+    let full_model = format!("{}/{}", provider, model);
+    config["model"] = serde_json::Value::String(full_model);
 
-    if config.get("provider").and_then(|p| p.get("default")).is_none() {
-        config["provider"] = serde_json::json!({
-            "default": {
-                "name": "default",
-                "models": { "default": { "name": "default" } },
-                "options": { "apiKey": api_key }
+    let provider_obj = if provider == "clawparty" {
+        serde_json::json!({
+            "name": "ClawParty LLM",
+            "api": "https://llm.clawparty.ai/v1",
+            "options": {
+                "apiKey": api_key,
+                "baseURL": "https://llm.clawparty.ai/v1"
+            },
+            "models": {
+                model: {
+                    "name": "DeepSeek V4 Pro",
+                    "temperature": true,
+                    "tool_call": true,
+                    "cost": { "input": 2.5, "output": 10 },
+                    "limit": { "context": 128000, "output": 16384 }
+                }
             }
+        })
+    } else {
+        serde_json::json!({
+            "options": { "apiKey": api_key }
+        })
+    };
+
+    if config.get("provider").and_then(|p| p.get(provider)).is_none() {
+        config["provider"] = serde_json::json!({
+            provider: provider_obj
         });
     } else {
-        if let Some(options) = config.pointer_mut("/provider/default/options") {
+        if let Some(options) = config.pointer_mut(&format!("/provider/{}/options", provider)) {
             options["apiKey"] = serde_json::Value::String(api_key.to_string());
         } else {
-            config["provider"]["default"]["options"] = serde_json::json!({
+            config["provider"][provider]["options"] = serde_json::json!({
                 "apiKey": api_key
             });
         }

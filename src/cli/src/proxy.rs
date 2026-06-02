@@ -771,8 +771,10 @@ async fn bridge_opencode_sse(
                             }
                             "session.error" => {
                                 if !is_our_event { continue; }
-                                let error_msg = event["properties"]["error"]["message"]
+                                let error_obj = &event["properties"]["error"];
+                                let error_msg = error_obj["data"]["message"]
                                     .as_str()
+                                    .or_else(|| error_obj["message"].as_str())
                                     .unwrap_or("Unknown error");
                                 let msg = serde_json::json!({
                                     "type": "error",
