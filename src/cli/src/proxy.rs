@@ -594,8 +594,9 @@ async fn bridge_opencode_sse(
     let fwd_to_backend = async {
         while let Some(msg) = frontend_stream.next().await {
             if let Ok(msg) = msg {
-                if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
-                    log::debug!("[Proxy][SSE] Frontend message: {}", text);
+                if let tokio_tungstenite::tungstenite::Message::Text(ref text) = msg {
+                    let msg_preview: String = if text.len() > 120 { format!("{}...", &text[..120]) } else { text.to_string() };
+                    ts_print!("[Proxy][SSE][F→B] {}", msg_preview);
 
                     let parsed = serde_json::from_str::<serde_json::Value>(&text).ok();
                     let msg_type = parsed.as_ref()
@@ -610,6 +611,37 @@ async fn bridge_opencode_sse(
                         continue;
                     }
 
+                    if msg_type == "permission_reply" {
+                        let permission_id = parsed.as_ref()
+                            .and_then(|p| p.get("permission_id"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let response = parsed.as_ref()
+                            .and_then(|p| p.get("response"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("once");
+                        let reply_url = format!("{}/permission/{}/reply", base_url, permission_id);
+                        ts_print!("[Proxy][SSE][P] Replying to permission: {} -> {}", permission_id, response);
+                        match client
+                            .post(&reply_url)
+                            .header("Content-Type", "application/json")
+                            .json(&serde_json::json!({"reply": response}))
+                            .send()
+                            .await
+                        {
+                            Ok(resp) => {
+                                let status = resp.status();
+                                let body = resp.text().await.unwrap_or_default();
+                                ts_print!("[Proxy][SSE][P] Reply response: HTTP {} body={}", status, 
+                                    if body.len() > 200 { format!("{}...", &body[..200]) } else { body });
+                            }
+                            Err(e) => {
+                                ts_eprint!("[Proxy][SSE] Failed to reply to permission: {}", e);
+                            }
+                        }
+                        continue;
+                    }
+
                     let content = parsed.as_ref()
                         .and_then(|p| p.get("content"))
                         .and_then(|c| c.as_str())
@@ -620,7 +652,7 @@ async fn bridge_opencode_sse(
                     let abort_url = format!("{}/session/{}/abort", base_url, session_id);
                     let _ = client.post(&abort_url).send().await;
 
-                    let send_url = format!("{}/session/{}/message", base_url, session_id);
+                    let send_url = format!("{}/session/{}/prompt_async", base_url, session_id);
                     if let Err(e) = client
                         .post(&send_url)
                         .header("Content-Type", "application/json")
@@ -794,6 +826,30 @@ async fn bridge_opencode_sse(
                             }
                             "server.heartbeat" => {}
                             "server.connected" => {}
+                            "permission.asked" => {
+                                log::debug!("[Proxy][SSE] permission.asked event received");
+                                if !is_our_event {
+                                    log::debug!("[Proxy][SSE] permission.asked: NOT our session, skipping");
+                                    continue;
+                                }
+                                let props = &event["properties"];
+                                let permission_id = props["id"].as_str().unwrap_or("");
+                                let permission = props["permission"].as_str().unwrap_or("");
+                                let patterns: Vec<&str> = props["patterns"]
+                                    .as_array()
+                                    .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+                                    .unwrap_or_default();
+                                let metadata = props.get("metadata").cloned().unwrap_or(serde_json::Value::Null);
+                                log::info!("[Proxy][SSE] Forwarding permission_request: {} {} {:?}", permission_id, permission, patterns);
+                                let msg = serde_json::json!({
+                                    "type": "permission_request",
+                                    "permission_id": permission_id,
+                                    "permission": permission,
+                                    "patterns": patterns,
+                                    "metadata": metadata
+                                }).to_string();
+                                let _ = frontend_sink.send(WsMsg::Text(msg.into())).await;
+                            }
                             _ => {}
                         }
                     }

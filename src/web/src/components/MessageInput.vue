@@ -98,8 +98,15 @@
             @click="$emit('update:peerMode', 'half')"
           >H</button>
         </div>
-        <!-- System Context Toggle (only for ZeroClaw / zAgent chats) -->
+        <!-- Auto-Allow Permission Toggle -->
         <div v-if="agentName || chatName?.startsWith('0#')" class="context-toggle-bar">
+          <label class="context-toggle-switch" title="自动允许权限请求 (Permit Once)">
+            <input type="checkbox" v-model="autoAllowPermission" />
+            <span class="context-toggle-slider"></span>
+          </label>
+          <span class="context-toggle-label">自动允许</span>
+          <span class="context-toggle-sep"></span>
+          <!-- System Context Toggle (only for ZeroClaw / zAgent chats) -->
           <label class="context-toggle-switch" title="切换系统上下文模式">
             <input type="checkbox" v-model="systemContextType" true-value="full" false-value="simple" />
             <span class="context-toggle-slider"></span>
@@ -183,6 +190,9 @@ import { ref, computed, inject } from 'vue'
 
 // Toggle for system context type (full / simple)
 const systemContextType = inject('systemContextType', ref('full'))
+
+// Toggle for auto-allow permissions
+const autoAllowPermission = inject('autoAllowPermission', ref(true))
 
 // History message limit selector (0/10/20/50)
 const historyMessageLimit = inject('historyMessageLimit', ref(10))

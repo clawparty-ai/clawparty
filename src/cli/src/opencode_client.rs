@@ -10,6 +10,12 @@ pub enum OpenCodeWsMessage {
     Error { message: String },
     ToolCall { name: String, args: serde_json::Value },
     SessionStart { session_id: String },
+    PermissionRequest {
+        permission_id: String,
+        permission: String,
+        patterns: Vec<String>,
+        metadata: serde_json::Value,
+    },
 }
 
 impl OpenCodeWsMessage {
@@ -36,6 +42,15 @@ impl OpenCodeWsMessage {
             }
             OpenCodeWsMessage::SessionStart { session_id } => {
                 serde_json::json!({"type": "session_start", "session_id": session_id})
+            }
+            OpenCodeWsMessage::PermissionRequest { permission_id, permission, patterns, metadata } => {
+                serde_json::json!({
+                    "type": "permission_request",
+                    "permission_id": permission_id,
+                    "permission": permission,
+                    "patterns": patterns,
+                    "metadata": metadata
+                })
             }
         }
     }
@@ -129,6 +144,21 @@ impl OpenCodeClient {
 
         if !resp.status().is_success() {
             anyhow::bail!("Failed to abort session: {}", resp.status())
+        }
+        Ok(())
+    }
+
+    pub async fn reply_permission(&self, permission_id: &str, response: &str) -> anyhow::Result<()> {
+        let resp = self
+            .client
+            .post(format!("{}/permission/{}/reply", self.base_url, permission_id))
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({"response": response}))
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            anyhow::bail!("Failed to reply to permission: {}", resp.status())
         }
         Ok(())
     }

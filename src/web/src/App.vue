@@ -41,6 +41,27 @@
     </div>
   </div>
   <div v-else class="chat-container">
+    <div v-if="pendingPermissions.length > 0" class="permission-banner">
+      <div v-for="perm in pendingPermissions" :key="perm.permission_id" class="permission-item">
+        <span class="permission-icon">&#128274;</span>
+        <span class="permission-text">
+          <b>{{ perm.permission }}</b> needs permission
+          <span v-if="perm.patterns.length" class="permission-patterns">{{ perm.patterns.join(', ') }}</span>
+        </span>
+        <button class="perm-btn perm-allow-once" @click="replyPermission(perm, 'once')">Allow Once</button>
+        <button class="perm-btn perm-allow-always" @click="replyPermission(perm, 'always')">Allow Always</button>
+        <button class="perm-btn perm-deny" @click="replyPermission(perm, 'reject')">Deny</button>
+      </div>
+    </div>
+    <div v-if="stuckToolCalls.length > 0" class="stuck-tool-banner">
+      <div v-for="tool in stuckToolCalls" :key="tool.callId" class="stuck-tool-item">
+        <span class="stuck-tool-icon">&#9888;</span>
+        <span class="stuck-tool-text">Tool <b>{{ tool.name }}</b> stuck for {{ Math.floor((Date.now() - tool.startedAt) / 1000) }}s</span>
+        <span v-if="tool.input?.filePath" class="stuck-tool-path">{{ tool.input.filePath }}</span>
+        <button class="stuck-tool-cancel" @click="cancelStuckTool(tool)">Cancel</button>
+        <button class="stuck-tool-dismiss" @click="dismissStuckTool(tool.callId)">&#10005;</button>
+      </div>
+    </div>
     <ChatSidebar
       :chats="chats"
       :activeChat="activeChat"
@@ -263,6 +284,7 @@ const activeOpenclawAgent = ref(null)  // 当前活动的 openclaw agent
 const newMessage = ref('')
 const sending = ref(false)
 const systemContextType = ref('full')
+const autoAllowPermission = ref(true)
 const HISTORY_MESSAGE_LIMIT_KEY = 'historyMessageLimit'
 const historyMessageLimit = ref(
   typeof localStorage !== 'undefined'
@@ -348,6 +370,84 @@ let usersPollTimer = null
 let zeroclawSessionsPollTimer = null
 let zeroclawWS = null
 const wsConnections = reactive({})
+
+const STUCK_TOOL_TIMEOUT = 15000
+const stuckToolCalls = ref([])
+const pendingPermissions = ref([])
+const pendingToolCalls = new Map()
+let toolStuckCheckTimer = null
+
+function addPendingToolCall(data, wsRef) {
+  const callId = data.callID || data.id || (data.name + '_' + Date.now())
+  pendingToolCalls.set(callId, {
+    callId,
+    name: data.name,
+    args: data.args,
+    input: data.input,
+    startedAt: Date.now(),
+    ws: wsRef
+  })
+}
+
+function removePendingToolCall(callId) {
+  pendingToolCalls.delete(callId)
+  stuckToolCalls.value = stuckToolCalls.value.filter(t => t.callId !== callId)
+}
+
+function findCallIdInPending(name) {
+  for (const [id, entry] of pendingToolCalls) {
+    if (entry.name === name) return id
+  }
+  return null
+}
+
+function checkStuckToolCalls() {
+  const now = Date.now()
+  const stuck = []
+  for (const [id, entry] of pendingToolCalls) {
+    if (now - entry.startedAt > STUCK_TOOL_TIMEOUT) {
+      stuck.push({ ...entry })
+      pendingToolCalls.delete(id)
+    }
+  }
+  if (stuck.length > 0) {
+    stuckToolCalls.value = [...stuckToolCalls.value, ...stuck]
+  }
+}
+
+function dismissStuckTool(callId) {
+  stuckToolCalls.value = stuckToolCalls.value.filter(t => t.callId !== callId)
+}
+
+function cancelStuckTool(call) {
+  dismissStuckTool(call.callId)
+  if (call.ws) {
+    sendCancel(call.ws)
+  } else {
+    handleStopGeneration()
+  }
+}
+
+function sendPermissionReply(permissionId, wsRef, response) {
+  console.log('[permission] Auto-replying:', permissionId, response)
+  const msg = JSON.stringify({
+    type: 'permission_reply',
+    permission_id: permissionId,
+    response: response
+  })
+  if (wsRef?.ws?.readyState === WebSocket.OPEN) {
+    try { wsRef.ws.send(msg) } catch (e) { console.error('Failed to send permission reply:', e) }
+  } else if (wsRef?.readyState === WebSocket.OPEN) {
+    try { wsRef.send(msg) } catch (e) { console.error('Failed to send permission reply:', e) }
+  } else {
+    console.warn('No active WebSocket to send permission reply')
+  }
+}
+
+function replyPermission(perm, response) {
+  pendingPermissions.value = pendingPermissions.value.filter(p => p.permission_id !== perm.permission_id)
+  sendPermissionReply(perm.permission_id, perm._ws, response)
+}
 
 // Local group chat state (ZeroClaw agent groups)
 const localGroupChats = ref([])
@@ -956,9 +1056,23 @@ const createZeroClawMessageHandler = (connectionAgentName) => {
       })
       sending.value = false
     } else if (data.type === 'tool_call') {
-      console.log('[zAgent] Tool call:', data.name, data.args)
+      addPendingToolCall(data, cached?.zeroclawWS || zeroclawWS)
     } else if (data.type === 'tool_result') {
-      console.log('[zAgent] Tool result:', data.name, data.output)
+      const callId = data.callID || findCallIdInPending(data.name)
+      if (callId) removePendingToolCall(callId)
+    } else if (data.type === 'permission_request') {
+      const replyWs = cached?.zeroclawWS || zeroclawWS
+      if (autoAllowPermission.value) {
+        sendPermissionReply(data.permission_id, replyWs, 'once')
+      } else {
+        pendingPermissions.value.push({
+          permission_id: data.permission_id,
+          permission: data.permission,
+          patterns: data.patterns || [],
+          metadata: data.metadata,
+          _ws: replyWs
+        })
+      }
     }
   }
 }
@@ -1526,9 +1640,22 @@ const handleZeroClawMessage = (data) => {
     })
     sending.value = false
   } else if (data.type === 'tool_call') {
-    console.log('[zAgent] Tool call:', data.name, data.args)
+    addPendingToolCall(data, zeroclawWS)
   } else if (data.type === 'tool_result') {
-    console.log('[zAgent] Tool result:', data.name, data.output)
+    const callId = data.callID || findCallIdInPending(data.name)
+    if (callId) removePendingToolCall(callId)
+  } else if (data.type === 'permission_request') {
+    if (autoAllowPermission.value) {
+      sendPermissionReply(data.permission_id, zeroclawWS, 'once')
+    } else {
+      pendingPermissions.value.push({
+        permission_id: data.permission_id,
+        permission: data.permission,
+        patterns: data.patterns || [],
+        metadata: data.metadata,
+        _ws: zeroclawWS
+      })
+    }
   }
 }
 
@@ -2126,6 +2253,22 @@ const createGroupChatMessageHandler = (groupId, agentName) => {
         isSent: false,
         isSystem: true
       })
+      break
+    }
+    case 'permission_request': {
+      const conns = activeGroupWsMap.get(groupId)
+      const conn = conns?.find(c => c.agentName === agentName)
+      if (autoAllowPermission.value) {
+        sendPermissionReply(data.permission_id, conn?.ws, 'once')
+      } else {
+        pendingPermissions.value.push({
+          permission_id: data.permission_id,
+          permission: data.permission,
+          patterns: data.patterns || [],
+          metadata: data.metadata,
+          _ws: conn?.ws
+        })
+      }
       break
     }
     case 'error': {
@@ -3199,6 +3342,7 @@ provide('fetchZeroClawSessions', fetchZeroClawSessions)
 provide('localOpenclawAvailable', localOpenclawAvailable)
 provide('systemContextType', systemContextType)
 provide('historyMessageLimit', historyMessageLimit)
+provide('autoAllowPermission', autoAllowPermission)
 
 // --- beforeunload: cleanly close WebSocket connections to prevent zeroclaw hang on refresh ---
 function handleBeforeUnload() {
@@ -3268,6 +3412,7 @@ const startZeroClawSessionsPolling = () => {
 }
 
 onMounted(async () => {
+  toolStuckCheckTimer = setInterval(checkStuckToolCalls, 3000)
 	if(window.__TAURI_OS_PLUGIN_INTERNALS__ && !!platform()){
 		setTimeout(()=>{
 			initAuth()
@@ -3279,6 +3424,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (toolStuckCheckTimer) { clearInterval(toolStuckCheckTimer); toolStuckCheckTimer = null }
   stopChatsPolling()
   stopZeroClawSessionsPolling()
 })
@@ -3560,5 +3706,140 @@ const submitToken = async () => {
   }
 }
 
+
+.permission-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.permission-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: rgba(33, 150, 243, 0.95);
+  color: #fff;
+  font-size: 13px;
+  animation: permSlideIn 0.3s ease-out;
+}
+.permission-icon {
+  font-size: 18px;
+}
+.permission-text {
+  flex: 1;
+}
+.permission-patterns {
+  display: block;
+  font-family: monospace;
+  font-size: 11px;
+  opacity: 0.8;
+  margin-top: 2px;
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.perm-btn {
+  padding: 5px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  transition: background 0.15s;
+}
+.perm-allow-once {
+  background: rgba(76, 175, 80, 0.6);
+}
+.perm-allow-once:hover {
+  background: rgba(76, 175, 80, 0.85);
+}
+.perm-allow-always {
+  background: rgba(76, 175, 80, 0.8);
+}
+.perm-allow-always:hover {
+  background: rgba(76, 175, 80, 1);
+}
+.perm-deny {
+  background: rgba(244, 67, 54, 0.6);
+}
+.perm-deny:hover {
+  background: rgba(244, 67, 54, 0.85);
+}
+@keyframes permSlideIn {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.stuck-tool-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stuck-tool-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: rgba(255, 152, 0, 0.95);
+  color: #fff;
+  font-size: 13px;
+  animation: stuckPulse 1.5s ease-in-out infinite;
+}
+.stuck-tool-icon {
+  font-size: 16px;
+}
+.stuck-tool-text {
+  flex: 1;
+}
+.stuck-tool-path {
+  font-family: monospace;
+  font-size: 11px;
+  opacity: 0.8;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stuck-tool-cancel {
+  padding: 4px 12px;
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.stuck-tool-cancel:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+.stuck-tool-dismiss {
+  padding: 2px 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.stuck-tool-dismiss:hover {
+  color: #fff;
+}
+@keyframes stuckPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
 
 </style>
