@@ -1407,6 +1407,7 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
                 verify_token(&token, db_path)
             };
             if !valid {
+                ts_eprint!("[Proxy] 401 auth failed path={} token={}... token_len={}", path, &token[..token.len().min(8)], token.len());
                 let mut resp = Response::new(box_body(Bytes::from(r#"{"status":401,"message":"unauthorized"}"#)));
                 *resp.status_mut() = StatusCode::UNAUTHORIZED;
                 return Ok(resp);
@@ -1812,8 +1813,10 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
                 .body(box_body(Bytes::from("[]")))
                 .unwrap());
         }
+        ts_eprint!("[Proxy] meshes path={} -> ztm:6789", path);
         match proxy_http(req).await {
             Ok(resp) => {
+                ts_eprint!("[Proxy] meshes ztm response status={}", resp.status().as_u16());
                 if resp.status() == StatusCode::BAD_GATEWAY {
                     let mut fallback = Response::new(box_body(Bytes::from("[]")));
                     *fallback.status_mut() = StatusCode::OK;

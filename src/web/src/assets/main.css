@@ -95,6 +95,21 @@ button {
   background: rgba(0, 0, 0, 0.25);
 }
 
+@media print {
+  html, body {
+    overflow: visible !important;
+    height: auto !important;
+  }
+  #app {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  body.has-fullscreen-preview #app {
+    display: none !important;
+  }
+}
+
 @media (max-width: 768px) {
   #app {
     flex-direction: column;

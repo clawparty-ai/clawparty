@@ -52,6 +52,18 @@ axiosapi.interceptors.request.use(config => {
   return config
 })
 
+axiosapi.interceptors.response.use(
+  res => res,
+  error => {
+    const status = error?.response?.status
+    const url = error?.config?.url
+    if (status === 401) {
+      console.warn('[API] 401 response', JSON.stringify({ url, status, method: error?.config?.method, baseURL: error?.config?.baseURL }))
+    }
+    return Promise.reject(error)
+  }
+)
+
 const xsrfHeaderName = "Authorization";
 const DEFAULT_VITE_APP_API_PORT = import.meta.env.VITE_APP_API_PORT;
 const DEFAULT_VITE_APP_HUB_LISTEN = import.meta.env.VITE_APP_HUB_LISTEN;
@@ -78,7 +90,8 @@ function getUrl(url,isfull){
 			path = params.join("/")
 		}
 	}
-	if(url.indexOf('/api/meshes/')==0){
+	const isMesh = url.indexOf('/api/meshes/')==0
+	if(isMesh){
 		path = '';
 	}
 	const devPath = localStorage.getItem("DEV_BASE")
@@ -94,9 +107,9 @@ function getUrl(url,isfull){
 	}
 	if(!!isfull && rtn.indexOf('://')==-1){
 		return `http://127.0.0.1:${getPort()}${rtn}`
-	} else {
-		return rtn
 	}
+	console.debug('[API] getUrl', JSON.stringify({ url, isMesh, devPath, path, port: getPort(), isTauri: !!window.__TAURI_INTERNALS__, result: rtn }))
+	return rtn
 }
 const fetchBoth = !window.__TAURI_INTERNALS__?fetch:tauriFetch;
 
@@ -315,10 +328,14 @@ async function localRequest(url, method, params, config) {
 }
 
 async function request(url, method, params, config) {
+	const computedUrl = getUrl(url)
+	const hasToken = !!apiToken
 	if(!window.__TAURI_INTERNALS__ || (!!location?.port && location.port>=2000)){
+		const fullUrl = computedUrl.indexOf('://') >= 0 ? computedUrl : `${axiosapi.defaults.baseURL || '/api'}${computedUrl}`
+		console.debug('[API] request', JSON.stringify({ url, method, computedUrl, fullUrl, hasToken, token: apiToken?.substring(0,8)+'...' }))
 		switch (method) {
 		  case METHOD.GET:
-		    return axiosapi.get(getUrl(url), { params, ...config }).then((res) => {
+		    return axiosapi.get(computedUrl, { params, ...config }).then((res) => {
 					
 					if (res.status >= 400) {
 						const error = new Error(res.message);

@@ -199,7 +199,7 @@
 </template>
 
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onUnmounted } from 'vue'
 import { marked } from 'marked'
 import { webshareService } from '../services/chatService'
 
@@ -523,6 +523,18 @@ const closePreview = () => {
   previewName.value = ''
   fullPreview.value = false
 }
+
+watch(fullPreview, (val) => {
+  if (val) {
+    document.body.classList.add('has-fullscreen-preview')
+  } else {
+    document.body.classList.remove('has-fullscreen-preview')
+  }
+})
+
+onUnmounted(() => {
+  document.body.classList.remove('has-fullscreen-preview')
+})
 
 // Auto-preview index.html when directory changes and no file is selected
 watch(() => props.files, (newFiles) => {
@@ -1511,6 +1523,28 @@ const stopResize = () => {
   }
   .webshare-preview-pane {
     display: none;
+  }
+}
+
+@media print {
+  .fullscreen-preview {
+    position: static !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .fullscreen-preview-body {
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  .fullscreen-preview-header {
+    display: none !important;
+  }
+
+  .preview-markdown.fullscreen {
+    max-width: 100% !important;
+    padding: 0 !important;
   }
 }
 </style>
