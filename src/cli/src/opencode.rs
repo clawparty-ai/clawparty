@@ -2,6 +2,7 @@ use std::io::{BufRead, BufReader};
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 
+use anyhow::Context;
 use reqwest::Client;
 use tokio::sync::mpsc;
 
@@ -92,7 +93,7 @@ impl OpenCodeDaemon {
         agent_dir: &str,
         port: u16,
         log_tx: mpsc::Sender<String>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let db_path = format!("{}/opencode.db", agent_dir);
 
         let mut child = Command::new(&opencode_bin)
@@ -108,7 +109,7 @@ impl OpenCodeDaemon {
             .stdin(Stdio::null())
             .process_group(0)
             .spawn()
-            .expect("Failed to start OpenCode serve");
+            .with_context(|| format!("Failed to start OpenCode serve (binary: {})", opencode_bin))?;
 
         let pid = child.id();
 
@@ -140,10 +141,10 @@ impl OpenCodeDaemon {
             });
         }
 
-        Self {
+        Ok(Self {
             process: Some(child),
             pid,
-        }
+        })
     }
 
     pub fn stop(&mut self) {

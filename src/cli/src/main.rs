@@ -271,14 +271,22 @@ async fn main() -> anyhow::Result<()> {
         // Ensure opencode global config has external_directory permission for agent dirs
         ensure_opencode_external_permission();
         let opencode_bin = find_opencode_bin();
-        let opencode_mgr = opencode::OpenCodeDaemon::new(
-            opencode_bin,
+        let opencode_mgr = match opencode::OpenCodeDaemon::new(
+            opencode_bin.clone(),
             &args.data,
             "0#Agent",
             &format!("{}/agents/0#Agent", expand_data_dir(&args.data)),
             42617,
             log_tx.clone(),
-        );
+        ) {
+            Ok(m) => m,
+            Err(e) => {
+                state.add_log("ERROR", &format!("❌ Failed to start OpenCode: {}", e));
+                disable_raw_mode()?;
+                io::stdout().execute(LeaveAlternateScreen)?;
+                return Err(anyhow::anyhow!("Failed to start OpenCode serve: {}", e));
+            }
+        };
 
         let mut opencode_ready = false;
         for i in 0..40 {
@@ -1118,14 +1126,21 @@ async fn run_service_mode(args: Args, first_run_api_key: Option<String>, _first_
     let mut opencode_pids: Vec<u32> = Vec::new();
     let zeroclaw_mgr = if args.engine == "opencode" {
         ts_print!("🦞 Starting OpenCode server for 0#Agent...");
-        let mut opencode_mgr = opencode::OpenCodeDaemon::new(
-            find_opencode_bin(),
+        let opencode_bin = find_opencode_bin();
+        let mut opencode_mgr = match opencode::OpenCodeDaemon::new(
+            opencode_bin.clone(),
             &data_dir,
             "0#Agent",
             &format!("{}/agents/0#Agent", data_dir),
             42617,
             log_tx.clone(),
-        );
+        ) {
+            Ok(m) => m,
+            Err(e) => {
+                ts_eprint!("❌ Failed to start OpenCode server (binary: {}): {}", opencode_bin, e);
+                return Err(anyhow::anyhow!("Failed to start OpenCode serve: {}", e));
+            }
+        };
 
         let main_oc_pid = opencode_mgr.pid();
         opencode_pids.push(main_oc_pid);
