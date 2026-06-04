@@ -615,6 +615,9 @@ watch(showAIPanel, (visible) => {
     showWebSharePanel.value = false
     showWikiPanel.value = false
     showRadarPanel.value = false
+    requestAnimationFrame(() => {
+      calcTaskPanelHeight()
+    })
   }
 })
 
@@ -2544,6 +2547,9 @@ watch(
       await loadTasks()
       showAIPanel.value = true
       showTaskPanel.value = false
+      requestAnimationFrame(() => {
+        calcTaskPanelHeight()
+      })
       showMembersPanel.value = !!props.chat.isGroupChat
     }
   },
