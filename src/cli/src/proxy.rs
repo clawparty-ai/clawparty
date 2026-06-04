@@ -595,8 +595,13 @@ async fn bridge_opencode_sse(
         while let Some(msg) = frontend_stream.next().await {
             if let Ok(msg) = msg {
                 if let tokio_tungstenite::tungstenite::Message::Text(ref text) = msg {
-                    let msg_preview: String = if text.len() > 120 { format!("{}...", &text[..120]) } else { text.to_string() };
-                    ts_print!("[Proxy][SSE][F→B] {}", msg_preview);
+                    let msg_preview: String = if text.len() > 120 {
+                        let byte_pos = text.char_indices().nth(120).map(|(i, _)| i).unwrap_or(text.len());
+                        format!("{}...", &text[..byte_pos])
+                    } else {
+                        text.to_string()
+                    };
+                    log::debug!("[Proxy][SSE][F→B] {}", msg_preview);
 
                     let parsed = serde_json::from_str::<serde_json::Value>(&text).ok();
                     let msg_type = parsed.as_ref()
@@ -621,7 +626,7 @@ async fn bridge_opencode_sse(
                             .and_then(|v| v.as_str())
                             .unwrap_or("once");
                         let reply_url = format!("{}/permission/{}/reply", base_url, permission_id);
-                        ts_print!("[Proxy][SSE][P] Replying to permission: {} -> {}", permission_id, response);
+                        log::debug!("[Proxy][SSE][P] Replying to permission: {} -> {}", permission_id, response);
                         match client
                             .post(&reply_url)
                             .header("Content-Type", "application/json")
@@ -632,8 +637,11 @@ async fn bridge_opencode_sse(
                             Ok(resp) => {
                                 let status = resp.status();
                                 let body = resp.text().await.unwrap_or_default();
-                                ts_print!("[Proxy][SSE][P] Reply response: HTTP {} body={}", status, 
-                                    if body.len() > 200 { format!("{}...", &body[..200]) } else { body });
+                                log::debug!("[Proxy][SSE][P] Reply response: HTTP {} body={}", status, 
+                                    if body.len() > 200 {
+                                        let byte_pos = body.char_indices().nth(200).map(|(i, _)| i).unwrap_or(body.len());
+                                        format!("{}...", &body[..byte_pos])
+                                    } else { body });
                             }
                             Err(e) => {
                                 ts_eprint!("[Proxy][SSE] Failed to reply to permission: {}", e);

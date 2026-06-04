@@ -2542,10 +2542,8 @@ watch(
     }
     if (props.chat.isZeroClaw || props.chat.isGroupChat) {
       await loadTasks()
-      showTaskPanel.value = true
-      requestAnimationFrame(() => {
-        calcTaskPanelHeight()
-      })
+      showAIPanel.value = true
+      showTaskPanel.value = false
       showMembersPanel.value = !!props.chat.isGroupChat
     }
   },
