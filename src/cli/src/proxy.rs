@@ -1676,8 +1676,9 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
                         };
                         crate::groupchats::add_member(data_dir, group_id, body_bytes).await
                     } else if action.starts_with("members/") && method == hyper::Method::DELETE {
-                        let agent_name = &action["members/".len()..];
-                        crate::groupchats::remove_member(data_dir, group_id, agent_name).await
+                        let raw_name = &action["members/".len()..];
+                        let agent_name = urlencoding::decode(raw_name).unwrap_or_else(|_| raw_name.into()).to_string();
+                        crate::groupchats::remove_member(data_dir, group_id, &agent_name).await
                     } else if action == "messages" && method == hyper::Method::GET {
                         crate::groupchats::get_messages(data_dir, group_id).await
                     } else if action == "messages" && method == hyper::Method::POST {

@@ -136,7 +136,8 @@ pub async fn get_members(data_dir: &str, group_id: &str) -> Response<BoxBody<Byt
 
 #[derive(Debug, serde::Deserialize)]
 struct AddMemberRequest {
-    agent_name: String,
+    #[serde(default)]
+    members: Vec<String>,
 }
 
 pub async fn add_member(data_dir: &str, group_id: &str, body_bytes: Bytes) -> Response<BoxBody<Bytes, hyper::Error>> {
@@ -152,15 +153,21 @@ pub async fn add_member(data_dir: &str, group_id: &str, body_bytes: Bytes) -> Re
         Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("DB error: {}", e)),
     };
 
-    let agent_name = req.agent_name;
-    if !gc.members.contains(&agent_name) {
-        gc.members.push(agent_name.clone());
-        match db::update_group_chat(data_dir, group_id, None, Some(&gc.members)) {
-            Ok(()) => ok_response(&serde_json::json!({ "status": "added", "group_id": group_id, "agent": agent_name })),
-            Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("DB error: {}", e)),
-        }
-    } else {
-        ok_response(&serde_json::json!({ "status": "already_member", "group_id": group_id, "agent": agent_name }))
+    let added: Vec<&str> = req.members.iter().filter(|name| {
+        !gc.members.contains(name)
+    }).map(|s| s.as_str()).collect();
+
+    for name in &added {
+        gc.members.push(name.to_string());
+    }
+
+    if added.is_empty() {
+        return ok_response(&serde_json::json!({ "status": "already_member", "group_id": group_id, "members": req.members }));
+    }
+
+    match db::update_group_chat(data_dir, group_id, None, Some(&gc.members)) {
+        Ok(()) => ok_response(&serde_json::json!({ "status": "added", "group_id": group_id, "members": added })),
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("DB error: {}", e)),
     }
 }
 
