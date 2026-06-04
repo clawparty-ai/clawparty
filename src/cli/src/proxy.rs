@@ -216,27 +216,30 @@ async fn proxy_http(req: Request<Incoming>) -> anyhow::Result<Response<BoxBody>>
     let req_path = req.uri().path().to_string();
     let method = req.method().clone();
 
+    let auth_value = req.headers().get(header::AUTHORIZATION).cloned();
     let body_bytes = req.collect().await?.to_bytes();
     let backend_url = backend_uri.to_string();
 
     let reqwest_client = reqwest::Client::new();
-    let resp = match method {
-        hyper::Method::GET => {
-            reqwest_client.get(&backend_url).send().await
+    let build_req = |method: &hyper::Method, url: &str, body: Option<Vec<u8>>| {
+        let mut builder = match *method {
+            hyper::Method::GET => reqwest_client.get(url),
+            hyper::Method::POST => reqwest_client.post(url),
+            hyper::Method::DELETE => reqwest_client.delete(url),
+            _ => reqwest_client.get(url),
+        };
+        if let Some(auth) = &auth_value {
+            if let Ok(auth_str) = auth.to_str() {
+                builder = builder.header("Authorization", auth_str);
+            }
         }
-        hyper::Method::POST => {
-            reqwest_client.post(&backend_url)
-                .body(body_bytes.to_vec())
-                .send().await
+        if let Some(b) = body {
+            builder = builder.body(b);
         }
-        hyper::Method::DELETE => {
-            reqwest_client.delete(&backend_url)
-                .send().await
-        }
-        _ => {
-            reqwest_client.get(&backend_url).send().await
-        }
+        builder.send()
     };
+
+    let resp = build_req(&method, &backend_url, (method == hyper::Method::POST).then_some(body_bytes.to_vec())).await;
 
     let resp = match resp {
         Ok(r) => r,
