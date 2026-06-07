@@ -16,6 +16,8 @@
       :wikiPanelVisible="showWikiPanel"
       :showRadarButton="chat.isZeroClaw || chat.isGroupChat"
       :radarPanelVisible="showRadarPanel"
+      :showE2AButton="chat.isZeroClaw || chat.isGroupChat"
+      :e2APanelVisible="showE2APanel"
       @switchSession="$emit('switchSession', $event)"
       @deleteGroup="$emit('deleteGroup', $event)"
       @leaveGroup="$emit('leaveGroup', $event)"
@@ -30,6 +32,7 @@
       @toggleWikiPanel="togglePanel('wiki')"
       @toggleRadarPanel="togglePanel('radar')"
       @showMembers="showMembersPanel = !showMembersPanel"
+      @toggleE2APanel="togglePanel('e2a')"
     />
     <div class="chat-body-wrapper">
       <div class="chat-content" :class="{ 'with-members-panel': showMembersPanel }">
@@ -99,6 +102,19 @@
       v-if="(chat.isZeroClaw || chat.isGroupChat) && showAIPanel"
       :entries="thinkingLog"
       :panelHeight="taskPanelInitialHeight"
+    />
+    <E2APanel
+      v-if="(chat.isZeroClaw || chat.isGroupChat) && showE2APanel"
+      :agentName="agentName || chat.display_name || chat.agent_name || chat.ownerAgent"
+      :datasets="e2aDatasets"
+      :expanded="e2APanelExpanded"
+      :initialHeight="taskPanelInitialHeight"
+      :refreshing="isE2ARefreshing"
+      :isFullscreen="fullscreenPanel === 'e2a'"
+      @toggle="e2APanelExpanded = !e2APanelExpanded"
+      @refresh="loadE2ADatasets"
+      @uploaded="handleE2AUploaded"
+      @toggleFullscreen="toggleFullscreenPanel('e2a')"
     />
     <div class="messages" ref="messagesContainer" @click="handleMessagesClick">
       <div class="date-divider">
@@ -298,7 +314,9 @@ import WebSharePanel from './WebSharePanel.vue'
 import WikiPanel from './WikiPanel.vue'
 import RadarPanel from './RadarPanel.vue'
 import AIPanel from './AIPanel.vue'
+import E2APanel from './E2APanel.vue'
 import { chatService, taskService, kanbanService, ZeroClawWS, zagentService, groupChatService, webshareService, wikiService } from '../services/chatService'
+import { e2aService } from '../services/e2aService'
 import { radarService } from '../services/radarService'
 import { getAvatarColor } from '../utils/avatar'
 
@@ -533,6 +551,7 @@ watch(showTaskPanel, (visible) => {
     showWebSharePanel.value = false
     showWikiPanel.value = false
     showAIPanel.value = false
+    showE2APanel.value = false
     // If another panel was fullscreen, keep fullscreen for this panel
     if (fullscreenPanel.value && fullscreenPanel.value !== 'task') {
       fullscreenPanel.value = 'task'
@@ -546,6 +565,7 @@ watch(showWikiPanel, (visible) => {
     showWebSharePanel.value = false
     showRadarPanel.value = false
     showAIPanel.value = false
+    showE2APanel.value = false
     // If another panel was fullscreen, keep fullscreen for this panel
     if (fullscreenPanel.value && fullscreenPanel.value !== 'wiki') {
       fullscreenPanel.value = 'wiki'
@@ -557,6 +577,35 @@ watch(showWikiPanel, (visible) => {
 const showRadarPanel = ref(false)
 const radarPanelExpanded = ref(true)
 const isRadarRefreshing = ref(false)
+
+// E2A panel state
+const showE2APanel = ref(false)
+const e2APanelExpanded = ref(true)
+const e2aDatasets = ref([])
+const isE2ARefreshing = ref(false)
+
+const loadE2ADatasets = async () => {
+  if (!props.chat.isZeroClaw && !props.chat.isGroupChat) return
+  const agentName = props.agentName || props.chat.agent_name || props.chat.ownerAgent
+  if (!agentName) return
+  try {
+    isE2ARefreshing.value = true
+    const res = await e2aService.list(agentName)
+    if (res.data && res.data.datasets) {
+      e2aDatasets.value = res.data.datasets
+    }
+  } catch (e) {
+    console.error('[E2A] Failed to load datasets:', e)
+  } finally {
+    isE2ARefreshing.value = false
+  }
+}
+
+const handleE2AUploaded = () => {
+  setTimeout(() => {
+    loadE2ADatasets()
+  }, 500)
+}
 
 // AI Panel state
 const showAIPanel = ref(false)
@@ -602,6 +651,7 @@ watch(showRadarPanel, (visible) => {
     showWebSharePanel.value = false
     showWikiPanel.value = false
     showAIPanel.value = false
+    showE2APanel.value = false
     // If another panel was fullscreen, keep fullscreen for this panel
     if (fullscreenPanel.value && fullscreenPanel.value !== 'radar') {
       fullscreenPanel.value = 'radar'
@@ -615,13 +665,28 @@ watch(showAIPanel, (visible) => {
     showWebSharePanel.value = false
     showWikiPanel.value = false
     showRadarPanel.value = false
+    showE2APanel.value = false
     requestAnimationFrame(() => {
       calcTaskPanelHeight()
     })
   }
 })
 
-// Fullscreen panel state: 'task' | 'wiki' | 'radar' | 'webshare' | 'aipanel' | null
+watch(showE2APanel, (visible) => {
+  if (visible) {
+    showTaskPanel.value = false
+    showWebSharePanel.value = false
+    showWikiPanel.value = false
+    showRadarPanel.value = false
+    showAIPanel.value = false
+    if (fullscreenPanel.value && fullscreenPanel.value !== 'e2a') {
+      fullscreenPanel.value = 'e2a'
+    }
+    loadE2ADatasets()
+  }
+})
+
+// Fullscreen panel state: 'task' | 'wiki' | 'radar' | 'webshare' | 'aipanel' | 'e2a' | null
 const fullscreenPanel = ref(null)
 
 const toggleFullscreenPanel = (panelName) => {
@@ -638,7 +703,8 @@ const togglePanel = (panelName) => {
     wiki: showWikiPanel,
     radar: showRadarPanel,
     webshare: showWebSharePanel,
-    aipanel: showAIPanel
+    aipanel: showAIPanel,
+    e2a: showE2APanel
   }
   const targetRef = panelMap[panelName]
   if (!targetRef) return
@@ -651,6 +717,7 @@ const togglePanel = (panelName) => {
   showRadarPanel.value = false
   showWebSharePanel.value = false
   showAIPanel.value = false
+  showE2APanel.value = false
   
   if (!isCurrentlyVisible) {
     // Show the target panel
@@ -2579,6 +2646,7 @@ const handleMessagesClick = (e) => {
   showWikiPanel.value = false
   showRadarPanel.value = false
   showAIPanel.value = false
+  showE2APanel.value = false
   fullscreenPanel.value = null
 }
 

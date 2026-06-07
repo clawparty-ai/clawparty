@@ -74,6 +74,15 @@
           <span style="font-size: 13px;">🤔</span>
         </button>
         <button
+          v-if="showE2AButton"
+          class="header-btn"
+          :class="{ active: e2APanelVisible }"
+          title="Excel-to-Agent"
+          @click="emit('toggleE2APanel')"
+        >
+          <span style="font-size: 13px;">📊</span>
+        </button>
+        <button
           v-if="showWebShareButton"
           class="header-btn"
           :class="{ active: webSharePanelVisible }"
@@ -191,10 +200,18 @@ const props = defineProps({
   radarPanelVisible: {
     type: Boolean,
     default: false
+  },
+  showE2AButton: {
+    type: Boolean,
+    default: false
+  },
+  e2APanelVisible: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload', 'toggleTaskPanel', 'toggleWebSharePanel', 'toggleWikiPanel', 'toggleRadarPanel', 'showMembers', 'toggleAIPanel'])
+const emit = defineEmits(['switchSession', 'deleteGroup', 'leaveGroup', 'back', 'download', 'download-md', 'download-pdf', 'reload', 'toggleTaskPanel', 'toggleWebSharePanel', 'toggleWikiPanel', 'toggleRadarPanel', 'showMembers', 'toggleAIPanel', 'toggleE2APanel'])
 </script>
 
 <style scoped>

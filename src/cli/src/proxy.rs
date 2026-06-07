@@ -1789,6 +1789,18 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
         return Ok(resp);
     }
 
+    // E2A (Excel-2-Agent) API routes — handled locally by Rust
+    if path.starts_with("/api/e2a/") {
+        if let Some(data_dir) = DATA_DIR.get() {
+            if let Some(resp) = crate::e2a::route(data_dir, &path, &method, req).await {
+                return Ok(resp);
+            }
+        }
+        let mut resp = Response::new(box_body(Bytes::from(r#"{"error":"Service Unavailable"}"#)));
+        *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+        return Ok(resp);
+    }
+
     // Join Party API — register this endpoint to a ZTM Hub and join the mesh
     if path == "/api/join-party" && method == hyper::Method::POST {
         match handle_join_party(req).await {

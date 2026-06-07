@@ -19,6 +19,7 @@ mod agents;
 mod groupchats;
 mod kanban;
 mod global_config;
+mod e2a;
 
 use agent::AgentManager;
 use args::Args;

@@ -43,3 +43,4 @@ base64 = "0.22"
 log = "0.4"
 env_logger = "0.11"
 rust-embed = { version = "8", features = ["include-exclude"] }
+calamine = "0.26"

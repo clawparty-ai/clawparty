@@ -52,3 +52,6 @@ npm-debug.log*
 *.pem
 *.key
 clawparty.db
+
+# E2A design docs (internal, not open source)
+e2a/
