@@ -21,5 +21,13 @@ export const e2aService = {
   deleteDataset(agentName, dataset) {
     const url = `/e2a/${encodeURIComponent(agentName)}/${encodeURIComponent(dataset)}`
     return del(url)
+  },
+
+  saveFile(agentName, dataset, filename, content) {
+    const url = `/e2a/${encodeURIComponent(agentName)}/save-file/${encodeURIComponent(dataset)}/${encodeURIComponent(filename)}`
+    return post(url, content, {
+      headers: { 'Content-Type': 'text/plain' },
+      transformRequest: [function(data) { return data }]
+    })
   }
 }

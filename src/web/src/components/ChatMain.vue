@@ -111,10 +111,12 @@
       :initialHeight="taskPanelInitialHeight"
       :refreshing="isE2ARefreshing"
       :isFullscreen="fullscreenPanel === 'e2a'"
+      :messages="filteredMessages"
       @toggle="e2APanelExpanded = !e2APanelExpanded"
       @refresh="loadE2ADatasets"
       @uploaded="handleE2AUploaded"
       @toggleFullscreen="toggleFullscreenPanel('e2a')"
+      @send="handleE2ASend"
     />
     <div class="messages" ref="messagesContainer" @click="handleMessagesClick">
       <div class="date-divider">
@@ -605,6 +607,10 @@ const handleE2AUploaded = () => {
   setTimeout(() => {
     loadE2ADatasets()
   }, 500)
+}
+
+const handleE2ASend = (text) => {
+  emit('send', text)
 }
 
 // AI Panel state

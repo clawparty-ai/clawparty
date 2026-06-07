@@ -380,6 +380,121 @@ fn generate_formulas_md(all_formulas: &[(String, Vec<FormulaCell>)], output_path
     let _ = std::fs::write(output_path, md);
 }
 
+// ── CSV Parser ──
+
+fn parse_csv_line(line: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let chars: Vec<char> = line.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let ch = chars[i];
+        if in_quotes {
+            if ch == '"' {
+                if i + 1 < chars.len() && chars[i + 1] == '"' {
+                    current.push('"');
+                    i += 1;
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                current.push(ch);
+            }
+        } else {
+            if ch == '"' {
+                in_quotes = true;
+            } else if ch == ',' {
+                result.push(current);
+                current = String::new();
+            } else {
+                current.push(ch);
+            }
+        }
+        i += 1;
+    }
+    result.push(current);
+    result
+}
+
+fn parse_csv_file(raw_path: &std::path::Path, dataset_dir: &std::path::Path) -> Result<Vec<SheetInfo>, String> {
+    let content = std::fs::read_to_string(raw_path)
+        .map_err(|e| format!("无法读取 CSV 文件: {}", e))?;
+
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() {
+        return Err("CSV 文件为空".to_string());
+    }
+
+    let headers = parse_csv_line(lines[0]);
+    let col_count = headers.len();
+    let data_rows: Vec<Vec<String>> = lines[1..].iter()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| parse_csv_line(l))
+        .collect();
+    let row_count = data_rows.len();
+
+    let sheet_name = raw_path.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Sheet1")
+        .to_string();
+
+    let mut column_types = Vec::new();
+    for col in 0..col_count {
+        let col_values: Vec<String> = data_rows.iter()
+            .filter_map(|r| r.get(col).cloned())
+            .filter(|v| !v.is_empty())
+            .collect();
+        column_types.push(detect_column_type(&col_values).to_string());
+    }
+
+    let sheet_info = SheetInfo {
+        name: sheet_name.clone(),
+        row_count,
+        col_count,
+        headers: headers.clone(),
+        column_types: column_types.clone(),
+    };
+
+    let sheets_dir = dataset_dir.join("sheets");
+    let _ = std::fs::create_dir_all(&sheets_dir);
+
+    // CSV output (copy)
+    let csv_path = sheets_dir.join(format!("{}.csv", sanitize_filename(&sheet_name)));
+    std::fs::write(&csv_path, &content)
+        .map_err(|e| format!("无法写入 CSV: {}", e))?;
+
+    // Markdown output
+    let md_path = sheets_dir.join(format!("{}.md", sanitize_filename(&sheet_name)));
+    let mut md = format!("# {}\n\n- 数据行数: {}\n- 列数: {}\n\n", sheet_name, row_count, col_count);
+    md.push_str("| ");
+    for (i, h) in headers.iter().enumerate() {
+        if i > 0 { md.push_str(" | "); }
+        md.push_str(h);
+    }
+    md.push_str(" |\n|");
+    for _ in 0..col_count { md.push_str("---|"); }
+    md.push('\n');
+    for row in &data_rows {
+        md.push('|');
+        for cell in row {
+            let val = if cell.len() > 200 {
+                format!("{}...", cell.chars().take(200).collect::<String>())
+            } else {
+                cell.clone()
+            };
+            md.push(' ');
+            md.push_str(&val.replace('\n', " ").replace('\r', "").replace('|', "\\|"));
+            md.push_str(" |");
+        }
+        md.push('\n');
+    }
+    std::fs::write(&md_path, &md)
+        .map_err(|e| format!("无法写入 Markdown: {}", e))?;
+
+    Ok(vec![sheet_info])
+}
+
 // ── API Handlers ──
 
 async fn handle_upload(data_dir: &str, agent_name: &str, filename: &str, body: Bytes) -> Response<BoxBody<Bytes, hyper::Error>> {
@@ -411,16 +526,28 @@ async fn handle_upload(data_dir: &str, agent_name: &str, filename: &str, body: B
     }
     let _ = tokio::fs::create_dir_all(&dataset_dir).await;
 
-    let raw_path = dataset_dir.join("raw.xlsx");
+    let is_csv = filename.to_lowercase().ends_with(".csv");
+    let ext = if is_csv { "csv" } else { "xlsx" };
+    let raw_path = dataset_dir.join(format!("raw.{}", ext));
     if let Err(e) = tokio::fs::write(&raw_path, &body).await {
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to save file: {}", e));
     }
 
-    let (sheets, all_formulas) = match parse_workbook(&raw_path, &dataset_dir) {
-        Ok(result) => result,
-        Err(e) => {
-            let _ = tokio::fs::remove_dir_all(&dataset_dir).await;
-            return error_response(StatusCode::BAD_REQUEST, &e);
+    let (sheets, all_formulas) = if is_csv {
+        match parse_csv_file(&raw_path, &dataset_dir) {
+            Ok(sheets) => (sheets, Vec::new()),
+            Err(e) => {
+                let _ = tokio::fs::remove_dir_all(&dataset_dir).await;
+                return error_response(StatusCode::BAD_REQUEST, &e);
+            }
+        }
+    } else {
+        match parse_workbook(&raw_path, &dataset_dir) {
+            Ok(result) => result,
+            Err(e) => {
+                let _ = tokio::fs::remove_dir_all(&dataset_dir).await;
+                return error_response(StatusCode::BAD_REQUEST, &e);
+            }
         }
     };
 
@@ -499,22 +626,42 @@ async fn handle_list(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes
 
         // Also check sheets directory
         let sheets_dir = path.join("sheets");
-        if sheets_dir.exists() && sheets.is_empty() {
+        if sheets_dir.exists() {
             if let Ok(mut dir_entries) = tokio::fs::read_dir(&sheets_dir).await {
+                let mut existing_names: std::collections::HashSet<String> = sheets.iter().map(|s: &SheetInfo| s.name.clone()).collect();
                 while let Ok(Some(de)) = dir_entries.next_entry().await {
                     let fname = de.file_name().to_string_lossy().to_string();
-                    if fname.ends_with(".csv") && !fname.starts_with('.') {
-                        let sheet_name = fname.trim_end_matches(".csv").to_string();
-                        let row_count = 0usize;
-                        let col_count = 0usize;
-                        sheets.push(SheetInfo {
-                            name: sheet_name,
-                            row_count,
-                            col_count,
-                            headers: vec![],
-                            column_types: vec![],
-                        });
+                    if fname.starts_with('.') { continue; }
+                    if fname.ends_with(".csv") {
+                        let sname = fname.trim_end_matches(".csv").to_string();
+                        if !existing_names.contains(&sname) {
+                            existing_names.insert(sname.clone());
+                            sheets.push(SheetInfo {
+                                name: sname,
+                                row_count: 0,
+                                col_count: 0,
+                                headers: vec![],
+                                column_types: vec![],
+                            });
+                        }
                     }
+                }
+            }
+        }
+
+        // Also check for dashboard files in the dataset directory
+        if let Ok(mut dir_entries) = tokio::fs::read_dir(&path).await {
+            while let Ok(Some(de)) = dir_entries.next_entry().await {
+                let fname = de.file_name().to_string_lossy().to_string();
+                if fname.ends_with("-dashboard.md") && !fname.starts_with('.') {
+                    let dash_name = fname.trim_end_matches(".md").to_string();
+                    sheets.push(SheetInfo {
+                        name: dash_name,
+                        row_count: 0,
+                        col_count: 0,
+                        headers: vec![],
+                        column_types: vec![],
+                    });
                 }
             }
         }
@@ -580,6 +727,34 @@ async fn handle_file(data_dir: &str, agent_name: &str, dataset: &str, filename: 
         .header(header::CONTENT_TYPE, mime)
         .body(box_body(Bytes::from(data)))
         .unwrap()
+}
+
+async fn handle_save_file(data_dir: &str, agent_name: &str, dataset: &str, filename: &str, body: Bytes) -> Response<BoxBody<Bytes, hyper::Error>> {
+    if dataset.contains("..") || dataset.contains('/') || dataset.contains('\\') {
+        return error_response(StatusCode::FORBIDDEN, "Forbidden");
+    }
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return error_response(StatusCode::FORBIDDEN, "Forbidden");
+    }
+
+    let workspace = match get_agent_workspace(data_dir, agent_name) {
+        Ok(w) => w,
+        Err(_) => return error_response(StatusCode::NOT_FOUND, "Agent not found"),
+    };
+
+    let file_path = workspace.join("e2a").join(dataset).join(filename);
+    if !file_path.starts_with(&workspace.join("e2a")) {
+        return error_response(StatusCode::FORBIDDEN, "Forbidden path");
+    }
+
+    if let Some(parent) = file_path.parent() {
+        let _ = tokio::fs::create_dir_all(parent).await;
+    }
+
+    match tokio::fs::write(&file_path, &body).await {
+        Ok(_) => ok_response(&serde_json::json!({ "message": "Saved" })),
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to save: {}", e)),
+    }
 }
 
 async fn handle_delete(data_dir: &str, agent_name: &str, dataset: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
@@ -653,6 +828,18 @@ pub async fn route(
                         }
                     };
                     Some(handle_upload(data_dir, &agent, &filename, body_bytes).await)
+                }
+                "save-file" if method == hyper::Method::POST && segments.len() >= 4 => {
+                    let dataset = urlencoding::decode(segments[2]).unwrap_or_else(|_| segments[2].into()).to_string();
+                    let fname_enc = segments[3..].join("/");
+                    let filename = urlencoding::decode(&fname_enc).map(|c| c.into_owned()).unwrap_or(fname_enc);
+                    let body_bytes = match req.collect().await {
+                        Ok(body) => body.to_bytes(),
+                        Err(_) => {
+                            return Some(error_response(StatusCode::BAD_REQUEST, "Failed to read body"));
+                        }
+                    };
+                    Some(handle_save_file(data_dir, &agent, &dataset, &filename, body_bytes).await)
                 }
                 "list" if method == hyper::Method::GET => {
                     Some(handle_list(data_dir, &agent).await)

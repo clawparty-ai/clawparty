@@ -1,17 +1,8 @@
 <template>
-  <div class="e2a-panel" :class="{ fullscreen: isFullscreen }" :style="{ height: isFullscreen ? '100vh' : panelHeight + 'px' }">
+  <div class="e2a-panel" :class="{ fullscreen: isFullscreen }" :style="isFullscreen ? {} : { height: panelHeight + 'px' }">
     <div class="e2a-panel-header" @click="toggleExpanded">
       <span class="e2a-panel-icon">📊</span>
       <span class="e2a-panel-title">Excel-to-Agent</span>
-      <button
-        class="mode-btn analyze-btn"
-        :class="{ active: currentMode === 'analyze' }"
-        @click.stop="switchMode('analyze')"
-        title="数据分析"
-      >
-        <span class="mode-btn-icon">🔍</span>
-        <span class="mode-btn-text">数据分析</span>
-      </button>
       <button
         class="mode-btn display-btn"
         :class="{ active: currentMode === 'display' }"
@@ -22,6 +13,7 @@
         <span class="mode-btn-text">数据展示</span>
       </button>
       <button
+        v-if="false"
         class="mode-btn formula-btn"
         :class="{ active: currentMode === 'formula' }"
         @click.stop="switchMode('formula')"
@@ -31,6 +23,7 @@
         <span class="mode-btn-text">公式分析</span>
       </button>
       <button
+        v-if="false"
         class="mode-btn fill-btn"
         :class="{ active: currentMode === 'fill' }"
         @click.stop="switchMode('fill')"
@@ -82,7 +75,7 @@
             <input
               ref="fileInput"
               type="file"
-              accept=".xlsx,.xls"
+              accept=".xlsx,.xls,.csv"
               style="display: none"
               @change="handleFileChange"
             />
@@ -103,17 +96,28 @@
                 <button class="dataset-delete" @click.stop="deleteDataset(ds.name)" title="删除">×</button>
               </div>
               <div v-show="expandedDataset === ds.name" class="dataset-sheets">
-                <div
-                  v-for="sheet in ds.sheets"
-                  :key="sheet.name"
-                  class="sheet-item"
-                  :class="{ selected: selectedSheet === sheet.name && selectedDataset === ds.name }"
-                  @click.stop="selectSheet(ds.name, sheet.name)"
-                >
-                  <span class="sheet-icon">{{ sheet.name === 'formulas.md' ? '📐' : '📋' }}</span>
-                  <span class="sheet-name">{{ sheet.name }}</span>
-                  <span class="sheet-info">{{ sheet.row_count }}行 × {{ sheet.col_count }}列</span>
-                </div>
+                <template v-for="sheet in ds.sheets.filter(s => !s.name.endsWith('-dashboard'))" :key="sheet.name">
+                  <div
+                    class="sheet-item"
+                    :class="{ selected: selectedSheet === sheet.name && selectedDataset === ds.name }"
+                    @click.stop="selectSheet(ds.name, sheet.name)"
+                  >
+                    <span class="sheet-icon">📋</span>
+                    <span class="sheet-name">{{ sheet.name }}</span>
+                    <span class="sheet-info">{{ sheet.row_count }}行 × {{ sheet.col_count }}列</span>
+                  </div>
+                </template>
+                <template v-for="sheet in ds.sheets.filter(s => s.name.endsWith('-dashboard'))" :key="'dash-'+sheet.name">
+                  <div
+                    class="sheet-item dashboard-item"
+                    :class="{ selected: selectedSheet === sheet.name && selectedDataset === ds.name }"
+                    @click.stop="selectSheet(ds.name, sheet.name)"
+                  >
+                    <span class="sheet-icon">📈</span>
+                    <span class="sheet-name">{{ sheet.name.replace('-dashboard', '') }}</span>
+                    <span class="sheet-info">Dashboard</span>
+                  </div>
+                </template>
                 <div
                   class="sheet-item special"
                   :class="{ selected: selectedSheet === 'formulas.md' && selectedDataset === ds.name }"
@@ -130,10 +134,25 @@
         <div class="e2a-display-pane">
           <!-- Mode: Data Analysis -->
           <div v-if="currentMode === 'analyze'" class="display-analyze">
-            <div v-if="analyzeContent" class="markdown-body" v-html="analyzeContent"></div>
+            <template v-if="analyzeContent">
+              <template v-if="analysisCharts.length > 0 || analyzeContent === 'loading'">
+                <div class="analyze-charts" ref="analyzeChartsEl">
+                  <div v-for="(chart, ci) in analysisCharts" :key="ci" class="analysis-chart-card">
+                    <div class="analysis-chart-title">{{ chart.title }}</div>
+                    <canvas :ref="el => setChartCanvas(ci, el)" class="analysis-chart-canvas"></canvas>
+                  </div>
+                  <div v-if="analyzeContent === 'loading'" class="analyze-loading">
+                    <span class="upload-spinner"></span> 正在生成 Dashboard...
+                  </div>
+                </div>
+                <div class="analyze-divider"></div>
+                <div class="analyze-summary markdown-body" v-html="analysisSummary"></div>
+              </template>
+              <div v-else class="markdown-body" v-html="analyzeContent"></div>
+            </template>
             <div v-else class="display-empty">
               <span class="empty-icon">🔍</span>
-              <span class="empty-text">上传 Excel 文件后，自动分析结果将显示在这里</span>
+              <span class="empty-text">点击左侧 Sheet 触发智能分析，将生成 Dashboard + 文字总结</span>
             </div>
           </div>
 
@@ -203,6 +222,24 @@
             </div>
           </div>
         </div>
+        <!-- Right: Regenerate panel (only in dashboard view) -->
+        <div v-if="currentMode === 'analyze' && analyzeContent && selectedSheet && selectedSheet.endsWith('-dashboard')" class="e2a-regenerate-pane">
+          <div class="regenerate-title">重新生成</div>
+          <textarea
+            v-model="regenerateSuggestion"
+            class="regenerate-input"
+            placeholder="输入重新生成建议..."
+            rows="4"
+          ></textarea>
+          <button
+            class="regenerate-btn"
+            :disabled="isRegenerating"
+            @click="regenerateDashboard"
+          >
+            <span v-if="isRegenerating" class="upload-spinner"></span>
+            {{ isRegenerating ? '生成中...' : '重新生成' }}
+          </button>
+        </div>
       </div>
     </div>
     <div
@@ -232,18 +269,18 @@ const props = defineProps({
   expanded: { type: Boolean, default: true },
   initialHeight: { type: Number, default: 180 },
   refreshing: { type: Boolean, default: false },
-  isFullscreen: { type: Boolean, default: false }
+  isFullscreen: { type: Boolean, default: false },
+  messages: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['toggle', 'refresh', 'uploaded', 'toggleFullscreen'])
+const emit = defineEmits(['toggle', 'refresh', 'uploaded', 'toggleFullscreen', 'send'])
 
 console.log('[E2APanel] component loaded')
 
-const currentMode = ref('analyze')
+const currentMode = ref('display')
 const expandedDataset = ref(null)
 const selectedDataset = ref(null)
 const selectedSheet = ref(null)
-const analyzeContent = ref('')
 const formulaContent = ref('')
 const csvHeaders = ref([])
 const csvRows = ref([])
@@ -316,15 +353,91 @@ const toggleDataset = (ds) => {
 const selectSheet = async (dsName, sheetName) => {
   selectedDataset.value = dsName
   selectedSheet.value = sheetName
-  if (sheetName === 'formulas.md') {
+  if (sheetName.endsWith('-dashboard')) {
+    await loadDashboard(dsName, sheetName)
+  } else if (sheetName === 'formulas.md') {
     currentMode.value = 'formula'
     await loadFormulaContent()
-  } else if (currentMode.value === 'analyze') {
-    await loadSheetMarkdown(dsName, sheetName)
-  } else if (currentMode.value === 'display') {
-    await loadCSV(dsName, sheetName)
-  } else if (currentMode.value === 'formula') {
-    await loadFormulaContent()
+  } else {
+    // Check if a dashboard already exists
+    const dashName = sheetName + '-dashboard'
+    const ds = internalDatasets.value.find(d => d.name === dsName)
+    const hasDashboard = ds && ds.sheets && ds.sheets.some(s => s.name === dashName)
+    if (hasDashboard) {
+      // Show markdown content directly
+      await loadSheetMarkdown(dsName, sheetName)
+    } else {
+      // Trigger analysis in background, show markdown while waiting
+      await loadSheetMarkdown(dsName, sheetName)
+      await analyzeSheet(dsName, sheetName)
+    }
+  }
+}
+
+const loadDashboard = async (dsName, dashboardName) => {
+  try {
+    const filename = dashboardName.endsWith('.md') ? dashboardName : dashboardName + '.md'
+    const res = await e2aService.getFile(props.agentName, dsName, filename)
+    const content = typeof res === 'string' ? res : res?.data || ''
+    if (!content) {
+      analyzeContent.value = '<p style="color:red;">Dashboard 文件为空</p>'
+      return
+    }
+    const { charts, text } = parseAnalysisResult(content)
+    analyzeContent.value = content
+    analysisCharts.value = charts
+    analysisSummary.value = marked.parse(text)
+    currentMode.value = 'analyze'
+    await nextTick()
+    if (charts.length > 0) {
+      renderAnalysisCharts()
+    }
+  } catch (e) {
+    console.error('[E2A] Failed to load dashboard:', e)
+    analyzeContent.value = '<p style="color:red;">加载 Dashboard 失败</p>'
+  }
+}
+
+const regenerateDashboard = async () => {
+  if (!selectedSheet.value || !selectedDataset.value) return
+  
+  const dashboardName = selectedSheet.value
+  const sheetName = dashboardName.replace('-dashboard', '')
+  
+  try {
+    const safeName = sheetName.replace(/[/\\:*?"<>|]/g, '_')
+    const res = await e2aService.getFile(props.agentName, selectedDataset.value, safeName + '.md')
+    const mdContent = typeof res === 'string' ? res : res?.data || ''
+    if (!mdContent) return
+    
+    const suggestion = regenerateSuggestion.value.trim()
+    const prompt = `基于以下数据和用户的补充建议，重新生成一个"描述+多个 Chart"的 Dashboard。
+
+**重要：不要创建任何文件，直接在聊天回复中返回分析内容。**
+
+用户的重新生成建议：${suggestion || '请优化图表展示和文字描述'}
+
+要求：
+1. 每个图表使用 \`\`\`chart 代码块包裹，内容为 JSON 格式：{"type":"bar|line|pie|doughnut","title":"图表标题","labels":["标签1","标签2"],"data":[数值1,数值2]}
+2. Chart 代码块放在前面，文字总结放在后面
+3. 图表和总结都用中文
+
+原始数据（Markdown）：
+${mdContent.substring(0, 8000)}`
+
+    isRegenerating.value = true
+    analyzedSheet.value = sheetName
+    analysisStartMsgIdx.value = props.messages.length
+    analysisCharts.value = []
+    analysisSummary.value = ''
+    analyzeContent.value = 'loading'
+    regenerateSuggestion.value = ''
+
+    emit('send', prompt)
+  } catch (e) {
+    console.error('[E2A] Failed to regenerate:', e)
+    isRegenerating.value = false
+    analyzeContent.value = '<p style="color:red;">重新生成失败</p>'
   }
 }
 
@@ -332,13 +445,176 @@ const loadSheetMarkdown = async (dsName, sheetName) => {
   try {
     const safeName = sheetName.replace(/[/\\:*?"<>|]/g, '_')
     const res = await e2aService.getFile(props.agentName, dsName, safeName + '.md')
+    analysisCharts.value = []
+    analysisSummary.value = ''
     analyzeContent.value = marked.parse(typeof res === 'string' ? res : res?.data || '')
+    currentMode.value = 'analyze'
     await nextTick()
   } catch (e) {
     console.error('[E2A] Failed to load sheet md:', e)
     analyzeContent.value = '<p style="color:red;">加载失败</p>'
+    currentMode.value = 'analyze'
   }
 }
+
+const analyzeSheet = async (dsName, sheetName) => {
+  try {
+    const safeName = sheetName.replace(/[/\\:*?"<>|]/g, '_')
+    const res = await e2aService.getFile(props.agentName, dsName, safeName + '.md')
+    const mdContent = typeof res === 'string' ? res : res?.data || ''
+    if (!mdContent) {
+      analyzeContent.value = ''
+      return
+    }
+
+    const prompt = `请分析以下 Excel 表格数据「${sheetName}」，对这些数据的类型和功能进行判断，然后用自然语言进行概括和描述，并提供分析和展示的建议，形成一个"描述+多个 Chart"的 Dashboard。
+
+**重要：不要创建任何文件，直接在聊天回复中返回分析内容。**
+
+要求：
+1. 每个图表使用 \`\`\`chart 代码块包裹，内容为 JSON 格式：{"type":"bar|line|pie|doughnut","title":"图表标题","labels":["标签1","标签2"],"data":[数值1,数值2]}
+2. Chart 代码块放在前面，文字总结放在后面
+3. 图表和总结都用中文
+
+数据（Markdown）：
+${mdContent.substring(0, 8000)}`
+
+    analyzedSheet.value = sheetName
+    analysisStartMsgIdx.value = props.messages.length
+    analysisCharts.value = []
+    analysisSummary.value = ''
+
+    emit('send', prompt)
+  } catch (e) {
+    console.error('[E2A] Failed to analyze sheet:', e)
+    analysisSummary.value = '<p style="color:red;">分析请求失败</p>'
+    analyzeContent.value = ''
+  }
+}
+
+const analyzedSheet = ref('')
+const analysisStartMsgIdx = ref(0)
+const analyzeContent = ref('')
+const analysisCharts = ref([])
+const analysisSummary = ref('')
+const analyzeChartsEl = ref(null)
+const chartCanvasRefs = ref({})
+let chartInstances = []
+const regenerateSuggestion = ref('')
+const isRegenerating = ref(false)
+
+const setChartCanvas = (idx, el) => {
+  if (el) chartCanvasRefs.value[idx] = el
+}
+
+const parseAnalysisResult = (text) => {
+  // Try to extract actual dashboard content from tool output
+  let content = text
+  const contentMatch = content.match(/<content>([\s\S]*?)<\/content>/)
+  if (contentMatch) {
+    content = contentMatch[1]
+  }
+  
+  const charts = []
+  // Try ```chart blocks first, then ```json blocks that look like charts
+  for (const pattern of [/```chart\s*\n([\s\S]*?)```/g, /```json\s*\n([\s\S]*?)```/g]) {
+    let match
+    while ((match = pattern.exec(content)) !== null) {
+      try {
+        // Strip line number prefixes like "8: " from tool output
+        const cleanJson = match[1].trim().replace(/^\d+:\s*/gm, '').trim()
+        const config = JSON.parse(cleanJson)
+        if (config.type && (config.data || config.datasets)) {
+          charts.push(config)
+        }
+      } catch (e) {
+        // invalid JSON, keep in text
+      }
+    }
+    if (charts.length > 0) break
+  }
+  
+  // Clean line numbers from text for display
+  let cleanText = content
+  if (contentMatch) {
+    cleanText = cleanText.replace(/^\d+:\s*/gm, '')
+    cleanText = cleanText.replace(/^Done:.*$/gm, '')
+    cleanText = cleanText.replace(/<path>.*?<\/path>/gs, '')
+    cleanText = cleanText.replace(/<type>.*?<\/type>/gs, '')
+    cleanText = cleanText.replace(/<content>/g, '')
+    cleanText = cleanText.replace(/<\/content>/g, '')
+    cleanText = cleanText.replace(/\(End of file.*\)/g, '')
+  }
+  
+  return { charts, text: cleanText.trim() }
+}
+
+const renderAnalysisCharts = async () => {
+  // Destroy old charts
+  chartInstances.forEach(c => c.destroy())
+  chartInstances = []
+  
+  await nextTick()
+  for (let i = 0; i < analysisCharts.value.length; i++) {
+    const canvas = chartCanvasRefs.value[i]
+    if (!canvas) continue
+    const config = analysisCharts.value[i]
+    const chart = new Chart(canvas, {
+      type: config.type || 'bar',
+      data: {
+        labels: config.labels || [],
+        datasets: config.datasets || [{
+          label: config.label || '数据',
+          data: config.data || [],
+          backgroundColor: config.type === 'pie' || config.type === 'doughnut'
+            ? (config.labels || []).map((_, j) => `hsl(${j * 360 / (config.labels || [1]).length}, 70%, 60%)`)
+            : 'rgba(64, 149, 254, 0.6)',
+          borderColor: 'rgba(64, 149, 254, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, position: 'bottom' },
+          title: { display: false }
+        }
+      }
+    })
+    chartInstances.push(chart)
+  }
+}
+
+// Watch for new messages as analysis result
+watch(() => props.messages, async (msgs) => {
+  if (!analyzedSheet.value) return
+  const newMsgs = msgs.slice(analysisStartMsgIdx.value)
+  const assistantMsgs = newMsgs.filter(m => !m.isSent && !m.isTyping && m.text)
+  if (assistantMsgs.length > 0) {
+    const last = assistantMsgs[assistantMsgs.length - 1]
+    const { charts, text } = parseAnalysisResult(last.text || '')
+    analyzeContent.value = last.text || ''
+    analysisCharts.value = charts
+    analysisSummary.value = marked.parse(text)
+    isRegenerating.value = false
+    renderAnalysisCharts()
+    
+    // Save dashboard as a markdown file
+    const sheetName = analyzedSheet.value
+    const dsName = selectedDataset.value
+    analyzedSheet.value = ''
+    if (dsName && sheetName) {
+      try {
+        const safeName = sheetName.replace(/[/\\:*?"<>|]/g, '_')
+        await e2aService.saveFile(props.agentName, dsName, safeName + '-dashboard.md', last.text || '')
+        emit('refresh')
+      } catch (e) {
+        console.error('[E2A] Failed to save dashboard:', e)
+      }
+    }
+  }
+}, { deep: true })
 
 const loadOverview = async (dsName) => {
   try {
@@ -549,6 +825,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (chartInstance) { chartInstance.destroy(); chartInstance = null }
+  chartInstances.forEach(c => c.destroy())
+  chartInstances = []
 })
 </script>
 
@@ -826,6 +1104,8 @@ onUnmounted(() => {
 .sheet-item:hover { background: rgba(0, 0, 0, 0.03); }
 .sheet-item.selected { background: rgba(64, 149, 254, 0.1); color: #4095fe; }
 .sheet-item.special { border-top: 1px dashed rgba(0, 0, 0, 0.06); margin-top: 2px; padding-top: 5px; }
+.sheet-item.dashboard-item { border-top: 1px dashed rgba(64, 149, 254, 0.2); margin-top: 2px; padding-top: 5px; }
+.sheet-item.dashboard-item .sheet-icon { color: #4095fe; }
 
 .sheet-icon { font-size: 11px; }
 .sheet-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -839,6 +1119,67 @@ onUnmounted(() => {
   flex-direction: column;
   background: #ffffff;
   min-width: 0;
+}
+
+/* Right: regenerate panel */
+.e2a-regenerate-pane {
+  width: 200px;
+  min-width: 160px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-left: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fafafa;
+}
+
+.regenerate-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.regenerate-input {
+  height: 80px;
+  min-height: 60px;
+  max-height: 120px;
+  padding: 8px;
+  font-size: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+}
+
+.regenerate-input:focus {
+  border-color: #4095fe;
+}
+
+.regenerate-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #4095fe, #667eea);
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.regenerate-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.regenerate-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .display-empty {
@@ -858,11 +1199,12 @@ onUnmounted(() => {
 /* Markdown rendering */
 .markdown-body {
   flex: 1;
-  overflow: auto;
+  overflow-y: auto;
   padding: 16px;
   font-size: 13px;
   line-height: 1.6;
   color: #333;
+  min-height: 0;
 }
 
 .markdown-body :deep(h1) { font-size: 1.4em; margin: 12px 0 8px; }
@@ -883,6 +1225,73 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* Analyze split layout */
+.analyze-charts {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px;
+  align-content: flex-start;
+}
+
+.analysis-chart-card {
+  flex: 1 1 calc(50% - 6px);
+  min-width: 250px;
+  min-height: 260px;
+  max-height: 360px;
+  background: #fafafa;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.analysis-chart-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+
+.analysis-chart-canvas {
+  flex: 1;
+  min-height: 0;
+  max-height: 300px;
+}
+
+.analyze-divider {
+  height: 2px;
+  background: rgba(0, 0, 0, 0.06);
+  margin: 0 12px;
+  flex-shrink: 0;
+}
+
+.analyze-summary {
+  flex: 0 1 40%;
+  min-height: 80px;
+  overflow-y: auto !important;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  font-size: 13px;
+  line-height: 1.6;
+  color: #333;
+}
+
+.analyze-loading {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--text-dim);
+  font-size: 13px;
 }
 
 .table-toolbar {
