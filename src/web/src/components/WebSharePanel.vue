@@ -199,7 +199,7 @@
 </template>
 
 <script setup>
-import { ref, watch, computed, onUnmounted } from 'vue'
+import { ref, watch, computed, nextTick, onUnmounted } from 'vue'
 import { marked } from 'marked'
 import { webshareService } from '../services/chatService'
 
@@ -390,9 +390,11 @@ const isMarkdownPreview = computed(() => {
   return name.endsWith('.md') || name.endsWith('.markdown')
 })
 
+const textExtensions = ['.txt', '.text', '.log', '.csv', '.tsv', '.json', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.sh', '.bat', '.bash', '.zsh', '.py', '.js', '.mjs', '.cjs', '.ts', '.jsx', '.tsx', '.css', '.scss', '.less', '.env', '.properties', '.sql', '.java', '.go', '.rs', '.c', '.cpp', '.h', '.hpp', '.rb', '.php', '.swift', '.kt', '.vue', '.svelte', '.astro', '.dart', '.r', '.lua', '.pl', '.d.ts', '.gitignore', '.editorconfig', '.dockerignore']
+
 const isTextPreview = computed(() => {
   const name = previewName.value.toLowerCase()
-  return name.endsWith('.txt') || name.endsWith('.text') || name.endsWith('.log')
+  return textExtensions.some(ext => name.endsWith(ext))
 })
 
 const loadTextContent = async () => {
@@ -410,6 +412,13 @@ const loadTextContent = async () => {
       text = decoder.decode(res)
     } else {
       text = res?.data instanceof ArrayBuffer ? new TextDecoder('utf-8').decode(res.data) : (res?.data || res)
+    }
+    if (previewName.value.toLowerCase().endsWith('.json')) {
+      try {
+        const parsed = JSON.parse(text)
+        textContent.value = JSON.stringify(parsed, null, 2)
+        return
+      } catch (_) {}
     }
     textContent.value = text
   } catch (err) {
@@ -435,10 +444,78 @@ const loadMarkdownContent = async () => {
       text = res?.data instanceof ArrayBuffer ? new TextDecoder('utf-8').decode(res.data) : (res?.data || res)
     }
     markdownContent.value = marked(text)
+    await nextTick()
+    makeTablesSortable()
   } catch (err) {
     console.error('[WebShare] Failed to load markdown:', err)
     markdownContent.value = '<p style="color:red;">加载失败</p>'
   }
+}
+
+const tableSortStates = new WeakMap()
+
+const makeTablesSortable = () => {
+  document.querySelectorAll('.preview-markdown table').forEach(table => {
+    if (table.dataset.sortable === 'true') return
+    table.dataset.sortable = 'true'
+    const headers = table.querySelectorAll('th')
+    headers.forEach((th, idx) => {
+      th.style.cursor = 'pointer'
+      th.style.userSelect = 'none'
+      th.addEventListener('click', () => sortTable(table, idx))
+    })
+  })
+}
+
+const sortTable = (table, colIdx) => {
+  let state = tableSortStates.get(table)
+  if (state && state.column === colIdx) {
+    state.asc = !state.asc
+  } else {
+    state = { column: colIdx, asc: true }
+  }
+  tableSortStates.set(table, state)
+
+  const tbody = table.querySelector('tbody')
+  const rows = Array.from((tbody || table).querySelectorAll('tr'))
+  const hasThead = !!table.querySelector('thead')
+  const allDataRows = hasThead ? rows : rows.slice(1)
+
+  const summaryPattern = /^(总计|合[计計]|小[计計]|汇总|總[计計]|合計|統計|total|sum|subtotal|grand\s*total)$/i
+
+  const isSummaryRow = (row) => {
+    return Array.from(row.cells).some(cell => {
+      const text = (cell.textContent || '').trim()
+      return summaryPattern.test(text)
+    })
+  }
+
+  const summaryRows = allDataRows.filter(isSummaryRow)
+  const regularRows = allDataRows.filter(r => !isSummaryRow(r))
+
+  regularRows.sort((a, b) => {
+    const aVal = (a.cells[colIdx]?.textContent || '').trim()
+    const bVal = (b.cells[colIdx]?.textContent || '').trim()
+    const aNum = parseFloat(aVal)
+    const bNum = parseFloat(bVal)
+    if (!isNaN(aNum) && !isNaN(bNum)) {
+      return state.asc ? aNum - bNum : bNum - aNum
+    }
+    return state.asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+  })
+
+  table.querySelectorAll('th').forEach(th => {
+    th.textContent = th.textContent.replace(/ [▲▼]$/, '')
+  })
+
+  const targetTh = table.querySelectorAll('th')[colIdx]
+  if (targetTh) {
+    targetTh.textContent += state.asc ? ' ▲' : ' ▼'
+  }
+
+  const container = tbody || table
+  regularRows.forEach(row => container.appendChild(row))
+  summaryRows.forEach(row => container.appendChild(row))
 }
 
 const toggleExpanded = () => {
@@ -532,6 +609,12 @@ watch(fullPreview, (val) => {
   }
 })
 
+watch(fullPreview, (val) => {
+  if (val) {
+    nextTick(() => makeTablesSortable())
+  }
+})
+
 onUnmounted(() => {
   document.body.classList.remove('has-fullscreen-preview')
 })
@@ -549,13 +632,15 @@ watch(() => props.files, (newFiles) => {
 const fileIcon = (name) => {
   const lower = name.toLowerCase()
   if (lower.endsWith('.html') || lower.endsWith('.htm')) return '🌐'
-  if (lower.endsWith('.css')) return '🎨'
-  if (lower.endsWith('.js') || lower.endsWith('.mjs')) return '⚡'
+  if (lower.endsWith('.css') || lower.endsWith('.scss') || lower.endsWith('.less')) return '🎨'
+  if (lower.endsWith('.js') || lower.endsWith('.mjs') || lower.endsWith('.cjs') || lower.endsWith('.ts') || lower.endsWith('.jsx') || lower.endsWith('.tsx')) return '⚡'
   if (lower.endsWith('.json')) return '📋'
+  if (lower.endsWith('.csv') || lower.endsWith('.tsv')) return '📊'
+  if (lower.endsWith('.xml') || lower.endsWith('.yaml') || lower.endsWith('.yml') || lower.endsWith('.toml') || lower.endsWith('.ini') || lower.endsWith('.cfg') || lower.endsWith('.conf')) return '📋'
   if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp') || lower.endsWith('.svg')) return '🖼️'
   if (lower.endsWith('.pdf')) return '📄'
-  if (lower.endsWith('.md')) return '📝'
-  if (lower.endsWith('.txt') || lower.endsWith('.text') || lower.endsWith('.log')) return '📃'
+  if (lower.endsWith('.md') || lower.endsWith('.markdown')) return '📝'
+  if (textExtensions.some(ext => lower.endsWith(ext))) return '📃'
   if (lower.endsWith('.mp4') || lower.endsWith('.webm')) return '🎬'
   if (lower.endsWith('.mp3') || lower.endsWith('.wav') || lower.endsWith('.ogg')) return '🎵'
   return '📄'
@@ -1002,10 +1087,13 @@ const stopResize = () => {
 }
 
 .preview-markdown.fullscreen {
-  max-width: 900px;
   margin: 0 auto;
   padding: 24px;
   font-size: 15px;
+  overflow-y: auto;
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .preview-markdown :deep(h1),
@@ -1088,6 +1176,12 @@ const stopResize = () => {
 .preview-markdown :deep(th) {
   background: #f5f5f5;
   font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.preview-markdown :deep(th:hover) {
+  background: #e8e8e8;
 }
 
 .preview-markdown :deep(img) {
