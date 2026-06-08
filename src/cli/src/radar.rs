@@ -56,13 +56,13 @@ struct TargetsYaml {
     targets: Vec<TargetRaw>,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct SpecEntry {
     key: String,
     value: String,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct ChannelJson {
     #[serde(rename = "type")]
     channel_type: String,
@@ -262,17 +262,31 @@ fn parse_md_table_fields(section: &str) -> std::collections::HashMap<String, Str
     let mut fields = std::collections::HashMap::new();
     for line in section.lines() {
         let trimmed = line.trim();
-        if !trimmed.starts_with('|') { continue; }
-        if trimmed.contains("---|---") || trimmed.contains("------") { continue; }
-        if trimmed.contains("字段") && trimmed.contains("值") { continue; }
+        // Parse markdown table rows: | key | value |
+        if trimmed.starts_with('|') {
+            if trimmed.contains("---|---") || trimmed.contains("------") { continue; }
+            if trimmed.contains("字段") && trimmed.contains("值") { continue; }
 
-        let cells: Vec<&str> = trimmed.split('|').collect();
-        if cells.len() < 3 { continue; }
+            let cells: Vec<&str> = trimmed.split('|').collect();
+            if cells.len() < 3 { continue; }
 
-        let key = cells[1].trim().trim_start_matches("**").trim_end_matches("**").trim();
-        let value = cells[2].trim();
-        if !key.is_empty() && !value.is_empty() {
-            fields.insert(key.to_string(), value.to_string());
+            let key = cells[1].trim().trim_start_matches("**").trim_end_matches("**").trim();
+            let value = cells[2].trim();
+            if !key.is_empty() && !value.is_empty() {
+                fields.insert(key.to_string(), value.to_string());
+            }
+            continue;
+        }
+        // Parse markdown list items: - **key**: value
+        if trimmed.starts_with("- **") || trimmed.starts_with("- **") {
+            if let Some(end_key) = trimmed.find("**:") {
+                let key = trimmed[4..end_key].trim();
+                let value = trimmed[end_key + 3..].trim();
+                if !key.is_empty() && !value.is_empty() {
+                    fields.insert(key.to_string(), value.to_string());
+                }
+                continue;
+            }
         }
     }
     fields
@@ -280,17 +294,18 @@ fn parse_md_table_fields(section: &str) -> std::collections::HashMap<String, Str
 
 // ── Target types ────────────────────────────────────────────────────────
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct TargetJson {
     id: Option<String>,
     name: String,
     description: Option<String>,
     #[serde(rename = "spec")]
     spec_entries: Vec<SpecEntry>,
-    #[serde(rename = "specLabel")]
+    #[serde(rename = "specLabel", default)]
     spec_label: String,
+    #[serde(default)]
     channels: Vec<ChannelJson>,
-    #[serde(rename = "channelLabel")]
+    #[serde(rename = "channelLabel", default)]
     channel_label: String,
     #[serde(rename = "source_probe")]
     source_probe: Option<String>,
@@ -725,12 +740,27 @@ fn parse_vertical_targets(content: &str) -> Vec<TargetJson> {
         let fields = parse_md_table_fields(body);
         if fields.is_empty() { continue; }
 
-        let id = fields.get("ID").cloned();
+        let id = fields.get("ID").cloned().or_else(|| {
+            // Extract ID from header like "J01 · Optics Express ⭐ P0"
+            header.split_whitespace().next().and_then(|s| {
+                if s.len() >= 2 && s.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false) && s.chars().nth(1).map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                    Some(s.to_string())
+                } else {
+                    None
+                }
+            })
+        });
         let name = fields.get("名称").cloned().unwrap_or_else(|| {
-            let after_colon = header.find(':')
-                .or_else(|| header.find('：'))
-                .map(|i| header[i + 1..].trim());
-            after_colon.unwrap_or(header).to_string()
+            // Extract name from header like "J01 · Optics Express ⭐ P0"
+            let parts: Vec<&str> = header.split("·").collect();
+            if parts.len() >= 2 {
+                parts[1].split("⭐").next().unwrap_or(parts[1]).trim().to_string()
+            } else {
+                let after_colon = header.find(':')
+                    .or_else(|| header.find('：'))
+                    .map(|i| header[i + 1..].trim());
+                after_colon.unwrap_or(header).to_string()
+            }
         });
         let description = fields.get("描述").cloned();
 
@@ -753,7 +783,14 @@ fn parse_vertical_targets(content: &str) -> Vec<TargetJson> {
             Some("active") | Some("running") => "active".to_string(),
             Some("paused") => "paused".to_string(),
             Some(s) => s.to_string(),
-            None => "active".to_string(),
+            None => {
+                // Extract status from header like "J01 · Optics Express ⭐ P0"
+                if header.contains("⭐") {
+                    "active".to_string()
+                } else {
+                    "active".to_string()
+                }
+            }
         };
 
         targets.push(TargetJson {
@@ -839,7 +876,8 @@ pub async fn get_targets_md(data_dir: &str, agent_name: &str) -> Response<BoxBod
 }
 
 /// GET /api/radar/{agent}/targets-json
-/// Returns parsed targets from targets.md and individual target/*.md files.
+/// Extracts targets from targets.md using LLM because the file format
+/// is free-form prose and cannot be parsed with a deterministic parser.
 pub async fn get_targets_json(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
     let workspace = match get_agent_workspace(data_dir, agent_name) {
         Ok(w) => w,
@@ -851,9 +889,220 @@ pub async fn get_targets_json(data_dir: &str, agent_name: &str) -> Response<BoxB
     let path = workspace.join("radar").join("targets.md");
     let content = match tokio::fs::read_to_string(&path).await {
         Ok(c) => c,
-        Err(_) => String::new(),
+        Err(_) => {
+            return ok_response(&serde_json::json!({ "targets": Vec::<TargetJson>::new() }));
+        }
     };
+
+    if content.trim().is_empty() {
+        return ok_response(&serde_json::json!({ "targets": Vec::<TargetJson>::new() }));
+    }
+
+    // Try vertical parser first (handles ### heading + list format)
+    let mut targets = parse_vertical_targets(&content);
+    if !targets.is_empty() {
+        merge_detailed_targets(&workspace, &mut targets).await;
+        return ok_response(&serde_json::json!({ "targets": targets }));
+    }
+
+    // Try YAML frontmatter or table formats
     let mut targets = parse_targets_md(&content);
+    if !targets.is_empty() {
+        merge_detailed_targets(&workspace, &mut targets).await;
+        return ok_response(&serde_json::json!({ "targets": targets }));
+    }
+
+    // Fall back to LLM for free-form prose
+    let targets = match extract_targets_via_llm(&content).await {
+        Ok(t) => t,
+        Err(e) => {
+            ts_eprint!("[Radar] LLM extraction failed for {}: {}", agent_name, e);
+            return ok_response(&serde_json::json!({ "targets": Vec::<TargetJson>::new(), "llm_failed": true }));
+        }
+    };
+
+    ok_response(&serde_json::json!({ "targets": targets }))
+}
+
+/// Get or create opencode session for LLM calls.
+async fn get_opencode_session(port: u16) -> anyhow::Result<String> {
+    let base = format!("http://127.0.0.1:{}", port);
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(&format!("{}/session", base))
+        .send()
+        .await?;
+
+    if resp.status().is_success() {
+        let sessions: Vec<serde_json::Value> = resp.json().await?;
+        if let Some(first) = sessions.first() {
+            if let Some(id) = first["id"].as_str() {
+                return Ok(id.to_string());
+            }
+        }
+    }
+
+    // Create new session
+    let resp = client
+        .post(&format!("{}/session", base))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({"title": "Radar Extraction"}))
+        .send()
+        .await?;
+
+    if resp.status().is_success() {
+        let result: serde_json::Value = resp.json().await?;
+        if let Some(id) = result["id"].as_str() {
+            return Ok(id.to_string());
+        }
+    }
+
+    anyhow::bail!("Failed to get or create opencode session")
+}
+
+/// Call opencode LLM with a prompt and return the text response.
+async fn call_opencode_llm(port: u16, prompt: &str) -> anyhow::Result<String> {
+    let session_id = get_opencode_session(port).await?;
+    let url = format!("http://127.0.0.1:{}/session/{}/message", port, session_id);
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "parts": [{"type": "text", "text": prompt}]
+        }))
+        .timeout(std::time::Duration::from_secs(300))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let err_body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("LLM returned {}: {}", status, err_body);
+    }
+
+    let json_resp: serde_json::Value = resp.json().await?;
+    let parts = json_resp["parts"].as_array()
+        .ok_or_else(|| anyhow::anyhow!("No parts in LLM response"))?;
+
+    let text: String = parts.iter()
+        .filter(|p| p["type"].as_str() == Some("text"))
+        .filter_map(|p| p["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("");
+
+    if text.is_empty() {
+        anyhow::bail!("LLM returned empty text response");
+    }
+
+    Ok(text)
+}
+
+/// Send targets.md content to LLM and extract structured TargetJson array.
+async fn extract_targets_via_llm(content: &str) -> anyhow::Result<Vec<TargetJson>> {
+    let prompt = format!(
+        "你是一个数据提取助手。请从以下 targets.md 文件中提取所有 radar 跟踪目标。\n\
+         \n\
+         ## 什么是目标？\n\
+         目标在 targets.md 中有以下特征之一：\n\
+         - 以 ### 开头，且名称中包含 ⭐ 符号（如 ### J01 · Optics Express ⭐ P0）\n\
+         - 在「跨域信号目标」表格中，有明确 ID（如 X1）和可追踪的描述\n\
+         \n\
+         ## 什么不是目标？（必须跳过）\n\
+         - 表头行（如 | PI | 机构 | 研究方向 |）\n\
+         - 占位符行（内容为「(待指定)」「—」的行）\n\
+         - 教程说明和格式说明\n\
+         - 以「##」开头的章节标题（它们只是分类标签，不是目标本身）\n\
+         \n\
+         ## 每个目标提取为以下 JSON 对象：\n\
+         {{\n\
+           \"id\": \"J01\",                     // 目标编号（如 J01, T01, X1）\n\
+           \"name\": \"J01 · Optics Express\",  // 目标名称（取 ### 行中 · 后面的部分，或表格中名称列）\n\
+           \"description\": \"OSA旗下旗舰期刊...\", // 目标描述（合并扫描目的/描述中最重要的1-3句话）\n\
+           \"spec\": [{{\"key\":\"期刊定位\",\"value\":\"OSA旗下...\"}}], // 关键属性，提取「期刊定位」「扫描目的」「命中判断」「ISSN」「频率」等\n\
+           \"source_probe\": null,             // 来源探测（文件中通常没有，填 null）\n\
+           \"status\": \"active\",              // 状态：有 ⭐ P0/P1/P2 的目标为 active\n\
+           \"created_at\": null,               // 创建时间\n\
+           \"last_scan\": \"2026-06-08\"        // 上次扫描时间（从「上次扫描」字段提取，没有则 null）\n\
+         }}\n\
+         \n\
+         ## 分区说明\n\
+         文件有三个目标区域：\n\
+         1. ## 一、期刊扫描目标 → 提取 J01-J13（每个 ### 行是一个目标）\n\
+         2. ## 二、技术路线目标 → 提取 T01-T10（每个 ### 行是一个目标）\n\
+         3. ## 五、跨域信号目标 → 提取表格中 X1-X6（每条表数据行是一个目标）\n\
+         \n\
+         ## 三、关键研究组 和 ## 四、竞争者 中全是占位符/表头，跳过不提取。\n\
+         \n\
+         ## 严格要求\n\
+         1. 只返回 JSON 数组，不要有任何解释文字。\n\
+         2. 不要用 markdown 代码块包裹。\n\
+         3. spec 数组的 key 用中文，value 取原文的核心部分（不要全文照搬，每条截取前200字）。\n\
+         4. 必须提取所有 J01-J13、T01-T10、X1-X6，一个都不能少。\n\
+         \n\
+         文件内容：\n\n{}",
+        content
+    );
+
+    let response_text = call_opencode_llm(42617, &prompt).await?;
+
+    // Try to extract JSON array from response (may be wrapped in markdown fences)
+    let json_str = extract_json_array(&response_text)
+        .ok_or_else(|| anyhow::anyhow!("Could not find JSON array in LLM response: {}", &response_text[..200.min(response_text.len())]))?;
+
+    let targets: Vec<TargetJson> = serde_json::from_str(&json_str)?;
+    Ok(targets)
+}
+
+fn extract_json_array(text: &str) -> Option<String> {
+    // Try direct parse first
+    if text.trim().starts_with('[') {
+        return Some(text.trim().to_string());
+    }
+
+    // Try to extract from markdown code fence
+    if let Some(start) = text.find("```json\n") {
+        let after = &text[start + 7..];
+        if let Some(end) = after.find("\n```") {
+            let inner = &after[..end];
+            if inner.trim().starts_with('[') {
+                return Some(inner.trim().to_string());
+            }
+        }
+    }
+
+    // Try to find [ ... ] boundaries
+    let trimmed = text.trim();
+    if let Some(first_bracket) = trimmed.find('[') {
+        // Find the matching closing bracket
+        let mut depth = 0;
+        let mut end_idx = None;
+        for (i, ch) in trimmed[first_bracket..].char_indices() {
+            let abs_i = first_bracket + i;
+            match ch {
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end_idx = Some(abs_i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(end) = end_idx {
+            return Some(trimmed[first_bracket..=end].to_string());
+        }
+    }
+
+    None
+}
+
+/// Merge detailed per-target *.md files into the targets list.
+async fn merge_detailed_targets(workspace: &std::path::PathBuf, targets: &mut Vec<TargetJson>) {
     let mut name_to_index: std::collections::HashMap<String, usize> = targets.iter()
         .enumerate()
         .map(|(i, t)| (t.name.clone(), i))
@@ -878,8 +1127,6 @@ pub async fn get_targets_json(data_dir: &str, agent_name: &str) -> Response<BoxB
             }
         }
     }
-
-    ok_response(&serde_json::json!({ "targets": targets }))
 }
 
 /// GET /api/radar/{agent}/probes
@@ -1048,36 +1295,16 @@ pub async fn format_targets(data_dir: &str, agent_name: &str) -> Response<BoxBod
         content
     );
 
-    let client = reqwest::Client::new();
-    let body = serde_json::json!({ "message": prompt });
-
-    match client
-        .post("http://127.0.0.1:42617/api/sessions/me/chat")
-        .json(&body)
-        .timeout(Duration::from_secs(120))
-        .send()
-        .await
-    {
-        Ok(resp) => {
-            if !resp.status().is_success() {
-                let status = resp.status();
-                let err_body = resp.text().await.unwrap_or_default();
-                return error_response(status, &format!("LLM service returned {}: {}", status, err_body));
+    match call_opencode_llm(42617, &prompt).await {
+        Ok(html) => {
+            if html.is_empty() {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "LLM returned empty response");
             }
-            match resp.json::<serde_json::Value>().await {
-                Ok(json) => {
-                    let html = json["response"].as_str().unwrap_or("").to_string();
-                    if html.is_empty() {
-                        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "LLM returned empty response");
-                    }
-                    ok_response(&serde_json::json!({
-                        "html": html,
-                        "source": "llm",
-                        "agent": "0#Agent"
-                    }))
-                }
-                Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Failed to parse LLM response: {}", e)),
-            }
+            ok_response(&serde_json::json!({
+                "html": html,
+                "source": "llm",
+                "agent": "0#Agent"
+            }))
         }
         Err(e) => error_response(StatusCode::SERVICE_UNAVAILABLE, &format!("Failed to connect to LLM service: {}", e)),
     }
