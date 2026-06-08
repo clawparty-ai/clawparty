@@ -69,6 +69,51 @@ struct ChannelJson {
     location: String,
 }
 
+/// JSON schema for workspace/radar/targets.json (LLM-generated, machine-readable source of truth).
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct TargetJson {
+    #[serde(default)]
+    id: Option<String>,
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    category: Option<String>,
+    #[serde(default)]
+    priority: Option<String>,
+    #[serde(rename = "spec", default)]
+    spec_entries: Vec<SpecEntry>,
+    #[serde(rename = "specLabel", default)]
+    spec_label: String,
+    #[serde(default)]
+    channels: Vec<ChannelJson>,
+    #[serde(rename = "channelLabel", default)]
+    channel_label: String,
+    #[serde(rename = "source_probe", default)]
+    source_probe: Option<String>,
+    #[serde(default = "default_status")]
+    status: String,
+    #[serde(rename = "created_at", default)]
+    created_at: Option<String>,
+    #[serde(rename = "last_scan", default)]
+    last_scan: Option<String>,
+}
+
+fn default_status() -> String {
+    "active".to_string()
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct TargetsFile {
+    #[serde(default = "default_version")]
+    version: u32,
+    targets: Vec<TargetJson>,
+}
+
+fn default_version() -> u32 {
+    1
+}
+
 // ── Probe types (mirrors targets pattern) ───────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
@@ -294,27 +339,7 @@ fn parse_md_table_fields(section: &str) -> std::collections::HashMap<String, Str
 
 // ── Target types ────────────────────────────────────────────────────────
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct TargetJson {
-    id: Option<String>,
-    name: String,
-    description: Option<String>,
-    #[serde(rename = "spec")]
-    spec_entries: Vec<SpecEntry>,
-    #[serde(rename = "specLabel", default)]
-    spec_label: String,
-    #[serde(default)]
-    channels: Vec<ChannelJson>,
-    #[serde(rename = "channelLabel", default)]
-    channel_label: String,
-    #[serde(rename = "source_probe")]
-    source_probe: Option<String>,
-    status: String,
-    #[serde(rename = "created_at")]
-    created_at: Option<String>,
-    #[serde(rename = "last_scan")]
-    last_scan: Option<String>,
-}
+
 
 fn convert_spec(value: &serde_yaml::Value) -> Vec<SpecEntry> {
     let mut entries = Vec::new();
@@ -421,6 +446,8 @@ fn parse_detailed_target(content: &str) -> Option<TargetJson> {
         id: None,
         name,
         description,
+        category: None,
+        priority: None,
         spec_entries,
         spec_label,
         channels: Vec::new(),
@@ -585,6 +612,8 @@ fn parse_targets_md(content: &str) -> Vec<TargetJson> {
                     id: t.id,
                     name: t.name,
                     description: t.description,
+                    category: None,
+                    priority: None,
                     spec_entries,
                     spec_label,
                     channels,
@@ -708,6 +737,8 @@ fn parse_horizontal_targets(content: &str) -> Vec<TargetJson> {
             id,
             name: name.unwrap_or_default(),
             description,
+            category: None,
+            priority: None,
             spec_entries,
             spec_label,
             channels: Vec::new(),
@@ -797,6 +828,8 @@ fn parse_vertical_targets(content: &str) -> Vec<TargetJson> {
             id,
             name,
             description,
+            category: None,
+            priority: None,
             spec_entries,
             spec_label,
             channels: Vec::new(),
@@ -876,8 +909,8 @@ pub async fn get_targets_md(data_dir: &str, agent_name: &str) -> Response<BoxBod
 }
 
 /// GET /api/radar/{agent}/targets-json
-/// Extracts targets from targets.md using LLM because the file format
-/// is free-form prose and cannot be parsed with a deterministic parser.
+/// Reads targets from workspace/radar/targets.json (schema-based, fast).
+/// Falls back to parsing targets.md only for legacy/migration.
 pub async fn get_targets_json(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
     let workspace = match get_agent_workspace(data_dir, agent_name) {
         Ok(w) => w,
@@ -886,42 +919,59 @@ pub async fn get_targets_json(data_dir: &str, agent_name: &str) -> Response<BoxB
 
     ensure_radar_dir(&workspace).await;
 
-    let path = workspace.join("radar").join("targets.md");
-    let content = match tokio::fs::read_to_string(&path).await {
-        Ok(c) => c,
-        Err(_) => {
+    // ── 1. Fast path: read structured targets.json (source of truth) ──
+    let json_path = workspace.join("radar").join("targets.json");
+    if let Ok(content) = tokio::fs::read_to_string(&json_path).await {
+        if !content.trim().is_empty() {
+            match serde_json::from_str::<TargetsFile>(&content) {
+                Ok(file) => {
+                    return ok_response(&serde_json::json!({ "targets": file.targets }));
+                }
+                Err(e) => {
+                    let msg = format!(
+                        "targets.json schema error: {} (line {} col {}). \
+                         Please fix or delete targets.json and let the agent regenerate.",
+                        e, e.line(), e.column()
+                    );
+                    return error_response(StatusCode::BAD_REQUEST, &msg);
+                }
+            }
+        }
+    }
+
+    // ── 2. Fallback: parse legacy targets.md ──
+    let md_path = workspace.join("radar").join("targets.md");
+    let md_content = match tokio::fs::read_to_string(&md_path).await {
+        Ok(c) if !c.trim().is_empty() => c,
+        _ => {
             return ok_response(&serde_json::json!({ "targets": Vec::<TargetJson>::new() }));
         }
     };
 
-    if content.trim().is_empty() {
-        return ok_response(&serde_json::json!({ "targets": Vec::<TargetJson>::new() }));
+    let mut targets = parse_vertical_targets(&md_content);
+    if targets.is_empty() {
+        targets = parse_targets_md(&md_content);
+    }
+    if targets.is_empty() {
+        targets = match extract_targets_via_llm(&md_content).await {
+            Ok(t) => t,
+            Err(e) => {
+                ts_eprint!("[Radar] LLM extraction failed for {}: {}", agent_name, e);
+                return ok_response(&serde_json::json!({ "targets": Vec::<TargetJson>::new(), "llm_failed": true }));
+            }
+        };
     }
 
-    // Try vertical parser first (handles ### heading + list format)
-    let mut targets = parse_vertical_targets(&content);
+    // ── 3. Auto-migrate: write targets.json for next time ──
     if !targets.is_empty() {
         merge_detailed_targets(&workspace, &mut targets).await;
-        return ok_response(&serde_json::json!({ "targets": targets }));
+        let migrated = TargetsFile { version: 1, targets };
+        let _ = tokio::fs::write(&json_path, serde_json::to_string_pretty(&migrated).unwrap_or_default()).await;
+        ts_print!("[Radar] Migrated {} targets to targets.json for {}", migrated.targets.len(), agent_name);
+        return ok_response(&serde_json::json!({ "targets": migrated.targets }));
     }
 
-    // Try YAML frontmatter or table formats
-    let mut targets = parse_targets_md(&content);
-    if !targets.is_empty() {
-        merge_detailed_targets(&workspace, &mut targets).await;
-        return ok_response(&serde_json::json!({ "targets": targets }));
-    }
-
-    // Fall back to LLM for free-form prose
-    let targets = match extract_targets_via_llm(&content).await {
-        Ok(t) => t,
-        Err(e) => {
-            ts_eprint!("[Radar] LLM extraction failed for {}: {}", agent_name, e);
-            return ok_response(&serde_json::json!({ "targets": Vec::<TargetJson>::new(), "llm_failed": true }));
-        }
-    };
-
-    ok_response(&serde_json::json!({ "targets": targets }))
+    ok_response(&serde_json::json!({ "targets": Vec::<TargetJson>::new() }))
 }
 
 /// Get or create opencode session for LLM calls.

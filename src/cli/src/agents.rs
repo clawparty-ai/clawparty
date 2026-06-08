@@ -190,7 +190,52 @@ Never overwrite existing files.
 
 const WIKI_MD_NOTICE: &str = "# WIKI.md\n\nSee this file for the full LLM Wiki methodology.\n";
 
-const RADAR_MD_NOTICE: &str = "# RADAR.md\n\nSee this file for the full Radar methodology.\n";
+const RADAR_MD_NOTICE: &str = r#"# RADAR.md
+
+## Radar 目标格式
+
+Radar 目标必须保存为 `workspace/radar/targets.json`（纯 JSON，不是 Markdown）。
+
+```json
+{
+  "version": 1,
+  "targets": [
+    {
+      "id": "T01",
+      "category": "tech",
+      "name": "飞秒激光构筑超疏水表面",
+      "description": "通过飞秒激光在金属表面制备微纳结构，实现超疏水性能",
+      "status": "active",
+      "priority": "P0",
+      "spec": [
+        {"key": "技术路线", "value": "飞秒激光烧蚀 + 表面氧化"},
+        {"key": "接触角", "value": ">150°"}
+      ],
+      "channels": [],
+      "lastScan": null,
+      "createdAt": "2026-06-08"
+    }
+  ]
+}
+```
+
+字段说明：
+- `id`: 编号，格式为字母+数字（如 J01, T03, X1）
+- `category`: `journal` | `tech` | `competitor` | `signal`
+- `name`: 目标名称
+- `description`: 1-3句话描述
+- `status`: `active` | `paused`
+- `priority`: `P0` | `P1` | `P2`
+- `spec`: 关键属性数组
+- `channels`: 扫描渠道（type + location）
+- `lastScan`: 上次扫描日期，无则为 null
+- `createdAt`: 创建日期
+
+注意：
+- 只输出纯 JSON，不要用 ```json 包裹
+- 空值字段可省略或用 null
+- targets.json 是机器读取的数据源
+"#;
 
 const IDENTITY_MD_TEMPLATE: &str = r#"# IDENTITY.md — Who Am I?
 
