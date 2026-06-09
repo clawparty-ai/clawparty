@@ -135,6 +135,13 @@
           <!-- Mode: Data Analysis -->
           <div v-if="currentMode === 'analyze'" class="display-analyze">
             <template v-if="analyzeContent">
+              <div v-if="selectedSheet && !selectedSheet.endsWith('-dashboard') && analyzeContent !== 'loading'" class="analyze-action-bar">
+                <a v-if="hasDashboardForSelected" class="dashboard-link" href="#" @click.prevent="goToDashboard">📈 查看 Dashboard</a>
+                <a v-else class="dashboard-link generate" href="#" @click.prevent="generateDashboardForCurrent">📈 生成 Dashboard</a>
+              </div>
+              <div v-if="selectedSheet && selectedSheet.endsWith('-dashboard')" class="analyze-action-bar">
+                <a class="dashboard-link" href="#" @click.prevent="goToDataSheet">📋 查看数据</a>
+              </div>
               <template v-if="analysisCharts.length > 0 || analyzeContent === 'loading'">
                 <div class="analyze-charts" ref="analyzeChartsEl">
                   <div v-for="(chart, ci) in analysisCharts" :key="ci" class="analysis-chart-card">
@@ -161,6 +168,8 @@
             <div v-if="csvHeaders.length > 0" class="table-toolbar">
               <span class="toolbar-info">{{ selectedDataset }} / {{ displaySheetName }} — {{ csvRows.length }} 行</span>
               <div class="toolbar-actions">
+                <a v-if="hasDashboardForSelected" class="dashboard-link" href="#" @click.prevent="goToDashboard">📈 查看看板</a>
+                <a v-else class="dashboard-link generate" href="#" @click.prevent="generateDashboardForCurrent">📈 生成看板</a>
                 <select v-model="chartType" class="chart-select">
                   <option value="">选择图表类型</option>
                   <option value="bar">柱状图</option>
@@ -299,6 +308,13 @@ watch(() => props.datasets, (val) => {
   internalDatasets.value = val || []
 })
 
+const hasDashboardForSelected = computed(() => {
+  if (!selectedDataset.value || !selectedSheet.value) return false
+  const dashName = selectedSheet.value + '-dashboard'
+  const ds = internalDatasets.value.find(d => d.name === selectedDataset.value)
+  return ds && ds.sheets && ds.sheets.some(s => s.name === dashName)
+})
+
 const isDragOver = ref(false)
 const uploadStatus = ref('')
 const fileInput = ref(null)
@@ -340,6 +356,9 @@ const switchMode = (mode) => {
   if (mode === 'formula' && selectedDataset.value) {
     loadFormulaContent()
   }
+  if (mode === 'display' && selectedDataset.value && selectedSheet.value) {
+    loadCSV(selectedDataset.value, selectedSheet.value)
+  }
 }
 
 const toggleDataset = (ds) => {
@@ -348,6 +367,23 @@ const toggleDataset = (ds) => {
   } else {
     expandedDataset.value = ds.name
   }
+}
+
+const goToDashboard = () => {
+  if (!selectedDataset.value || !selectedSheet.value) return
+  selectSheet(selectedDataset.value, selectedSheet.value + '-dashboard')
+}
+
+const generateDashboardForCurrent = async () => {
+  if (!selectedDataset.value || !selectedSheet.value) return
+  await loadSheetMarkdown(selectedDataset.value, selectedSheet.value)
+  await analyzeSheet(selectedDataset.value, selectedSheet.value)
+}
+
+const goToDataSheet = () => {
+  if (!selectedDataset.value || !selectedSheet.value) return
+  const sourceSheet = selectedSheet.value.replace('-dashboard', '')
+  selectSheet(selectedDataset.value, sourceSheet)
 }
 
 const selectSheet = async (dsName, sheetName) => {
@@ -1216,6 +1252,13 @@ onUnmounted(() => {
 .markdown-body :deep(code) { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 0.9em; }
 .markdown-body :deep(blockquote) { border-left: 3px solid #4095fe; padding-left: 10px; color: #666; margin: 8px 0; }
 
+.analyze-action-bar {
+  padding: 8px 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex;
+  gap: 8px;
+}
+
 /* Data table */
 .display-analyze,
 .display-formula,
@@ -1309,6 +1352,31 @@ onUnmounted(() => {
 .chart-select { font-size: 12px; padding: 2px 6px; border-radius: 4px; border: 1px solid #ddd; }
 .chart-gen-btn { font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid #4095fe; background: rgba(64, 149, 254, 0.1); color: #4095fe; cursor: pointer; }
 .chart-gen-btn:hover { background: #4095fe; color: #fff; }
+
+.dashboard-link {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #4095fe;
+  background: rgba(64, 149, 254, 0.1);
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.dashboard-link:hover {
+  background: rgba(64, 149, 254, 0.2);
+  border-color: rgba(64, 149, 254, 0.4);
+}
+.dashboard-link.generate {
+  color: #2eb67d;
+  background: rgba(46, 182, 125, 0.1);
+}
+.dashboard-link.generate:hover {
+  background: rgba(46, 182, 125, 0.2);
+  border-color: rgba(46, 182, 125, 0.4);
+}
 
 .chart-canvas { max-height: 250px; margin: 8px 12px; border: 1px solid rgba(0, 0, 0, 0.06); border-radius: 4px; }
 

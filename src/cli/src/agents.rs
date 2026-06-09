@@ -235,6 +235,49 @@ Radar 目标必须保存为 `workspace/radar/targets.json`（纯 JSON，不是 M
 - 只输出纯 JSON，不要用 ```json 包裹
 - 空值字段可省略或用 null
 - targets.json 是机器读取的数据源
+
+## Radar 探测格式
+
+探测（probe）必须保存为 `workspace/radar/probes.json`（纯 JSON，不是 Markdown）。
+
+```json
+{
+  "version": 1,
+  "probes": [
+    {
+      "id": "P01",
+      "name": "Optics Express 扫描",
+      "description": "CrossRef API 扫描 Optics Express 最新论文",
+      "status": "active",
+      "method": "crossref",
+      "keywords": ["femtosecond", "picosecond", "ablation", "texturing"],
+      "schedule": "daily",
+      "channels": [
+        {"type": "crossref", "location": "filter=issn:1094-4087"}
+      ],
+      "lastRun": null,
+      "createdAt": "2026-06-08"
+    }
+  ]
+}
+```
+
+字段说明：
+- `id`: 编号，格式为 P + 数字（如 P01, P02）
+- `name`: 探测名称
+- `description`: 探测用途描述
+- `status`: `active` | `paused`
+- `method`: 探测方法（crossref, arxiv, rss, api 等）
+- `keywords`: 关键词数组
+- `schedule`: 执行频率（daily, weekly, monthly）
+- `channels`: 渠道数组（type + location）
+- `lastRun`: 上次执行时间，无则为 null
+- `createdAt`: 创建日期
+
+注意：
+- 只输出纯 JSON，不要用 ```json 包裹
+- 空值字段可省略或用 null
+- probes.json 是机器读取的数据源
 "#;
 
 const IDENTITY_MD_TEMPLATE: &str = r#"# IDENTITY.md — Who Am I?

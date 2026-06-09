@@ -116,6 +116,53 @@ fn default_version() -> u32 {
 
 // ── Probe types (mirrors targets pattern) ───────────────────────────────
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct ProbeChannelJson {
+    #[serde(rename = "type")]
+    channel_type: String,
+    location: String,
+}
+
+/// JSON schema for workspace/radar/probes.json (LLM-generated, machine-readable source of truth).
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct ProbeJson {
+    #[serde(default)]
+    id: Option<String>,
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(rename = "module_ref", default)]
+    module_ref: Option<String>,
+    #[serde(default)]
+    channels: Vec<ProbeChannelJson>,
+    #[serde(rename = "channelLabel", default)]
+    channel_label: String,
+    #[serde(rename = "channel_type", default)]
+    channel_type: Option<String>,
+    #[serde(rename = "channel_location", default)]
+    channel_location: Option<String>,
+    #[serde(default)]
+    method: Option<String>,
+    #[serde(default)]
+    keywords: Option<Vec<String>>,
+    #[serde(default)]
+    schedule: Option<String>,
+    #[serde(default = "default_status")]
+    status: String,
+    #[serde(rename = "created_at", default)]
+    created_at: Option<String>,
+    #[serde(rename = "last_run", default)]
+    last_run: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct ProbesFile {
+    #[serde(default = "default_version")]
+    version: u32,
+    probes: Vec<ProbeJson>,
+}
+
+// Legacy YAML frontmatter types (for migrating old probes.md)
 #[derive(Debug, serde::Deserialize)]
 struct ProbeChannelRaw {
     #[serde(rename = "type")]
@@ -145,37 +192,6 @@ struct ProbeRaw {
 #[derive(Debug, serde::Deserialize)]
 struct ProbesYaml {
     probes: Vec<ProbeRaw>,
-}
-
-#[derive(Debug, serde::Serialize)]
-struct ProbeChannelJson {
-    #[serde(rename = "type")]
-    channel_type: String,
-    location: String,
-}
-
-#[derive(Debug, serde::Serialize)]
-struct ProbeJson {
-    id: Option<String>,
-    name: String,
-    description: Option<String>,
-    #[serde(rename = "module_ref")]
-    module_ref: Option<String>,
-    channels: Vec<ProbeChannelJson>,
-    #[serde(rename = "channelLabel")]
-    channel_label: String,
-    #[serde(rename = "channel_type")]
-    channel_type: Option<String>,
-    #[serde(rename = "channel_location")]
-    channel_location: Option<String>,
-    method: Option<String>,
-    keywords: Option<Vec<String>>,
-    schedule: Option<String>,
-    status: String,
-    #[serde(rename = "created_at")]
-    created_at: Option<String>,
-    #[serde(rename = "last_run")]
-    last_run: Option<String>,
 }
 
 fn parse_probes_md(content: &str) -> Vec<ProbeJson> {
@@ -1208,7 +1224,8 @@ pub async fn get_probes(data_dir: &str, agent_name: &str) -> Response<BoxBody<By
 }
 
 /// GET /api/radar/{agent}/probes-json
-/// Returns parsed probes from YAML frontmatter as structured JSON.
+/// Reads probes from workspace/radar/probes.json (schema-based, fast).
+/// Falls back to parsing probes.md only for legacy/migration.
 pub async fn get_probes_json(data_dir: &str, agent_name: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
     let workspace = match get_agent_workspace(data_dir, agent_name) {
         Ok(w) => w,
@@ -1217,16 +1234,54 @@ pub async fn get_probes_json(data_dir: &str, agent_name: &str) -> Response<BoxBo
 
     ensure_radar_dir(&workspace).await;
 
-    let path = workspace.join("radar").join("probes.md");
-    let content = match tokio::fs::read_to_string(&path).await {
-        Ok(c) => c,
-        Err(_) => {
+    // ── 1. Fast path: read structured probes.json (source of truth) ──
+    let json_path = workspace.join("radar").join("probes.json");
+    if let Ok(content) = tokio::fs::read_to_string(&json_path).await {
+        if !content.trim().is_empty() {
+            match serde_json::from_str::<ProbesFile>(&content) {
+                Ok(file) => {
+                    return ok_response(&serde_json::json!({ "probes": file.probes }));
+                }
+                Err(e) => {
+                    let msg = format!(
+                        "probes.json schema error: {} (line {} col {}). \
+                         Please fix or delete probes.json and let the agent regenerate.",
+                        e, e.line(), e.column()
+                    );
+                    return error_response(StatusCode::BAD_REQUEST, &msg);
+                }
+            }
+        }
+    }
+
+    // ── 2. Fallback: parse legacy probes.md ──
+    let md_path = workspace.join("radar").join("probes.md");
+    let md_content = match tokio::fs::read_to_string(&md_path).await {
+        Ok(c) if !c.trim().is_empty() => c,
+        _ => {
             return ok_response(&serde_json::json!({ "probes": Vec::<ProbeJson>::new() }));
         }
     };
 
-    let probes = parse_probes_md(&content);
-    ok_response(&serde_json::json!({ "probes": probes }))
+    let probes = parse_probes_md(&md_content);
+
+    // ── 3. Auto-migrate: write probes.json for next time ──
+    if !probes.is_empty() {
+        let migrated = ProbesFile { version: 1, probes };
+        let _ = tokio::fs::write(
+            &json_path,
+            serde_json::to_string_pretty(&migrated).unwrap_or_default(),
+        )
+        .await;
+        ts_print!(
+            "[Radar] Migrated {} probes to probes.json for {}",
+            migrated.probes.len(),
+            agent_name
+        );
+        return ok_response(&serde_json::json!({ "probes": migrated.probes }));
+    }
+
+    ok_response(&serde_json::json!({ "probes": Vec::<ProbeJson>::new() }))
 }
 
 #[derive(serde::Serialize)]

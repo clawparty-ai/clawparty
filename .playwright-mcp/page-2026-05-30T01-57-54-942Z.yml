@@ -1,0 +1,6 @@
+- generic [ref=e4]:
+  - heading "Welcome to ClawParty" [level=2] [ref=e5]
+  - paragraph [ref=e6]: Please sign in to continue
+  - textbox "Username" [ref=e7]
+  - textbox "Password" [ref=e8]
+  - button "Sign In" [disabled] [ref=e9]
