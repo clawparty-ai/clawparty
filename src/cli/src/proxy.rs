@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use sha1::{Digest, Sha1};
@@ -566,6 +567,11 @@ async fn bridge_opencode_sse(
     let base_url = format!("http://127.0.0.1:{}", port);
     let client = reqwest::Client::new();
 
+    // Shared state between the forward and SSE tasks. The SSE task updates
+    // this when it sees session.status events; the forward task reads it to
+    // decide whether an abort is actually needed before sending a new prompt.
+    let is_busy = Arc::new(AtomicBool::new(false));
+
     // Emit session_start to frontend
     let start_msg = serde_json::json!({
         "type": "session_start",
@@ -595,6 +601,7 @@ async fn bridge_opencode_sse(
     let mut buffer = String::new();
 
     let fwd_to_backend = async {
+        let is_busy = is_busy.clone();
         while let Some(msg) = frontend_stream.next().await {
             if let Ok(msg) = msg {
                 if let tokio_tungstenite::tungstenite::Message::Text(ref text) = msg {
@@ -659,9 +666,14 @@ async fn bridge_opencode_sse(
                         .unwrap_or(&text)
                         .to_string();
 
-                    // Abort any in-progress request to prevent stuck sessions
+                    // Abort any in-progress request to prevent stuck sessions.
+                    // Only abort when the SSE stream has reported the session as
+                    // busy; aborting an idle session produces a spurious
+                    // "Aborted" error that the frontend renders as a chat message.
                     let abort_url = format!("{}/session/{}/abort", base_url, session_id);
-                    let _ = client.post(&abort_url).send().await;
+                    if is_busy.load(Ordering::SeqCst) {
+                        let _ = client.post(&abort_url).send().await;
+                    }
 
                     let send_url = format!("{}/session/{}/prompt_async", base_url, session_id);
                     if let Err(e) = client
@@ -684,6 +696,7 @@ async fn bridge_opencode_sse(
     };
 
     let sse_to_frontend = async {
+        let is_busy_atomic = is_busy.clone();
         use tokio_tungstenite::tungstenite::Message as WsMsg;
         use futures_util::StreamExt;
 
@@ -807,9 +820,13 @@ async fn bridge_opencode_sse(
                                 if !is_our_event { continue; }
                                 let status = event["properties"]["status"]["type"].as_str().unwrap_or("");
                                 match status {
-                                    "busy" => is_busy = true,
+                                    "busy" => {
+                                        is_busy = true;
+                                        is_busy_atomic.store(true, Ordering::SeqCst);
+                                    }
                                     "idle" => {
                                         is_busy = false;
+                                        is_busy_atomic.store(false, Ordering::SeqCst);
                                         if !full_response.is_empty() {
                                             let msg = serde_json::json!({
                                                 "type": "done",
@@ -825,10 +842,19 @@ async fn bridge_opencode_sse(
                             "session.error" => {
                                 if !is_our_event { continue; }
                                 let error_obj = &event["properties"]["error"];
+                                let error_name = error_obj["name"].as_str().unwrap_or("");
                                 let error_msg = error_obj["data"]["message"]
                                     .as_str()
                                     .or_else(|| error_obj["message"].as_str())
                                     .unwrap_or("Unknown error");
+                                // Suppress "Aborted" errors: they are produced by the
+                                // proxy calling /session/{id}/abort (either explicitly
+                                // via cancel or implicitly before a new prompt) and
+                                // should not be rendered as chat error messages.
+                                if error_name == "MessageAbortedError" || error_msg == "Aborted" {
+                                    log::debug!("[Proxy][SSE] Suppressing abort error");
+                                    continue;
+                                }
                                 let msg = serde_json::json!({
                                     "type": "error",
                                     "message": error_msg
