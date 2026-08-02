@@ -20,6 +20,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
       - name: Install system deps
         run: |
           sudo apt-get update
@@ -55,10 +58,21 @@ jobs:
           cd ..
           cp ztm/bin/ztm bin/ztm 2>/dev/null || cp ztm/build/bin/ztm bin/ztm 2>/dev/null || echo "ZTM binary not found"
 
+      - name: Build OpenCode
+        run: |
+          cd opencode
+          bun install --frozen-lockfile --filter=opencode --ignore-scripts
+          bun run --cwd packages/opencode build
+          cd ..
+          PLATFORM="linux-x64"
+          cp "opencode/packages/opencode/dist/opencode-${PLATFORM}/bin/opencode" bin/opencode 2>/dev/null \
+            || cp opencode/packages/opencode/dist/opencode-linux-x64/bin/opencode bin/opencode 2>/dev/null \
+            || echo "OpenCode binary not found"
+
       - name: Package
         run: |
           mkdir -p dist
-          for f in bin/clawparty bin/zeroclaw bin/ztm; do
+          for f in bin/clawparty bin/zeroclaw bin/ztm bin/opencode; do
             [ -f "$f" ] && cp "$f" dist/
           done
           tar -czf clawparty-linux-x86_64.tar.gz -C dist .
