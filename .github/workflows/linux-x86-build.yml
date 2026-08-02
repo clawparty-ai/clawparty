@@ -1,0 +1,70 @@
+name: Linux x86 Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake clang
+
+      - name: Build Web (Vue)
+        run: |
+          rm -rf src/tui
+          ln -sf cli src/tui
+          cd src/web
+          yarn install
+          yarn build
+
+      - name: Build CLI (clawparty)
+        run: |
+          cd src/cli
+          cargo build --release
+          cd ../..
+          mkdir -p bin
+          cp src/cli/target/release/clawparty bin/clawparty
+
+      - name: Build ZeroClaw
+        run: |
+          cd zeroclaw
+          cargo build --release --features gateway
+          cd ..
+          cp zeroclaw/target/release/zeroclaw bin/zeroclaw
+
+      - name: Build ZTM
+        run: |
+          cd ztm
+          ./build.sh
+          cd ..
+          cp ztm/bin/ztm bin/ztm 2>/dev/null || cp ztm/build/bin/ztm bin/ztm 2>/dev/null || echo "ZTM binary not found"
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          for f in bin/clawparty bin/zeroclaw bin/ztm; do
+            [ -f "$f" ] && cp "$f" dist/
+          done
+          tar -czf clawparty-linux-x86_64.tar.gz -C dist .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawparty-linux-x86_64
+          path: clawparty-linux-x86_64.tar.gz
