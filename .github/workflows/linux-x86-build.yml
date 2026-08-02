@@ -61,7 +61,7 @@ jobs:
       - name: Build OpenCode
         run: |
           cd opencode
-          bun install --frozen-lockfile --filter=opencode --ignore-scripts
+          bun install --filter=opencode --ignore-scripts --no-frozen-lockfile
           bun run --cwd packages/opencode build
           cd ..
           PLATFORM="linux-x64"
