@@ -41,6 +41,12 @@
     </div>
   </div>
   <div v-else class="chat-container">
+    <div v-if="wsStatus.state === 'reconnecting'" class="ws-status-banner ws-reconnecting">
+      <span>&#128992; 连接已断开，正在重连（第 {{ wsStatus.attempt }} 次{{ wsStatus.agentName ? '，' + wsStatus.agentName : '' }}）…</span>
+    </div>
+    <div v-else-if="wsStatus.state === 'connecting'" class="ws-status-banner ws-connecting">
+      <span>&#128993; 正在连接{{ wsStatus.agentName ? ' ' + wsStatus.agentName : '' }}…</span>
+    </div>
     <div v-if="pendingPermissions.length > 0" class="permission-banner">
       <div v-for="perm in pendingPermissions" :key="perm.permission_id" class="permission-item">
         <span class="permission-icon">&#128274;</span>
@@ -371,6 +377,26 @@ let zeroclawSessionsPollTimer = null
 let zeroclawWS = null
 const wsConnections = reactive({})
 
+// Global WebSocket connection status for the current view
+// state: 'connected' | 'reconnecting' | 'connecting'
+const wsStatus = reactive({ state: 'connected', attempt: 0, nextRetryMs: 0, agentName: '' })
+
+function setWsStatus(state, info = {}) {
+  wsStatus.state = state
+  wsStatus.attempt = info.attempt || 0
+  wsStatus.nextRetryMs = info.nextRetryMs || 0
+  wsStatus.agentName = info.agentName || wsStatus.agentName
+}
+
+/** Attach state callbacks to a ZeroClawWS instance so the status bar updates. */
+function attachWsStatusHandlers(ws, agentName) {
+  if (!ws) return
+  ws.onStateChange = (state, info) => {
+    setWsStatus(state, { ...info, agentName })
+  }
+  return ws
+}
+
 const STUCK_TOOL_TIMEOUT = 15000
 const stuckToolCalls = ref([])
 const pendingPermissions = ref([])
@@ -685,6 +711,7 @@ const selectZeroClawSession = (session) => {
     handleZeroClawClose,
     handleZeroClawError
   )
+  attachWsStatusHandlers(zeroclawWS, session.name || 'main')
   zeroclawWS.connect()
 }
 
@@ -1148,27 +1175,12 @@ const selectZAgent = async (agent) => {
       handleZeroClawError,
       wsPort
     )
+    attachWsStatusHandlers(zeroclawWS, agentName)
     zeroclawWS.connect()
   }
 
-  const maxConnectAttempts = 5
-
-  const handleConnectError = (error) => {
-    handleZeroClawError(error)
-    if (currentZAgentName !== agentName) return
-    if (currentActiveChatId.value !== agentName) return
-    if (!zeroclawWS || zeroclawWS.reconnectAttempts >= maxConnectAttempts) {
-      console.log('[zAgent] Max connection attempts reached for:', agentName)
-      if (zeroclawWS) zeroclawWS.reconnectAttempts = 0
-      currentZAgentName = null
-      return
-    }
-    
-    zeroclawWS.reconnectAttempts++
-    const delay = 1000 * zeroclawWS.reconnectAttempts
-    console.log('[zAgent] Connection attempt ' + zeroclawWS.reconnectAttempts + '/' + maxConnectAttempts + ' failed, retrying in ' + delay + 'ms')
-    setTimeout(doConnect, delay)
-  }
+  // Reconnect is now handled internally by ZeroClawWS (infinite backoff).
+  // The old manual 5-attempt retry loop is removed to avoid double-reconnect.
 
   zeroclawWS = new ZeroClawWS(
     agentName,
@@ -1179,8 +1191,8 @@ const selectZAgent = async (agent) => {
     handleZeroClawError,
     wsPort
   )
+  attachWsStatusHandlers(zeroclawWS, agentName)
   zeroclawWS.reconnectAttempts = 0
-  zeroclawWS.onError = handleConnectError
   zeroclawWS._agentName = agentName
   zeroclawWS.connect()
 
@@ -1214,139 +1226,18 @@ let currentZAgentName = null
 
 const handleZeroClawClose = (event) => {
   console.log('[zAgent] WebSocket closed:', event.code, event.reason)
-  
+  // Reconnect (including code 1000) is handled internally by ZeroClawWS with
+  // infinite exponential backoff. We only track state here for cleanup when
+  // the user switches agents.
   const agent = activeZAgent.value
   const session = activeZeroClawSession.value
   if (!agent && !session) return
-  
-  if (event.code === 1000) return
-  if (zeroclawWS && zeroclawWS.reconnectAttempts >= maxZcReconnectAttempts) {
-    console.log('[zAgent] Max reconnection attempts reached')
-    if (zeroclawWS) zeroclawWS.reconnectAttempts = 0
-    currentZAgentName = null
-    return
-  }
-  
-  if (agent && currentZAgentName !== agent.agent_name) {
-    console.log('[zAgent] Close handler ignored - agent changed')
-    return
-  }
-  
-  const agentNameToReconnect = agent?.agent_name || ''
-  if (zeroclawWS && zeroclawWS._agentName && zeroclawWS._agentName !== agentNameToReconnect) {
-    console.log('[zAgent] Close handler ignored - agent changed')
-    return
-  }
-  
-  zcReconnectAttempts++
-  const delay = 1000 * zcReconnectAttempts
-  console.log('[zAgent] Reconnecting... attempt ' + zcReconnectAttempts + '/' + maxZcReconnectAttempts + ' in ' + delay + 'ms')
-  
-  setTimeout(() => {
-    if (currentZAgentName !== agentNameToReconnect) {
-      console.log('[zAgent] Reconnect ignored - agent changed')
-      return
-    }
-    if (zeroclawWS) zeroclawWS.close()
-    
-    const cached = wsConnections[agentNameToReconnect]
-    if (cached && cached.zeroclawWS) {
-      cached.zeroclawWS.close()
-    }
-    
-    if (agent && currentZAgentName === agentNameToReconnect && wsConnections[agentNameToReconnect]) {
-      const msgHandler = createZeroClawMessageHandler(agentNameToReconnect)
-      zeroclawWS = new ZeroClawWS(
-        agentNameToReconnect,
-        'me',
-        msgHandler,
-        handleZeroClawOpen,
-        handleZeroClawClose,
-        handleZeroClawError,
-        agent.port || wsConnections[agentNameToReconnect].port
-      )
-      zeroclawWS.reconnectAttempts = zcReconnectAttempts - 1
-      zeroclawWS._agentName = agentNameToReconnect
-    } else if (session) {
-      zeroclawWS = new ZeroClawWS(
-        'main',
-        session.session_id,
-        handleZeroClawMessage,
-        handleZeroClawOpen,
-        handleZeroClawClose,
-        handleZeroClawError
-      )
-    }
-    if (zeroclawWS) zeroclawWS.connect()
-  }, delay)
 }
 
 const handleZeroClawError = (error) => {
   console.error('[zAgent] WebSocket error:', error)
-  
-  const agent = activeZAgent.value
-  const session = activeZeroClawSession.value
-  if (!agent && !session) return
-  
-  const agentNameToReconnect = agent?.agent_name || ''
-  if (zeroclawWS && zeroclawWS._agentName && zeroclawWS._agentName !== agentNameToReconnect) {
-    console.log('[zAgent] Error handler ignored - agent changed')
-    return
-  }
-  
-  if (zeroclawWS && zeroclawWS.reconnectAttempts >= maxZcReconnectAttempts) {
-    console.log('[zAgent] Max reconnection attempts reached')
-    if (zeroclawWS) zeroclawWS.reconnectAttempts = 0
-    currentZAgentName = null
-    return
-  }
-  
-  if (agent && currentZAgentName !== agent.agent_name) {
-    console.log('[zAgent] Error handler ignored - agent changed')
-    return
-  }
-  
-  zcReconnectAttempts++
-  const delay = 1000 * zcReconnectAttempts
-  console.log('[zAgent] Reconnecting after error... attempt ' + zcReconnectAttempts + '/' + maxZcReconnectAttempts + ' in ' + delay + 'ms')
-  
-  setTimeout(() => {
-    if (currentZAgentName !== agentNameToReconnect) {
-      console.log('[zAgent] Error reconnect ignored - agent changed')
-      return
-    }
-    if (zeroclawWS) zeroclawWS.close()
-    
-    const cached = wsConnections[agentNameToReconnect]
-    if (cached && cached.zeroclawWS) {
-      cached.zeroclawWS.close()
-    }
-    
-    if (agent && currentZAgentName === agentNameToReconnect && wsConnections[agentNameToReconnect]) {
-      const msgHandler = createZeroClawMessageHandler(agentNameToReconnect)
-      zeroclawWS = new ZeroClawWS(
-        agentNameToReconnect,
-        'me',
-        msgHandler,
-        handleZeroClawOpen,
-        handleZeroClawClose,
-        handleZeroClawError,
-        agent.port || wsConnections[agentNameToReconnect].port
-      )
-      zeroclawWS.reconnectAttempts = zcReconnectAttempts - 1
-      zeroclawWS._agentName = agentNameToReconnect
-    } else if (session) {
-      zeroclawWS = new ZeroClawWS(
-        'main',
-        session.session_id,
-        handleZeroClawMessage,
-        handleZeroClawOpen,
-        handleZeroClawClose,
-        handleZeroClawError
-      )
-    }
-    if (zeroclawWS) zeroclawWS.connect()
-  }, delay)
+  // Reconnect is handled internally by ZeroClawWS (infinite exponential
+  // backoff + heartbeat detection). Nothing to do here besides logging.
 }
 
 // ── Task Management: parse <task> and <subtask> tags from AI responses ──
@@ -2074,6 +1965,7 @@ const enterGroupChat = async (groupId) => {
       (err) => { console.error('[GroupChat] WS error:', agentName, groupId, err) },
       wsPort
     )
+    attachWsStatusHandlers(ws, agentName)
     ws.connect()
     connections.push({ agentName, ws })
   }
@@ -3706,6 +3598,24 @@ const submitToken = async () => {
   }
 }
 
+
+.ws-status-banner {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  padding: 6px 16px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+}
+.ws-reconnecting {
+  background: #fef3c7;
+  color: #92400e;
+}
+.ws-connecting {
+  background: #e0f2fe;
+  color: #075985;
+}
 
 .permission-banner {
   position: fixed;

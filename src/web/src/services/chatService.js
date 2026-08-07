@@ -147,12 +147,25 @@ export class ZeroClawWS {
     this.onError = onError
     this.wsPort = wsPort
     this.ws = null
+    // Reconnect: infinite with exponential backoff (1s → 30s cap + jitter)
     this.reconnectAttempts = 0
-    this.maxReconnectAttempts = 3
+    this.maxReconnectAttempts = Infinity
     this.reconnectDelay = 1000
+    this.maxReconnectDelay = 30000
+    this.reconnectTimer = null
+    this.destroyed = false
+    // Heartbeat: 25s interval, 2 missed = dead connection → force reconnect
+    this.heartbeatIntervalMs = 25000
+    this.heartbeatTimer = null
+    this.missedHeartbeats = 0
+    this.maxMissedHeartbeats = 2
+    // Callbacks for UI status banner (optional)
+    this.onStateChange = null   // (state, info) => void  state: 'connecting'|'connected'|'reconnecting'|'destroyed'
+    this.onReconnected = null   // () => void  fired after a successful reconnect (not first connect)
   }
 
   connect() {
+    if (this.destroyed) return
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
     const isTauri = !!window.__TAURI_INTERNALS__
@@ -162,17 +175,28 @@ export class ZeroClawWS {
       : `${protocol}//${host}/ws/chat?agent=${encodeURIComponent(this.agentName)}&session_id=${encodeURIComponent(this.sessionId)}`
     
     console.log('[zAgentWS] Connecting to:', url)
+    this._emitState(this.everConnected ? 'reconnecting' : 'connecting')
     
     try {
       this.ws = new WebSocket(url, 'zeroclaw.v1')
       
       this.ws.onopen = () => {
         console.log('[zAgentWS] Connected')
+        const wasReconnect = this.everConnected
+        this.everConnected = true
         this.reconnectAttempts = 0
+        this.missedHeartbeats = 0
+        this._startHeartbeat()
+        this._emitState('connected')
         this.onOpen?.()
+        if (wasReconnect) {
+          this.onReconnected?.()
+        }
       }
       
       this.ws.onmessage = (event) => {
+        // Any inbound message proves the connection is alive
+        this.missedHeartbeats = 0
         try {
           // Handle binary or non-string data
           if (typeof event.data !== 'string') {
@@ -184,6 +208,8 @@ export class ZeroClawWS {
             return
           }
           const data = JSON.parse(event.data)
+          // Heartbeat pong is handled internally, don't surface to business layer
+          if (data.type === 'pong') return
           console.log('[zAgentWS] Received:', data.type)
           this.onMessage?.(data)
         } catch (e) {
@@ -193,7 +219,14 @@ export class ZeroClawWS {
       
       this.ws.onclose = (event) => {
         console.log('[zAgentWS] Closed:', event.code, event.reason)
+        this._stopHeartbeat()
+        this.ws = null
         this.onClose?.(event)
+        // Always reconnect (incl. code 1000) unless explicitly destroyed —
+        // server restarts / reloads send 1000 and we must recover.
+        if (!this.destroyed) {
+          this._scheduleReconnect()
+        }
       }
       
       this.ws.onerror = (error) => {
@@ -203,6 +236,9 @@ export class ZeroClawWS {
     } catch (e) {
       console.error('[zAgentWS] Connection error:', e)
       this.onError?.(e)
+      if (!this.destroyed) {
+        this._scheduleReconnect()
+      }
     }
   }
 
@@ -225,8 +261,74 @@ export class ZeroClawWS {
     }
   }
 
+  /** Explicitly destroy the client — no further reconnects. */
+  destroy() {
+    this.destroyed = true
+    this._clearReconnectTimer()
+    this._stopHeartbeat()
+    if (this.ws) {
+      const ws = this.ws
+      this.ws = null
+      try { ws.close(1000, 'client-destroy') } catch (e) { /* ignore */ }
+      setTimeout(() => {
+        if (ws.readyState !== WebSocket.CLOSED) {
+          ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null
+        }
+      }, 3000)
+    }
+    this._emitState('destroyed')
+  }
+
   isConnected() {
     return this.ws && this.ws.readyState === WebSocket.OPEN
+  }
+
+  // ---------------- internal ----------------
+
+  _scheduleReconnect() {
+    if (this.destroyed) return
+    this._clearReconnectTimer()
+    this.reconnectAttempts += 1
+    // Exponential backoff: 1s, 2s, 4s, 8s ... capped at 30s, ±25% jitter
+    const exp = Math.min(this.reconnectDelay * 2 ** (this.reconnectAttempts - 1), this.maxReconnectDelay)
+    const jitter = exp * (0.75 + Math.random() * 0.5)
+    const delay = Math.min(Math.round(jitter), this.maxReconnectDelay)
+    console.log(`[zAgentWS] Reconnect #${this.reconnectAttempts} in ${delay}ms`)
+    this._emitState('reconnecting', { nextRetryMs: delay })
+    this.reconnectTimer = setTimeout(() => this.connect(), delay)
+  }
+
+  _startHeartbeat() {
+    this._stopHeartbeat()
+    this.heartbeatTimer = setInterval(() => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+      this.missedHeartbeats += 1
+      if (this.missedHeartbeats > this.maxMissedHeartbeats) {
+        // Half-open connection: proactively close to trigger reconnect
+        console.warn('[zAgentWS] Heartbeat timeout, forcing reconnect')
+        const ws = this.ws
+        this.ws = null
+        ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null
+        try { ws.close(4000, 'heartbeat-timeout') } catch (e) { /* ignore */ }
+        this._stopHeartbeat()
+        this._scheduleReconnect()
+        return
+      }
+      try { this.ws.send(JSON.stringify({ type: 'ping', ts: Date.now() })) } catch (e) { /* ignore */ }
+    }, this.heartbeatIntervalMs)
+  }
+
+  _stopHeartbeat() {
+    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null }
+    this.missedHeartbeats = 0
+  }
+
+  _clearReconnectTimer() {
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null }
+  }
+
+  _emitState(state, info = {}) {
+    this.onStateChange?.(state, { attempt: this.reconnectAttempts, nextRetryMs: null, ...info })
   }
 }
 

@@ -600,10 +600,23 @@ async fn bridge_opencode_sse(
     let mut full_response = String::new();
     let mut buffer = String::new();
 
+    // Channel for frontend-bound messages produced in the forward task
+    // (e.g. heartbeat pong replies). sse_to_frontend owns frontend_sink and
+    // drains this channel, so frontend_sink is never shared across tasks.
+    let (pong_tx, mut pong_rx) = tokio::sync::mpsc::channel::<String>(16);
+
     let fwd_to_backend = async {
         let is_busy = is_busy.clone();
         while let Some(msg) = frontend_stream.next().await {
             if let Ok(msg) = msg {
+                // Respond to the browser's close handshake so it doesn't sit
+                // in CLOSING for 20s+. tungstenite may auto-reply, but being
+                // explicit guarantees a clean close on both sides.
+                if let tokio_tungstenite::tungstenite::Message::Close(_) = &msg {
+                    log::debug!("[Proxy][SSE][F→B] Close frame received, replying close");
+                    let _ = pong_tx.send(String::new()).await;
+                    break;
+                }
                 if let tokio_tungstenite::tungstenite::Message::Text(ref text) = msg {
                     let msg_preview: String = if text.len() > 120 {
                         let byte_pos = text.char_indices().nth(120).map(|(i, _)| i).unwrap_or(text.len());
@@ -618,6 +631,26 @@ async fn bridge_opencode_sse(
                         .and_then(|p| p.get("type"))
                         .and_then(|t| t.as_str())
                         .unwrap_or("message");
+
+                    if msg_type == "ping" {
+                        // Application-level heartbeat: reply pong to the browser.
+                        // This keeps NAT/proxy half-open connections alive and
+                        // lets the frontend detect dead connections quickly.
+                        // The pong is routed via the pong channel because only
+                        // sse_to_frontend may touch frontend_sink.
+                        let pong = serde_json::json!({
+                            "type": "pong",
+                            "ts": parsed.as_ref()
+                                .and_then(|p| p.get("ts"))
+                                .cloned()
+                                .unwrap_or(serde_json::Value::Null)
+                        }).to_string();
+                        if pong_tx.send(pong).await.is_err() {
+                            return;
+                        }
+                        log::debug!("[Proxy][SSE] Heartbeat ping → pong");
+                        continue;
+                    }
 
                     if msg_type == "cancel" {
                         let abort_url = format!("{}/session/{}/abort", base_url, session_id);
@@ -702,7 +735,29 @@ async fn bridge_opencode_sse(
 
         let mut is_busy = false;
 
-        while let Some(chunk) = sse_stream.next().await {
+        // Drain frontend-bound control messages (heartbeat pong) while
+        // consuming the SSE stream. Both sides produce frontend_sink writes,
+        // but they are sequenced here so frontend_sink stays single-owner.
+        loop {
+            let msg = tokio::select! {
+                pong = pong_rx.recv() => {
+                    match pong {
+                        Some(text) => {
+                            if text.is_empty() {
+                                // close handshake reply: send empty close frame
+                                let _ = frontend_sink.send(WsMsg::Close(None)).await;
+                                return;
+                            }
+                            let _ = frontend_sink.send(WsMsg::Text(text.into())).await;
+                            continue;
+                        }
+                        None => return,
+                    }
+                }
+                chunk = sse_stream.next() => chunk,
+            };
+
+            let Some(chunk) = msg else { return };
             match chunk {
                 Ok(bytes) => {
                     let chunk_str = String::from_utf8_lossy(&bytes);
