@@ -175,6 +175,66 @@ pub async fn batch_refresh(data_dir: &str, body_bytes: Bytes) -> Response<BoxBod
     }))
 }
 
+/// Aggregated task counts across a task tree (roots + nested subtasks).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct TaskStatusCounts {
+    total: usize,
+    completed: usize,
+    running: usize,
+    pending: usize,
+    failed: usize,
+}
+
+/// Recursively count tasks by status (roots and their subtasks).
+fn count_task_statuses(tasks: &[db::Task]) -> TaskStatusCounts {
+    fn walk(list: &[db::Task], counts: &mut TaskStatusCounts) {
+        for t in list {
+            counts.total += 1;
+            match t.status.as_str() {
+                "completed" => counts.completed += 1,
+                "running" => counts.running += 1,
+                "pending" => counts.pending += 1,
+                "failed" => counts.failed += 1,
+                _ => {}
+            }
+            walk(&t.subtasks, counts);
+        }
+    }
+    let mut counts = TaskStatusCounts::default();
+    walk(tasks, &mut counts);
+    counts
+}
+
+/// Render a task tree into Markdown list lines.
+fn render_tasks_md(list: &[db::Task], depth: usize) -> String {
+    let indent = "  ".repeat(depth);
+    let mut md = String::new();
+    for t in list {
+        let checkbox = if t.status == "completed" { "[x]" } else { "[ ]" };
+        md.push_str(&format!(
+            "{}- {} #{} {} ({} {}%)\n",
+            indent,
+            checkbox,
+            t.task_number.unwrap_or(0),
+            t.title,
+            t.status,
+            t.progress
+        ));
+        if let Some(desc) = &t.description {
+            let clean = desc.replace('\n', " ").chars().take(200).collect::<String>();
+            md.push_str(&format!("{}  - 描述: {}\n", indent, clean));
+        }
+        if let Some(summary) = &t.result_summary {
+            let clean = summary.replace('\n', " ").chars().take(200).collect::<String>();
+            md.push_str(&format!("{}  - 结果: {}\n", indent, clean));
+        }
+        if !t.subtasks.is_empty() {
+            md.push_str(&render_tasks_md(&t.subtasks, depth + 1));
+        }
+    }
+    md
+}
+
 /// Generate TASKS.md and write to agent workspace.
 async fn save_tasks_md(data_dir: &str, agent_name: &str, group_id: Option<&str>) -> anyhow::Result<()> {
     let tasks = db::get_tasks(data_dir, agent_name, group_id)?;
@@ -185,59 +245,12 @@ async fn save_tasks_md(data_dir: &str, agent_name: &str, group_id: Option<&str>)
     let now = chrono::Local::now();
     let ts = now.format("%Y-%m-%d %H:%M:%S").to_string();
 
-    let total = 0usize;
-    let completed = 0usize;
-    let running = 0usize;
-    let pending = 0usize;
-    let failed = 0usize;
-
-    fn count_status(list: &[db::Task], totals: &mut (usize, usize, usize, usize, usize)) {
-        for t in list {
-            totals.0 += 1;
-            match t.status.as_str() {
-                "completed" => totals.1 += 1,
-                "running" => totals.2 += 1,
-                "pending" => totals.3 += 1,
-                "failed" => totals.4 += 1,
-                _ => {}
-            }
-            count_status(&t.subtasks, totals);
-        }
-    }
-    count_status(&tasks, &mut (total, completed, running, pending, failed));
-
-    fn render_tasks(list: &[db::Task], depth: usize) -> String {
-        let indent = "  ".repeat(depth);
-        let mut md = String::new();
-        for t in list {
-            let checkbox = if t.status == "completed" { "[x]" } else { "[ ]" };
-            md.push_str(&format!("{}- {} #{} {} ({}%{}%)\n",
-                indent,
-                checkbox,
-                t.task_number.unwrap_or(0),
-                t.title,
-                t.status,
-                t.progress
-            ));
-            if let Some(desc) = &t.description {
-                let clean = desc.replace('\n', " ").chars().take(200).collect::<String>();
-                md.push_str(&format!("{}  - 描述: {}\n", indent, clean));
-            }
-            if let Some(summary) = &t.result_summary {
-                let clean = summary.replace('\n', " ").chars().take(200).collect::<String>();
-                md.push_str(&format!("{}  - 结果: {}\n", indent, clean));
-            }
-            if !t.subtasks.is_empty() {
-                md.push_str(&render_tasks(&t.subtasks, depth + 1));
-            }
-        }
-        md
-    }
+    let counts = count_task_statuses(&tasks);
 
     let gid_str = group_id.map(|g| format!(" (group={})", g)).unwrap_or_default();
     let content = format!(
         "# 任务清单 for {}{}\n\n生成时间: {}\n\n## 概览\n- 总计: {}\n- 已完成: {}\n- 进行中: {}\n- 待开始: {}\n- 失败: {}\n\n## 任务列表\n\n{}\n",
-        agent_name, gid_str, ts, total, completed, running, pending, failed, render_tasks(&tasks, 0)
+        agent_name, gid_str, ts, counts.total, counts.completed, counts.running, counts.pending, counts.failed, render_tasks_md(&tasks, 0)
     );
 
     // Write to workspace via write_workspace_file so errors propagate
@@ -407,5 +420,64 @@ pub async fn set_analysis_log(data_dir: &str, body_bytes: Bytes) -> Response<Box
             ok_response(&serde_json::json!({ "last_analyzed_at": ts }))
         }
         Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("Set failed: {}", e)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Task;
+
+    fn task(status: &str) -> Task {
+        Task {
+            status: status.to_string(),
+            ..Task::default()
+        }
+    }
+
+    #[test]
+    fn counts_root_tasks_by_status() {
+        let tasks = vec![
+            task("completed"),
+            task("running"),
+            task("pending"),
+            task("failed"),
+            task("completed"),
+        ];
+        let c = count_task_statuses(&tasks);
+        assert_eq!(c.total, 5);
+        assert_eq!(c.completed, 2);
+        assert_eq!(c.running, 1);
+        assert_eq!(c.pending, 1);
+        assert_eq!(c.failed, 1);
+    }
+
+    #[test]
+    fn counts_nested_subtasks_recursively() {
+        let mut root = task("running");
+        root.subtasks = vec![task("completed"), task("pending")];
+        let c = count_task_statuses(&[root]);
+        assert_eq!(c.total, 3);
+        assert_eq!(c.running, 1);
+        assert_eq!(c.completed, 1);
+        assert_eq!(c.pending, 1);
+        assert_eq!(c.failed, 0);
+    }
+
+    #[test]
+    fn unknown_status_counts_total_only() {
+        let c = count_task_statuses(&[task("on-hold")]);
+        assert_eq!(c.total, 1);
+        assert_eq!(c.completed + c.running + c.pending + c.failed, 0);
+    }
+
+    #[test]
+    fn renders_task_line_with_status_and_progress() {
+        let mut t = task("completed");
+        t.task_number = Some(1);
+        t.title = "Write unit tests".to_string();
+        t.progress = 100;
+        let md = render_tasks_md(&[t], 0);
+        assert_eq!(md, "- [x] #1 Write unit tests (completed 100%)\n");
     }
 }
