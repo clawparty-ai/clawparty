@@ -138,37 +138,45 @@ async fn resolve_http_backend(req: &Request<Incoming>) -> anyhow::Result<Uri> {
 
     if path_and_query.starts_with("/api/zeroclaw/") {
         let remainder = &path_and_query["/api/zeroclaw".len()..];
-        let target = if remainder.starts_with("/messages") {
-            let mut agent_name = String::new();
-            let mut session = "me".to_string();
-            if let Some(idx) = remainder.find('?') {
-                let query_str = &remainder[idx + 1..];
-                for (key, value) in url::form_urlencoded::parse(query_str.as_bytes()) {
-                    if key == "agent" {
-                        agent_name = value.to_string();
-                    } else if key == "session" {
-                        session = value.to_string();
-                    }
+
+        // Parse the target agent/session from the query string once, so every
+        // branch can resolve the correct per-agent port (multi-agent routing).
+        let mut agent_name = String::new();
+        let mut session = "me".to_string();
+        if let Some(idx) = remainder.find('?') {
+            let query_str = &remainder[idx + 1..];
+            for (key, value) in url::form_urlencoded::parse(query_str.as_bytes()) {
+                if key == "agent" {
+                    agent_name = value.to_string();
+                } else if key == "session" {
+                    session = value.to_string();
                 }
             }
-            let port = if agent_name.is_empty() {
-                42617
-            } else if let Some(data_dir) = DATA_DIR.get() {
-                get_agent_port_clawparty(data_dir, &agent_name).unwrap_or(42617)
-            } else {
-                42617
-            };
+        }
 
-            let is_opencode = if let Some(data_dir) = DATA_DIR.get() {
-                crate::db::get_agent(data_dir, &agent_name)
-                    .ok()
-                    .flatten()
-                    .map(|a| a.engine == "opencode")
-                    .unwrap_or(false)
-            } else {
-                false
-            };
+        // Resolve the backend port for the given agent (default port 42617 for
+        // the main agent or when the agent is unknown).
+        let port = if agent_name.is_empty() {
+            42617
+        } else if let Some(data_dir) = DATA_DIR.get() {
+            get_agent_port_clawparty(data_dir, &agent_name).unwrap_or(42617)
+        } else {
+            42617
+        };
 
+        let is_opencode = if agent_name.is_empty() {
+            ENGINE.get().map(|e| e == "opencode").unwrap_or(false)
+        } else if let Some(data_dir) = DATA_DIR.get() {
+            crate::db::get_agent(data_dir, &agent_name)
+                .ok()
+                .flatten()
+                .map(|a| a.engine == "opencode")
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        let target = if remainder.starts_with("/messages") {
             if is_opencode {
                 if session == "me" {
                     if agent_name == "0#Agent" || agent_name.is_empty() {
@@ -185,24 +193,21 @@ async fn resolve_http_backend(req: &Request<Incoming>) -> anyhow::Result<Uri> {
                 format!("http://127.0.0.1:{}/api/sessions/{}/messages", port, session)
             }
         } else if remainder.starts_with("/sessions") && remainder.contains("/chat") {
-            let port = 42617;
             format!("http://127.0.0.1:{}/api{}", port, remainder)
         } else if remainder == "/health" || remainder == "/health/" {
-            let is_opencode = ENGINE.get().map(|e| e == "opencode").unwrap_or(false);
             if is_opencode {
-                "http://127.0.0.1:42617/global/health".to_string()
+                format!("http://127.0.0.1:{}/global/health", port)
             } else {
-                "http://127.0.0.1:42617/api/health".to_string()
+                format!("http://127.0.0.1:{}/api/health", port)
             }
         } else if remainder.starts_with("/sessions") {
-            let is_opencode = ENGINE.get().map(|e| e == "opencode").unwrap_or(false);
             if is_opencode {
-                format!("http://127.0.0.1:42617/session{}", &remainder["/sessions".len()..])
+                format!("http://127.0.0.1:{}/session{}", port, &remainder["/sessions".len()..])
             } else {
-                format!("http://127.0.0.1:42617/api{}", remainder)
+                format!("http://127.0.0.1:{}/api{}", port, remainder)
             }
         } else {
-            format!("http://127.0.0.1:42617/api{}", remainder)
+            format!("http://127.0.0.1:{}/api{}", port, remainder)
         };
         Ok(target.parse()?)
     } else {
@@ -464,6 +469,11 @@ async fn bridge_websocket(
     let (mut frontend_sink, mut frontend_stream) = frontend_ws.split();
     let (mut backend_sink, mut backend_stream) = backend_ws.split();
 
+    // Channel for frontend-bound heartbeat pong replies produced in the
+    // forward task. frontend_sink is owned by fwd_to_frontend, so pongs are
+    // routed through this channel to keep frontend_sink single-owner.
+    let (pong_tx, mut pong_rx) = tokio::sync::mpsc::channel::<String>(16);
+
     let fwd_to_backend = async {
         log::debug!("[Proxy][WS] F->B loop started");
         let mut count = 0;
@@ -474,10 +484,28 @@ async fn bridge_websocket(
                     // Check for cancel message from frontend
                     if let tokio_tungstenite::tungstenite::Message::Text(ref text) = msg {
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) {
-                            if parsed.get("type").and_then(|v| v.as_str()) == Some("cancel") {
-                                log::debug!("[Proxy][WS] F->B #{}: Cancel received, closing backend", count);
-                                let _ = backend_sink.close().await;
-                                break;
+                            match parsed.get("type").and_then(|v| v.as_str()) {
+                                Some("cancel") => {
+                                    log::debug!("[Proxy][WS] F->B #{}: Cancel received, closing backend", count);
+                                    let _ = backend_sink.close().await;
+                                    break;
+                                }
+                                Some("ping") => {
+                                    // Application-level heartbeat: reply pong directly to the
+                                    // frontend. The zeroclaw backend may not implement
+                                    // {type:ping}->{type:pong}, so answer here to keep the
+                                    // frontend's heartbeat detection from force-reconnecting.
+                                    let pong = serde_json::json!({
+                                        "type": "pong",
+                                        "ts": parsed.get("ts").cloned().unwrap_or(serde_json::Value::Null)
+                                    }).to_string();
+                                    log::debug!("[Proxy][WS] F->B #{}: heartbeat ping -> pong", count);
+                                    if pong_tx.send(pong).await.is_err() {
+                                        break;
+                                    }
+                                    continue;
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -507,9 +535,24 @@ async fn bridge_websocket(
     let fwd_to_frontend = async {
         log::debug!("[Proxy][WS] B->F loop started");
         let mut count = 0;
-        while let Some(msg) = backend_stream.next().await {
+        loop {
+            let msg = tokio::select! {
+                pong = pong_rx.recv() => {
+                    match pong {
+                        Some(text) => {
+                            let _ = frontend_sink
+                                .send(tokio_tungstenite::tungstenite::Message::Text(text.into()))
+                                .await;
+                            continue;
+                        }
+                        None => break,
+                    }
+                }
+                msg = backend_stream.next() => msg,
+            };
+
             match msg {
-                Ok(msg) => {
+                Some(Ok(msg)) => {
                     count += 1;
                     let desc = match &msg {
                         tokio_tungstenite::tungstenite::Message::Text(t) => format!("Text({} bytes)", t.len()),
@@ -525,10 +568,11 @@ async fn bridge_websocket(
                         break;
                     }
                 }
-                Err(e) => {
+                Some(Err(e)) => {
                     log::debug!("[Proxy][WS] B->F error: {}", e);
                     break;
                 }
+                None => break,
             }
         }
         log::debug!("[Proxy][WS] B->F loop ended, total messages: {}", count);

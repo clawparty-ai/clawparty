@@ -693,7 +693,7 @@ const fetchChats = async () => {
 const selectZeroClawSession = (session) => {
   // Close existing WebSocket connection
   if (zeroclawWS) {
-    zeroclawWS.close()
+    zeroclawWS.destroy()
     zeroclawWS = null
   }
 
@@ -712,6 +712,7 @@ const selectZeroClawSession = (session) => {
     handleZeroClawError
   )
   attachWsStatusHandlers(zeroclawWS, session.name || 'main')
+  zeroclawWS.onReconnected = () => loadZeroClawChatHistory(session)
   zeroclawWS.connect()
 }
 
@@ -777,6 +778,41 @@ const loadZAgentHistory = async (agentName, messages) => {
     console.log('[zAgent] History loaded:', history.length, 'msgs, _msgCount:', conn?._msgCount)
   } catch (e) {
     console.warn('[zAgent] Failed to load history:', e)
+  }
+}
+
+// Refetch messages missed while the WebSocket was disconnected. Appends only
+// messages newer than the last one already shown (avoids duplicating history).
+const refetchZAgentMessages = async (agentName) => {
+  const conn = wsConnections[agentName]
+  if (!conn) return
+  try {
+    const response = await zeroclawService.getMessages(agentName, 'me').catch(() => null)
+    const history = response?.data?.messages || []
+    if (!history.length) return
+    const messages = conn.messages
+    const lastTs = messages.length ? (messages[messages.length - 1].timestamp || 0) : 0
+    let added = 0
+    for (let i = 0; i < history.length; i++) {
+      const msg = history[i]
+      const ts = msg.created_at ? new Date(msg.created_at).getTime() : 0
+      if (!lastTs || ts > lastTs) {
+        const sender = msg.role === 'user' ? (currentMeshAgentUsername.value || 'You') : agentName
+        messages.push({
+          text: msg.content,
+          sender: sender,
+          time: formatChatTime(msg.created_at),
+          isSent: msg.role === 'user',
+          isTemp: false,
+          timestamp: ts
+        })
+        added++
+      }
+    }
+    if (added) conn._msgCount = messages.length
+    console.log('[zAgent] Refetched', added, 'message(s) after reconnect for', agentName)
+  } catch (e) {
+    console.warn('[zAgent] Failed to refetch messages after reconnect:', e)
   }
 }
 
@@ -904,7 +940,7 @@ const handleStopGeneration = () => {
       for (const conn of connections) {
         if (conn.ws) {
           sendCancel(conn.ws)
-          try { conn.ws.close() } catch (e) {}
+          try { conn.ws.destroy() } catch (e) {}
         }
       }
       activeGroupWsMap.delete(activeGroupId.value)
@@ -919,7 +955,7 @@ const handleStopGeneration = () => {
   if (activeZeroClawSession.value) {
     if (zeroclawWS) {
       sendCancel(zeroclawWS)
-      try { zeroclawWS.close() } catch (e) {}
+      try { zeroclawWS.destroy() } catch (e) {}
       zeroclawWS = null
     }
     clearTypingIndicators(activeZeroClawSession.value.messages)
@@ -932,7 +968,7 @@ const handleStopGeneration = () => {
     const conn = wsConnections[currentActiveChatId.value]
     if (conn?.zeroclawWS) {
       sendCancel(conn.zeroclawWS)
-      try { conn.zeroclawWS.close() } catch (e) {}
+      try { conn.zeroclawWS.destroy() } catch (e) {}
       delete wsConnections[currentActiveChatId.value]
     }
     const item = activeZAgentConnectionItems.value.find(i => i.id === currentActiveChatId.value)
@@ -944,7 +980,7 @@ const handleStopGeneration = () => {
   // Fallback: close global zeroclawWS if active
   if (zeroclawWS) {
     sendCancel(zeroclawWS)
-    try { zeroclawWS.close() } catch (e) {}
+    try { zeroclawWS.destroy() } catch (e) {}
     zeroclawWS = null
   }
 
@@ -1111,7 +1147,6 @@ const selectZAgent = async (agent) => {
   activeGroupId.value = null
 
   currentActiveChatId.value = agentName
-  currentZAgentName = agentName
 
   // Check if we already have a cached connection to this agent
   const cached = wsConnections[agentName]
@@ -1127,7 +1162,6 @@ const selectZAgent = async (agent) => {
       messages: cached.messages || [],
       port: cached.port
     }
-    zcReconnectAttempts = 0
     // If cached but no messages loaded yet, try to load history
     if (!cached.messages || cached.messages.length === 0) {
       await loadZAgentHistory(agentName, cached.messages)
@@ -1157,27 +1191,9 @@ const selectZAgent = async (agent) => {
     }
     wsPort = latestAgent?.port
   }
-  zcReconnectAttempts = 0
 
   // Create agent-specific message handler
   const msgHandler = createZeroClawMessageHandler(agentName)
-
-  const doConnect = () => {
-    if (currentZAgentName !== agentName) return
-    if (currentActiveChatId.value !== agentName) return
-    
-    zeroclawWS = new ZeroClawWS(
-      agentName,
-      'me',
-      msgHandler,
-      handleZeroClawOpen,
-      handleZeroClawClose,
-      handleZeroClawError,
-      wsPort
-    )
-    attachWsStatusHandlers(zeroclawWS, agentName)
-    zeroclawWS.connect()
-  }
 
   // Reconnect is now handled internally by ZeroClawWS (infinite backoff).
   // The old manual 5-attempt retry loop is removed to avoid double-reconnect.
@@ -1192,8 +1208,7 @@ const selectZAgent = async (agent) => {
     wsPort
   )
   attachWsStatusHandlers(zeroclawWS, agentName)
-  zeroclawWS.reconnectAttempts = 0
-  zeroclawWS._agentName = agentName
+  zeroclawWS.onReconnected = () => refetchZAgentMessages(agentName)
   zeroclawWS.connect()
 
   // Cache the connection with reference to messages array
@@ -1216,13 +1231,7 @@ const selectZAgent = async (agent) => {
 
 const handleZeroClawOpen = () => {
   console.log('[zAgent] WebSocket connected')
-  zcReconnectAttempts = 0
-  currentZAgentName = null
 }
-
-let zcReconnectAttempts = 0
-const maxZcReconnectAttempts = 5
-let currentZAgentName = null
 
 const handleZeroClawClose = (event) => {
   console.log('[zAgent] WebSocket closed:', event.code, event.reason)
@@ -1658,7 +1667,7 @@ const generateTaskTitleByAI = async (taskId, originalText) => {
         if (data.type === 'chunk') fullResponse += data.content
         else if (data.type === 'done') {
           hasResponded = true
-          ws.close()
+          ws.destroy()
           var nameMatch = fullResponse.match(/名字[：:]\s*([^\n]+)/)
           var descMatch = fullResponse.match(/描述[：:]\s*([^\n]+)/)
           if (nameMatch) {
@@ -1683,7 +1692,7 @@ const generateTaskTitleByAI = async (taskId, originalText) => {
     ws.connect()
 
     setTimeout(function() {
-      if (!hasResponded) { ws.close(); console.log('[TaskTitle] Timeout for ' + taskId) }
+      if (!hasResponded) { ws.destroy(); console.log('[TaskTitle] Timeout for ' + taskId) }
     }, 8000)
   } catch (e) {
     console.warn('[TaskTitle] Failed:', e)
@@ -1876,7 +1885,6 @@ const enterGroupChat = async (groupId) => {
   activeZeroClawSession.value = null
   activeZAgent.value = null
   activeChat.value = null
-  currentZAgentName = null
   currentActiveChatId.value = null
 
   activeGroupId.value = groupId
@@ -1940,7 +1948,7 @@ const enterGroupChat = async (groupId) => {
   const oldConnections = activeGroupWsMap.get(groupId)
   if (oldConnections) {
     for (const conn of oldConnections) {
-      if (conn.ws) conn.ws.close()
+      if (conn.ws) conn.ws.destroy()
     }
   }
 
@@ -1977,7 +1985,7 @@ const leaveGroupChat = (groupId) => {
   const connections = activeGroupWsMap.get(groupId)
   if (connections) {
     for (const conn of connections) {
-      if (conn.ws) conn.ws.close()
+      if (conn.ws) conn.ws.destroy()
     }
   }
   activeGroupWsMap.delete(groupId)
@@ -2777,7 +2785,7 @@ const selectUser = async (user) => {
   activeZeroClawSession.value = null
   activeZAgent.value = null
   if (zeroclawWS) {
-    zeroclawWS.close()
+    zeroclawWS.destroy()
     zeroclawWS = null
   }
 
@@ -3239,7 +3247,7 @@ provide('autoAllowPermission', autoAllowPermission)
 // --- beforeunload: cleanly close WebSocket connections to prevent zeroclaw hang on refresh ---
 function handleBeforeUnload() {
   if (zeroclawWS) {
-    try { zeroclawWS.close() } catch (e) {}
+    try { zeroclawWS.destroy() } catch (e) {}
     zeroclawWS = null
   }
   // Close all cached zAgent connections
@@ -3247,7 +3255,7 @@ function handleBeforeUnload() {
   for (var k = 0; k < agentNames.length; k++) {
     var conn = wsConnections[agentNames[k]]
     if (conn && conn.zeroclawWS) {
-      try { conn.zeroclawWS.close() } catch (e) {}
+      try { conn.zeroclawWS.destroy() } catch (e) {}
     }
   }
   // Close all group connections
@@ -3256,7 +3264,7 @@ function handleBeforeUnload() {
       for (var k = 0; k < connections.length; k++) {
         var c = connections[k]
         if (c && c.ws) {
-          try { c.ws.close() } catch (e) {}
+          try { c.ws.destroy() } catch (e) {}
         }
       }
     }

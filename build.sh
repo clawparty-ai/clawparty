@@ -84,8 +84,11 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 check_step() {
+    # Capture the previous command's exit status BEFORE any local assignment,
+    # otherwise `local` overwrites $? and the failure branch never triggers.
+    local status=$?
     local name="$1"
-    if [ $? -eq 0 ]; then
+    if [ "$status" -eq 0 ]; then
         echo -e "  ${GREEN}✓${NC} $name"
     else
         echo -e "  ${RED}✗${NC} $name"
@@ -118,7 +121,7 @@ if $CLEAN; then
 fi
 
 # ── 0. Init submodules ───────────────────────────────────────────
-if [ -f "$SCRIPT_DIR/.gitmodules" ] && $BUILD_ZTM || $BUILD_ZEROCLAW || $BUILD_OPENCODE; then
+if [ -f "$SCRIPT_DIR/.gitmodules" ] && { $BUILD_ZTM || $BUILD_ZEROCLAW || $BUILD_OPENCODE; }; then
     echo "  Initializing submodules..."
     git -C "$SCRIPT_DIR" submodule update --init 2>/dev/null || true
 fi

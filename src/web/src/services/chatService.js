@@ -154,6 +154,7 @@ export class ZeroClawWS {
     this.maxReconnectDelay = 30000
     this.reconnectTimer = null
     this.destroyed = false
+    this.everConnected = false
     // Heartbeat: 25s interval, 2 missed = dead connection → force reconnect
     this.heartbeatIntervalMs = 25000
     this.heartbeatTimer = null
@@ -255,10 +256,10 @@ export class ZeroClawWS {
   }
 
   close() {
-    if (this.ws) {
-      this.ws.close()
-      this.ws = null
-    }
+    // Deprecated alias — closing a connection must tear it down for good,
+    // otherwise onclose re-arms _scheduleReconnect and the old connection
+    // keeps reconnecting in the background. Route through destroy().
+    this.destroy()
   }
 
   /** Explicitly destroy the client — no further reconnects. */

@@ -1050,7 +1050,7 @@ const handleTaskRefresh = async () => {
           // Also accept full_response from done event (OpenCode sends it directly)
           if (!fullResponse && data.full_response) fullResponse = data.full_response
           addRefreshLog('info', 'AI response received, length: ' + fullResponse.length)
-          ws.close()
+          ws.destroy()
           try {
             let jsonText = fullResponse.trim()
             if (jsonText.indexOf('```json') >= 0) {
@@ -1179,7 +1179,7 @@ const handleTaskRefresh = async () => {
 
     setTimeout(function() {
       if (!hasResponded) {
-        ws.close()
+        ws.destroy()
         addRefreshLog('warn', 'Timeout (' + refreshTimeout.value + 's) waiting for 0#Agent response')
         persistLastAnalyzed(newMessages[newMessages.length - 1].timestamp)
         finishRefresh('timeout')
@@ -1301,7 +1301,7 @@ ${msgText || '无'}
         } else if (data.type === 'done') {
           hasResponded = true
           if (!fullResponse && data.full_response) fullResponse = data.full_response
-          ws.close()
+          ws.destroy()
           const generatedPrompt = fullResponse.trim()
           addRefreshLog('info', 'Generated prompt, length: ' + generatedPrompt.length)
 
@@ -1333,7 +1333,7 @@ ${msgText || '无'}
 
     setTimeout(function() {
       if (!hasResponded) {
-        ws.close()
+        ws.destroy()
         addRefreshLog('warn', 'Timeout waiting for 0#Agent response')
         task._generatingPrompt = false
       }

@@ -5,14 +5,15 @@ Multi-agent orchestration platform with CLI, Web, and Desktop interfaces.
 ## Architecture
 
 ```
-clawparty-v2/
+clawparty/
 ├── src/
-│   ├── cli/       # Rust TUI (ratatui + crossterm) + Node.js TUI (blessed)
+│   ├── cli/       # Rust CLI core (ratatui + crossterm + tokio)
+│   ├── tui/       # Node.js TUI (blessed) — symlinked to cli/ by build.sh
 │   ├── web/       # Vue 3 + Vite + Tauri 2 (web / desktop / mobile)
 │   └── desktop/   # Swift macOS menu bar app (SwiftUI + AppKit)
-├── ztm/          # ZTM mesh networking (submodule)
-├── zeroclaw/     # ZeroClaw agent runtime (submodule)
-├── opencode/     # OpenCode AI dev tool (submodule)
+├── ztm/           # ZTM mesh networking (submodule)
+├── zeroclaw/      # ZeroClaw agent runtime (submodule)
+└── opencode/      # OpenCode AI dev tool (submodule)
 ```
 
 ## Components
@@ -24,7 +25,7 @@ Terminal-based interface for managing agents, real-time logs, and task orchestra
 | Layer | Tech |
 |-------|------|
 | Core | Rust (ratatui, crossterm, tokio) |
-| Alt | Node.js (blessed, blessed-contrib) |
+| Alt | Node.js TUI (blessed, blessed-contrib) — served via `src/tui/` symlink |
 | DB | SQLite (rusqlite) |
 
 ```bash
